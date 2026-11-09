@@ -730,9 +730,10 @@ fire on several events.
     - `voice-decision-pipeline`: the corpus, the anonymising map, the
       corpus embedding index, labelling output, `holdouts.jsonl` (the
       pipeline draws and uses holdouts, the runtimes never
-      read them).
+      read them), and `validation-answers.jsonl` (the
+      review pages that write it are the pipeline's, and no runtime reads it).
     - `embedding-lib`: no data.
-    - Where `validation-answers.jsonl` goes is open (§8.6). Live files sit
+    - Live files sit
       outside builds because they can't be regenerated and are written
       between builds.
   - Uninstall: each
@@ -875,8 +876,7 @@ stage lists only what blocks that stage.
    built once its own questions are answered (§5).
 2. Each package keeps its own data in its own state, and
    uninstall refuses while live files exist unless `--keep-state` is given
-   (§5 Data and state). Following from it: where
-   `validation-answers.jsonl` belongs (§8.6).
+   (§5 Data and state); `validation-answers.jsonl` is the pipeline's.
 3. Whether a refusing runtime fails loudly or carries on without the model
    (§8.6).
 4. How the packages are tested end to end, and the release order (§8.6).
@@ -1280,8 +1280,6 @@ stage lists only what blocks that stage.
 - When a runtime package refuses (no build delivered yet, wrong embed model,
   unknown format version — §5 already says it refuses): whether the hook or
   skill fails loudly or carries on without the model.
-- Whether `validation-answers.jsonl` belongs to the pipeline, which runs
-  validation, or to each runtime.
 - Whether pipeline rebuilds (folding in new transcripts, PRs and GSD
   records) are run by hand in review sessions or scheduled automatically.
 - Running costs not estimated in §6: the 300–600-token block
