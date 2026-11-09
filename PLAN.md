@@ -759,7 +759,16 @@ fire on several events.
     file as `<name>.v<old>.jsonl` and updates the manifest; writers follow the
     manifest; the next release drops the old version. A refusal names the
     file, the version found, the versions accepted and the command that fixes
-    it; whether a refusing hook blocks or carries on is open (§8.6).
+    it.
+  - After a refusal (no build delivered yet, an embedding model mismatch,
+    or an unaccepted schema version), the runtimes carry on safely and say
+    so.
+    `decision-runtime`'s lookup returns "nothing covers this", so every
+    decision goes to the owner and nothing is decided alone; the gates keep
+    working from the decision log; the reviewers skip; the `SessionStart`
+    block shows the refusal message in one line. `voice-runtime` tells
+    the owner before drafting that the voice model is unavailable and why,
+    and offers the draft marked as not in their voice.
 - **Anonymiser** stays inside the pipeline, the only thing that runs it. It
   splits out the same way if anonymising is ever needed at use time (e.g. if
   the Slack-connector route for new Slack data is used).
@@ -877,8 +886,8 @@ stage lists only what blocks that stage.
 2. Each package keeps its own data in its own state, and
    uninstall refuses while live files exist unless `--keep-state` is given
    (§5 Data and state); `validation-answers.jsonl` is the pipeline's.
-3. Whether a refusing runtime fails loudly or carries on without the model
-   (§8.6).
+3. A refusing runtime carries on safely and says so (§5 Data and
+   state).
 4. How the packages are tested end to end, and the release order (§8.6).
 5. The 13 §8.1 design choices, each confirmed or changed.
 
@@ -1277,9 +1286,6 @@ stage lists only what blocks that stage.
   directory holding the sample (`{temp_dir}/profile-sample.jsonl`, the file
   to anonymise) and the analysis (the agent's `<analysis>` JSON block), so
   both must be copied to the pipeline's state before cleanup.
-- When a runtime package refuses (no build delivered yet, wrong embed model,
-  unknown format version — §5 already says it refuses): whether the hook or
-  skill fails loudly or carries on without the model.
 - Whether pipeline rebuilds (folding in new transcripts, PRs and GSD
   records) are run by hand in review sessions or scheduled automatically.
 - Running costs not estimated in §6: the 300–600-token block
