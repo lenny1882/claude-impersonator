@@ -74,7 +74,8 @@ Left out:
   stored once. `~/.claude` is outside Claude's Bash sandbox, so the
   pipeline's commands get a `sandbox.excludedCommands` entry, as `rrc *`
   has.
-- The planning documents live in their own local git repo, with no remote.
+- This repo, `claude-impersonator`, holds the planning documents; its
+  checkout also holds `build-inputs.json` (gitignored).
   No corpus data is written there.
 - Real names are kept in the stored corpus, so it stays readable and
   searchable.
@@ -1011,10 +1012,10 @@ stage lists only what blocks that stage.
 - Corpus file formats: the JSONL schema, how the embedding index is stored,
   how the anonymising map is stored.
 - Protection of the packages' state (the pipeline's holds colleagues' DMs;
-  `voice-runtime`'s holds exemplars). Open:
-  what modes the pipeline's corpus and anonymising map and `voice-runtime`'s
-  exemplars get, whether they are backed up, and whether and when they're ever
-  deleted.
+  `voice-runtime`'s holds exemplars).
+  Open: what modes the pipeline's corpus
+  and anonymising map and `voice-runtime`'s exemplars get, whether they are
+  backed up, and whether and when they're ever deleted.
 - Bot messages and channel events (joins, topic changes) dropped from the
   corpus: not decided.
 - Whether Bitbucket content is limited to PRs the owner authored or reviewed
