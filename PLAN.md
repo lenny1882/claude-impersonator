@@ -184,11 +184,16 @@ developer).
   A model labels purposes on
   anonymised messages.
 - Checking, in parallel: the owner checks a sample of about 60 labelled messages
-  spread across audiences and purposes, and a second model labels messages
-  blind; its disagreements come to the owner too. Scope: all messages,
-  with no cuts (§6).
-  Over
-  about 10% wrong, the labelling prompt is changed and rerun (§8.2).
+  spread across audiences and purposes, and a second model labels all
+  messages blind (priced in §6).
+  Over about 10% wrong in the owner's sample, the labelling
+  prompt is changed and rerun (§8.2).
+- Second-model disagreements: the
+  disagreement rate per purpose is measured across all ~17k and shows where
+  the labelling prompt is weak; those purposes get the prompt fixed and are
+  relabelled. A fixed sample of about 60 disagreements comes to the owner to
+  grade. Every disagreement is recorded, with both models' labels, so the owner
+  can review all of them by hand if the owner wants to.
 
 ### 3.5 Output
 
@@ -609,9 +614,9 @@ Which repo each package lives in is not decided.
 
 Output tokens are much smaller (mostly labels
 and scores). Possible cuts:
-second-model labelling on a sample only (whether that settles the second
-model's scope is still asked, §8.1), or fewer held-back voice drafts (would
-save 10–15M, at the cost of less certainty).
+second-model labelling on a sample only (the second model labels every item,
+§3.4), or fewer held-back voice drafts (would save 10–15M, at the cost of less
+certainty).
 
 | Building, once | Tokens |
 |---|---|
@@ -709,10 +714,6 @@ machine):
   are chosen), through `claude-package-kit` directly, or another route is
   not decided.
 - **When the build starts.** Nothing is to start until the owner says so.
-- **Second-model labelling scope.**
-  Does the second model label all messages (as the
-  cost table priced it, ~5.5M), or only the ~60-message
-  check sample? Today §3.4 records it as pending.
 
 ### 8.2 Further design details
 
@@ -1128,7 +1129,8 @@ machine):
 1. Add `read:repository` to the Bitbucket token. The token is in `~/.netrc` (REST
 2. Pick the `oneiota` repos.
 3. Review the first anonymised batches, until the owner says stop.
-4. Check the audience mapping and the label sample; confirm inferred reasons
+4. Check the audience mapping, the label sample and the sample of
+   second-model disagreements (§3.4); confirm inferred reasons
    and bulk-accepted records.
 5. Grade the 60 blind voice pairs (more whenever the owner wants).
 6. Grade the prediction sample and every judge-marked wrong.
