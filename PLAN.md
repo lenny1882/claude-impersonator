@@ -84,9 +84,13 @@ Left out:
   stored once. `~/.claude` is outside Claude's Bash sandbox, so the
   pipeline's commands get a `sandbox.excludedCommands` entry, as `rrc *`
   has.
-- `~/claude-sandbox/voice-decisions-data` holds only the planning documents: a
-  local git repo since 9 Nov 2026 (James's choice, committed with the
-  gitignore), with no remote. No corpus data is written there.
+- This repo, `claude-impersonator`, holds the planning documents; its
+  checkout at `/mnt/sda/Development/github-lenny1882/claude-impersonator`
+  also holds `build-inputs.json` (gitignored). Started on 9 Nov 2026 as a
+  local git repo at `~/claude-sandbox/voice-decisions-data` (James's choice,
+  committed with the gitignore), pushed to
+  `github.com/lenny1882/claude-impersonator` and moved here the same day. No
+  corpus data is written there.
 - Real names are kept in the stored corpus, so it stays readable and
   searchable.
 - No data ever goes into a package repo or release.
@@ -1068,11 +1072,11 @@ was put to him.
 - Corpus file formats: the JSONL schema, how the embedding index is stored,
   how the anonymising map is stored.
 - Protection of the packages' state (the pipeline's holds colleagues' DMs;
-  `voice-runtime`'s holds exemplars). `~/claude-sandbox/voice-decisions-data`
-  is owner-only: Claude set it with `chmod -R go-rwx` on 9 Nov, unasked. Open:
-  what modes the pipeline's corpus and anonymising map and `voice-runtime`'s
-  exemplars get, whether they are backed up, and whether and when they're ever
-  deleted.
+  `voice-runtime`'s holds exemplars). This checkout (then
+  `~/claude-sandbox/voice-decisions-data`) is owner-only: Claude set it with
+  `chmod -R go-rwx` on 9 Nov, unasked. Open: what modes the pipeline's corpus
+  and anonymising map and `voice-runtime`'s exemplars get, whether they are
+  backed up, and whether and when they're ever deleted.
 - Bot messages and channel events (joins, topic changes) dropped from the
   corpus: proposed in the part list, never discussed.
 - Whether Bitbucket content is limited to PRs James authored or reviewed
