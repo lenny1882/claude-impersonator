@@ -1,7 +1,7 @@
 # Voice and decision models — plan
 
-§7 holds checked facts, not decisions. Everything
-undecided is in §8.
+§7 holds checked facts, not decisions. Everything undecided is in
+§8.
 
 Evidence, comparisons, options not used and references are in `APPENDIX.md`
 beside this file.
@@ -24,9 +24,9 @@ uses, analysis, output, loading, validation, upkeep — is planned separately.
 | Source | Used for | Scope |
 |---|---|---|
 | Slack export (JSON, 2020–2026) | voice and decisions | the owner's messages, after the exclusions below |
-| Bitbucket PR descriptions and comments | voice (technical team audience) and code-level decisions (what the owner approves, rejects and asks to be changed) | `oneiota` repos only; repos with no update since 2018 are normally left out (a guideline, not a hard cut), applied when the repos are picked (whether 2018 itself is kept: §8.3); the exact repos are picked when the pipeline is run |
+| Bitbucket PR descriptions and comments | voice (technical team audience) and code-level decisions (what the owner approves, rejects and asks to be changed) | `oneiota` repos only; repos with no update since 2018 are normally left out (a guideline, not a hard cut), applied when the repos are picked (whether 2018 itself is kept: §8.4); the exact repos are picked when the pipeline is run |
 | Claude Code transcripts (`~/.claude/projects/*/*.jsonl`) | technical decisions only — never voice (prompts are written to Claude, not colleagues). Probably the strongest decision source, because corrections there state a decision outright | everything kept from now on |
-| GSD written records: decisions in `.planning/STATE.md`, phase `CONTEXT.md` | decisions, weighted by origin (§4.9) | GSD repos with `.planning/config.json` (whether repos with `.planning/` but no config count: §8.3) |
+| GSD written records: decisions in `.planning/STATE.md`, phase `CONTEXT.md` | decisions, weighted by origin (§4.9) | GSD repos with `.planning/config.json` (whether repos with `.planning/` but no config count: §8.4). Their `STATE.md` files mention "decisions" (word match; the sections themselves were not checked) |
 | grill-with-docs ADRs (`docs/adr/`) and `GLOSSARY.md` | decisions, weighted by origin | used if they appear. Its decisions that don't pass the three ADR tests stay only in the conversation, so they reach the model through transcripts |
 | `/gsd:profile-user` output | decisions | run on anonymised copies only (§2.3) |
 
@@ -53,7 +53,8 @@ Left out:
 
 - **Slack:** each of the owner's messages keeps its thread if threaded; otherwise
   the messages before it in that conversation from the previous 2 hours (up to
-  10), and the same after it (up to 10), plus emoji reactions. The "after"
+  10), and the same after it (up to 10), plus emoji reactions. (The cap of 10
+  is in §8.2.) The "after"
 - **Pasted code, logs, links and attachments:** kept and tagged. The voice
   analysis skips them; the decision analysis reads them. Links kept as URLs,
   attachments as file names.
@@ -67,8 +68,11 @@ Left out:
 
 ### 2.2 Storage
 
-- Corpus directory: the pipeline's data directory (not a git repo;
-  writable by Claude's Bash tool). About 20 MB, each message stored once.
+- Corpus directory: the pipeline's data directory, writable by
+  Claude's Bash tool. A local git repo.
+  It has no remote. Corpus data will need to be
+  gitignored before any is written there. About 20 MB, each message stored
+  once.
 - Real names are kept in the stored corpus, so it stays readable and
   searchable.
 - No data ever goes into a package repo or release.
@@ -81,14 +85,14 @@ Left out:
 - Anonymising uses lists (every name in `users.json`, Slack user ids and
   @mentions, client names from channel and repo names, email addresses,
   phone numbers, client-domain URLs) **plus spaCy** named-entity tagging for
-  names the lists miss (where spaCy's environment lives is open — §8.3).
+  names the lists miss (where spaCy's environment lives is open — §8.4).
   spaCy also tags some ordinary words as names and blanks them. Product,
   store and project names that identify a client on their own
   get through unless they are added to the replacement list; which ones to
-  add is not decided (§8.3).
+  add is not decided (§8.4).
 - Replacements are stable pseudonyms with a
   role tag (e.g. `colleague-07`, `client-pm-02`) and clients become codes
-  (§8.3).
+  (§8.4).
 - Credentials (AWS, Slack and Bitbucket keys, JWTs, private keys,
   `password=` lines) are pattern-matched and replaced with
   `[REDACTED:<type>]` while building the corpus. Findings are logged by type
@@ -100,7 +104,7 @@ Left out:
   stores a pre-anonymised copy of each exemplar at build time, so
   `voice-runtime` never runs the anonymiser. (This follows the
   anonymise-before-sending rule.
-  Whether exemplars are covered is open — §8.4.)
+  Whether exemplars are covered is open — §8.5.)
 - Accepted exception: Slack questions and replies go through the Slack
   connector with real names (§4.7).
 - Not covered by this rule: reviewer hooks send code diffs
@@ -108,7 +112,7 @@ Left out:
 - Not settled: the built outputs (voice guide, exemplars, principles,
   evidence quotes, client constraints).
   Evidence quotes in prompts would name real people; whether
-  anonymise-before-sending covers them is open (§8.4).
+  anonymise-before-sending covers them is open (§8.5).
 - `/gsd:profile-user` is not run as shipped (its agent reads raw transcript
   samples). Its steps are run by hand: run the sampler, anonymise the sample,
   give the anonymised file to `bm-user-profiler`, keep the output in the data
@@ -131,7 +135,7 @@ Left out:
 Slack messages, PR descriptions, PR review comments, Jira comments. Jira
 comments keep their structure from `~/.claude/reference/jira-comments.md`;
 how that file's own wording rules (e.g. no second person, shorter) sit
-against the voice model is open (§8.4). Every draft goes to the owner for
+against the voice model is open (§8.5). Every draft goes to the owner for
 approval before anything is sent.
 
 Slack drafts go out through the Slack connector, which can draft and send
@@ -151,7 +155,7 @@ approval of the exact text.
 Each conversation is assigned by its name and members; the owner checks the
 mapping. Any other internal channel not covered goes to the project team
 (because those channels are less technical). Unassigned group
-DMs: §8.3.
+DMs: §8.4.
 
 ### 3.3 Purposes
 
@@ -196,11 +200,12 @@ developer).
 - Exemplars drawn from the whole labelled corpus, minus very short messages
   (e.g. "ok", "thanks") and messages that are mostly code or logs.
 - Exemplar choice uses both: labels narrow the pool to the right audience and
-  purposes, then similarity search picks the closest 3–5. Similarity uses
+  purposes, then similarity search picks the closest 3–5.
+  Similarity uses
   `BAAI/bge-base-en-v1.5`, run locally on the CPU (sentence-transformers, CPU
   PyTorch), so nothing is sent for the search. Messages are embedded with a
-  short slice of context (the message plus the message it answers), within
-  the model's 512-token limit.
+  short slice of context (the message plus the message it answers).
+  This stays within the model's 512-token limit (§8.3).
 - Guide plus exemplars, not either alone: rules alone give flatter drafts;
   examples alone carry over phrasing tied to old clients and people.
 - For drafts to other people, the owner's voice wins over the CLAUDE.md writing
@@ -212,7 +217,7 @@ developer).
 
 A skill holds the guide and calls the exemplar search — a local script that
 takes audience, purposes and a description of the situation and returns the
-3–5 closest messages, anonymised (as §2.3 assumes; open, §8.4). A line in
+3–5 closest messages, anonymised (as §2.3 assumes; open, §8.5). A line in
 `~/.claude/CLAUDE.md` says to load it before any draft for other people, the
 way `jira-comments.md` is loaded now; the line is there because a skill alone
 loads only when its description matches, which misses some drafts. All four
@@ -227,12 +232,13 @@ reach the main session.
   shuffled; spread across the five audiences and 11 purposes, about 12 per
   audience), picks which is the owner's and grades each draft 1–5 for
   "would send as is", with the option to keep reviewing more at any time (the
-  review page saves progress between sittings); and a model judge compares
+  review page saves progress between sittings, §8.3); and
+  a model judge compares
   every draft with the real message and scores it. The owner's graded pairs also
   show where the model judge disagrees with the owner, which is how the judge's
   scores on the other ~1,700 drafts are trusted.
   the owner also reviews the judge's worst-scored drafts and a random few;
-  whether the owner does, on top of the 60 pairs, is open (§8.4).
+  whether the owner does, on top of the 60 pairs, is open (§8.5).
 - Pass: the owner picks wrong about 40% of the time or more, and most drafts score
   4 or higher (§8.2).
 
@@ -260,7 +266,7 @@ reach the main session.
   of a phase to finish the rest.
 - An agent decides alone only if the kind is allowed, a usable principle
   covers the question, and no client constraint contradicts it. Otherwise it
-  asks.
+  asks. (Whether the client-constraint condition holds is open — §8.3.)
 - Within those three kinds, if nothing in the model covers the question, ask
   the owner. The answer is recorded and joins the model.
   The reason for asking:
@@ -275,8 +281,9 @@ reach the main session.
   current work that does depend on it stops; no new work starts until the owner
   answers.
 - The owner's answer applies at once to that exact question in that client or
-  project, so it isn't asked again. Turning it into a general principle waits
-  for a review session.
+  project, so it isn't asked again.
+  Turning it into a general principle waits for a review
+  session.
 
 ### 4.3 What agents receive
 
@@ -294,13 +301,15 @@ is a `voice-decision-pipeline` output (§5).
 | Layer | Strength | Reaches |
 |---|---|---|
 | Gating hooks: deny dependency changes (manifest edits, installs), test-framework switches and edits under marked paths unless the decision log has an approved entry | enforced | every session and subagent |
-| Logging gate: a `SubagentStop` and `Stop` hook refuses to let an agent finish while it has decisions it hasn't logged. **Ambiguous** — see §8.5 | enforced (that it records, not that it decided well) | every session and subagent |
-| `SubagentStart` block | advisory | every subagent, plugin and workflow agents included (agents that never decide can be skipped by type; which ones, Explore included, is open — §8.5). Observed firing for workflow agents and for a GSD plugin agent (`gsd:bm-executor`; saved hook log, APPENDIX D.2). That the block's context reaches the agent is not tested for either — §8.5 |
+| Logging gate: a `SubagentStop` and `Stop` hook refuses to let an agent finish while it has decisions it hasn't logged. **Ambiguous** — see §8.6 | enforced (that it records, not that it decided well) | every session and subagent |
+| `SubagentStart` block | advisory | every subagent, plugin and workflow agents included (agents that never decide can be skipped by type; which ones, Explore included, is open — §8.6). Observed firing for workflow agents and for a GSD plugin agent (`gsd:bm-executor`; saved hook log, APPENDIX D.2). That the block's context reaches the agent is not tested for either — §8.6 |
 | `SessionStart` block (instead of a CLAUDE.md section, so subagents don't get it twice) | advisory | the main session, every session (not just GSD repos, because Claude's recommendations in ordinary sessions follow the model — §4.1) |
 
 Fallback: if tests show a particular agent ignoring the `SubagentStart`
 block, that agent alone moves to a `PreToolUse` hook on the Agent tool that
-appends the block to its prompt. Only one hook may ever modify Agent input.
+appends the block to its prompt.
+Only one hook may ever modify Agent input
+(§8.3).
 
 Criteria for choosing the layers: enforcement first, then little
 upkeep, then as little overlap between layers as possible.
@@ -338,7 +347,7 @@ handled, because they cite the principle (§4.1) and the owner chooses.
   missing critical functionality, fix blockers).
 - What stays unprevented: a judgement call made in text inside a GSD step
   that the reviewer misses. The owner's review sessions catch it after the fact,
-  as would a phase-end audit if one is built (§8.5).
+  as would a phase-end audit if one is built (§8.6).
 
 ### 4.6 Plan review
 
@@ -354,25 +363,26 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 - **GSD infrastructure skip:** `autonomous` skips discuss for phases it judges
   pure infrastructure and writes a minimal `CONTEXT.md`. A hook detects that
   minimal `CONTEXT.md` (which event, how it holds the run, and what it
-  reviews at that point: §8.5) and holds the run until the planner's
+  reviews at that point: §8.6) and holds the run until the planner's
   approach has been looked up; anything not covered is parked.
 - **Claude Code plan mode:** a `PreToolUse` hook on `ExitPlanMode` (it
   receives `plan` and `planFilePath`) reviews the plan before the owner is asked
   to approve. Planning research runs in the built-in Plan and Explore agents:
   they skip CLAUDE.md, get the `SubagentStart` block unless their type is
-  skipped (Explore may be — §8.5), and never trigger `SubagentStop` review
-  (no edits). Open (§8.5): a
+  skipped (Explore may be — §8.6), and never trigger `SubagentStop` review
+  (no edits). Open (§8.6): a
   `PostToolUse` hook logging the approved plan's decisions as the owner's, and
   putting uncovered decisions into the plan as open questions instead of
   `question-store`.
 - **OpenSpec:** an adapter at `/opsx:apply`, reviewing
   `openspec/changes/<change>/` (`proposal.md`, `design.md`, `tasks.md`,
-  `specs/`), added when the owner starts using it.
-- **grill-me / grill-with-docs:** no gate needed — they never decide. Their
+  `specs/`), added when the owner starts using it (§8.2).
+- **grill-me / grill-with-docs:** no gate needed — they never decide
+  (§8.3). Their
   recommended answers are shaped by the `SessionStart` block. Their
   fact-finding subagents (the skill says only "dispatch a sub-agent with a
   fresh context window"; that they don't edit is inferred) get the
-  `SubagentStart` block unless their type is skipped (§8.5); if they don't
+  `SubagentStart` block unless their type is skipped (§8.6); if they don't
   edit, `SubagentStop` review never fires.
 
 `workflow.skip_discuss` stays off.
@@ -380,7 +390,7 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 ### 4.7 Questions to the owner
 
 - Each question states the decision, the options, the principles that came
-  close, and what work is waiting on it.
+  close, and what work is waiting on it (§8.2).
 - Channels: push notification (only tells the owner a question is waiting), the
   session itself (locally or through Remote Control), and a Slack DM to the owner
   with real names. Questions and replies go through the Slack connector, so
@@ -391,7 +401,8 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 - Every answer, from any channel, is written back to one local question
   record (a file in the data directory holding each question, its status, the
   answer, the channel it came from and when); first answer wins and the other
-  channels are told (Slack gets a thread reply saying where it was answered).
+  channels are told (Slack gets a thread reply saying where it was answered;
+  §8.3).
 - One session command lists every question, open and answered, with the
   answer and the channel it came from.
 - Open questions are mirrored to GSD blockers (`gsd_add_blocker`; resolved
@@ -399,7 +410,7 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   `autonomous`'s `handle_blocker` step stops at them before the next phase.
   That step offers retry, skip or stop rather than waiting for the answer;
   with `--interactive`, discuss for the next phase may already be running.
-  How the park rule maps onto both is open (§8.5).
+  How the park rule maps onto both is open (§8.6).
 
 ### 4.8 Decision log
 
@@ -412,6 +423,8 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   of the log, so the dependency stays one-way. One log then feeds review
   sessions, rebuilds and trust-level stats.
 - `decision-runtime` also logs every review block.
+  section (supersede rather than edit, who writes the "asked" entries,
+  logging review blocks) is open (§8.3).
 
 ### 4.9 Extracting decisions
 
@@ -421,8 +434,8 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   transcript corrections). `[Rule N - Type]`
   deviation entries in GSD `SUMMARY.md` files are another candidate. All
   candidates are sent, plus a random 10% of the rest to measure what the
-  filter misses. If the sample shows the filter missing many, the filter is
-  widened (no threshold set).
+  filter misses (10%, §8.2). If the sample shows the filter
+  missing many, the filter is widened (no threshold set).
 - Each case records the question, options, choice, reason and outcome.
 - Reasons the owner never stated are inferred, tagged "inferred", and count only
   once the owner confirms them in a review session.
@@ -461,7 +474,8 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 ### 4.11 Validation
 
 - About 10% of confirmed cases are held back and predicted from the question,
-  options and context alone. Outcomes: right, wrong, or correct refusal.
+  options and context alone. Outcomes: right, wrong, or correct refusal
+  (§8.2).
   Why refusals don't count against the model:
   a confident wrong prediction is the failure that
   matters; a refusal is safe, because the question just reaches the owner.
@@ -478,7 +492,7 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   sample; at least 90% right among predictions made (refusals excluded,
   §8.2); the owner's sign-off; every machinery
   test passing. Each confident wrong is traced to its principle, fixed, and
-  the sample regraded.
+  the sample regraded (§8.2).
 
 ### 4.12 Trust levels
 
@@ -525,13 +539,15 @@ INVENTORY.md row when installed. Each extracted tarball directory under
 `claude-tools/<package>` must stay after install, because the package's
 `update.sh` re-runs the installer from it (as with claude-guard-hooks).
 
-| Package | Kind, repo | Depends on |
+| Package | Kind | Depends on |
 |---|---|---|
-| `embedding-lib` | command, `claude-skills` | nothing |
-| `question-store` | hooks + command, `claude-hooks` | nothing |
-| `voice-decision-pipeline` | command, `claude-skills` | `embedding-lib`; writes the data format |
-| `voice-runtime` | skill, `claude-skills` | `embedding-lib`; reads the data format |
-| `decision-runtime` | hooks, `claude-hooks` | `embedding-lib` (only if the lookup uses similarity search, §8.5), `question-store`; reads the data format |
+| `embedding-lib` | command | nothing |
+| `question-store` | hooks + command | nothing |
+| `voice-decision-pipeline` | command | `embedding-lib`; writes the data format |
+| `voice-runtime` | skill | `embedding-lib`; reads the data format |
+| `decision-runtime` | hooks | `embedding-lib` (only if the lookup uses similarity search, §8.6), `question-store`; reads the data format |
+
+Which repo each package lives in is not decided.
 
 - **Naming:** the prefix is the subject (`voice`, `decision`, or what a
   shared part handles) and the suffix is the kind of thing — `-pipeline`
@@ -550,7 +566,7 @@ INVENTORY.md row when installed. Each extracted tarball directory under
   (push, session, Slack DM), collect (every channel's answer written back to
   one record; first answer wins, the others are told), hand back (waiting
   work reads the answer), show (the session command), mirror (open
-  questions as GSD blockers; where mirroring lives is open, §8.6).
+  questions as GSD blockers; where mirroring lives is open, §8.7).
 - **Building vs using:** only `voice-decision-pipeline` builds the models
   (corpus, labels, guide, principles, indexes, the short agent block of
   §4.3, review steps, validation, rebuilds). The others use what it built
@@ -558,6 +574,12 @@ INVENTORY.md row when installed. Each extracted tarball directory under
   decision-log entries and every review block) back into the data directory
   for the next build. Nothing is trained
   in the machine-learning sense; building means producing files.
+- **Build order:** the voice model is built first, then the decision model.
+  The reason: the decision model's main source, Claude
+  Code transcripts, keeps growing, so a later build has more data, and
+  the voice model can start from the Slack export already on disk. The
+  voice model's Bitbucket PR part still needs `read:repository` on the
+  token (§9).
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
@@ -565,7 +587,8 @@ INVENTORY.md row when installed. Each extracted tarball directory under
   owning package's library, which only defines things; dependents load it from
   that package's install directory (never `PATH`), check a version constant,
   and their install check fails if it's missing; each dependent's README says
-  what has to be installed first.
+  what has to be installed first. (Following rrc/rrcd; loading from
+  the install directory with a version check, §8.2.)
 - **`embedding-lib`** owns the Python environment (sentence-transformers, CPU
   PyTorch, `bge-base-en-v1.5`) and an embed library with a version constant.
   The data directory records which model and version built each index; a
@@ -604,7 +627,7 @@ save 10–15M, at the cost of less certainty).
 | Running, per year | Tokens |
 |---|---|
 | End-of-turn review | ~25–35M |
-| After-each-plan review | ~4–10M. Its ~750–1,000 checks are an unmeasured estimate, which overstates, since only some of the active repos use GSD (§8.3); commits per plan not measured. APPENDIX B.4's own figures give ~7–11M (every-commit tokens less repeated overhead) or ~4–15M (checks × tokens per check) |
+| After-each-plan review | ~4–10M. Its ~750–1,000 checks are an unmeasured estimate, which overstates, since only some of the active repos use GSD (§8.4); commits per plan not measured. APPENDIX B.4's own figures give ~7–11M (every-commit tokens less repeated overhead) or ~4–15M (checks × tokens per check) |
 | `SubagentStop` and plan reviews | small; volume unknown |
 | Drafting | small (guide cached) |
 
@@ -679,11 +702,12 @@ machine):
 
 ### 8.1 Open
 
-- **Which model is built first, voice or decisions.**
-- **How the build is run.** `claude-skills` and `claude-hooks` have no
-  `.planning/`, so the GSD-only rule doesn't apply. Whether the build goes
-  through GSD (set up in those repos), through `claude-package-kit` directly,
-  or another route is not decided.
+- **How the build is run.** Which repos the packages live in is itself
+  open (§8.2).
+  `claude-skills` and `claude-hooks` have no `.planning/`, so the GSD-only rule doesn't apply
+  to them. Whether the build goes through GSD (set up in whichever repos
+  are chosen), through `claude-package-kit` directly, or another route is
+  not decided.
 - **When the build starts.** Nothing is to start until the owner says so.
 - **Second-model labelling scope.**
   Does the second model label all messages (as the
@@ -707,7 +731,7 @@ machine):
   the evidence bar) — conflicts with Level 2's "use
   approved below-bar principles alone"; which holds is open.
 - "Each confident wrong is traced to its principle, fixed, and the sample
-  regraded".
+  regraded" (§4.11).
 - "If the 10% sample shows the filter missing many, it is widened" — no
   threshold set.
 - The list of deciding agents for the parking test (`bm-executor`,
@@ -715,8 +739,52 @@ machine):
   `bm-framework-selector`, workflow agents, main session).
 - Voice blind-pair spread (about 12 per audience, about an hour).
 - Decision model format: a markdown record with stable principle ids.
+- Which repo each package lives in: `embedding-lib`,
+  `voice-decision-pipeline` and `voice-runtime` in `claude-skills`;
+  `question-store` and `decision-runtime` in `claude-hooks`; they are placed by kind
+  (hooks in `claude-hooks`, skills and commands in `claude-skills`).
+- Package kinds (`embedding-lib` command, `question-store` hooks + command,
+  `voice-decision-pipeline` command, `voice-runtime` skill,
+  `decision-runtime` hooks), the versioned data-format manifest, and
+  loading shared code from the owning package's install directory with a
+  version check.
+- Slack context cap of 10 messages each way.
+- grill-with-docs ADRs and GLOSSARY.md as a source.
+- Three to five exemplars per draft ("the closest 3–5").
+- A live answer applies only to that exact question in that client or
+  project.
+- The OpenSpec adapter is added when the owner starts using it.
+- The PreToolUse prompt rewrite on the Agent tool as a per-agent fallback.
+- What each question to the owner contains: the decision, the options, the
+  principles that came close, the work waiting on it.
+- "Correct refusal" as a validation outcome, safe and excluded from the
+  right-prediction bar.
+- A random 10% of non-candidates sent to measure what the decision filter
+  misses.
 
-### 8.3 Sources and corpus
+### 8.3 Design details
+
+
+- What goes in each package (§5 Contents).
+- The anonymiser lives inside the pipeline.
+- `embedding-lib` consumers refuse a model/index mismatch until the
+  pipeline re-embeds.
+- Each message is embedded with the message it answers.
+- All four voice uses run in the main session, so the skill only needs to
+  reach it (§3.6).
+- An agent decides alone only if no client constraint contradicts the
+  principle (§4.1).
+- One per-repo record of what has been reviewed, shared by all review
+  points (§4.5).
+- Claude's recommendations in ordinary sessions get no review point (§4.5).
+- grill-me / grill-with-docs need no gate (§4.6).
+- Only one hook may ever modify Agent input (§4.4).
+- Question answers: first answer wins, the other channels are told (§4.7).
+- Decision log: changed answers supersede, never edit; `decision-runtime`
+  writes the "asked" entries; every review block is logged (§4.8).
+- The voice review page saves progress between sittings (§3.7).
+
+### 8.4 Sources and corpus
 
 - Whether subagent (sidechain) transcripts are included, or only main-session
   ones.
@@ -769,7 +837,7 @@ machine):
 - Whether Claude Code transcripts from other machines or cloud sessions exist
   and should be included.
 
-### 8.4 Voice
+### 8.5 Voice
 
 - Whether the 1:1 colleagues audience is split further by whether the person
   reports to the owner.
@@ -816,7 +884,7 @@ machine):
 - Whether "second model" for blind labelling means a different model, or the
   same model with a different prompt.
 
-### 8.5 Decisions
+### 8.6 Decisions
 
 - Whether the decision lookup uses similarity search or keywords. If
   keywords are chosen, `decision-runtime` no longer needs `embedding-lib` or
@@ -878,7 +946,7 @@ machine):
 - How the `SessionStart` block behaves in sessions that never touch code (it
   fires in every session; behaviour not decided).
 - Real names in principles, evidence quotes and client constraints: see
-  §8.4.
+  §8.5.
 - What counts as an "approved entry" for the gates. If an agent can log its
   own decision and then pass the gate, the gate is circular; it needs to be
   limited to entries backed by a usable principle or by the owner's answer.
@@ -959,7 +1027,7 @@ machine):
   (answered "verified" with the package name, or "abort"; APPENDIX D.3),
   feed `question-store`; not decided.
 - `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (§7) bears on the model-choice items
-  above and in §8.4.
+  above and in §8.5.
 - grill-with-docs may ask questions with no recommendations when a
   dependency fails to load (the aihero.dev page describes this failure mode
   without saying more), which would undercut §4.6's reliance
@@ -977,7 +1045,7 @@ machine):
   without asking. Whether these count as the owner's or as weak
   evidence is not decided.
 
-### 8.6 Questions to the owner (`question-store`)
+### 8.7 Questions to the owner (`question-store`)
 
 - Which session sends notices and reads Slack replies, and how often (push
   and the Slack connector are only callable from a Claude session). Push and
@@ -1013,7 +1081,7 @@ machine):
   agent, a hook in the next turn, or the owner restarting it. Open: if
   the run that parked the question has ended, nothing in the plan restarts it.
 
-### 8.7 Packaging and process
+### 8.8 Packaging and process
 
 - Release order and how the first versions are cut.
 - Which hooks `question-store` itself installs (it's marked "hooks +
