@@ -809,6 +809,14 @@ fire on several events.
   splits out the same way if anonymising is ever needed at use time (e.g. if
   the Slack-connector route for new Slack data is used). Claude's
   placement, never asked (§8.1).
+- **End-to-end tests** (James, 9 Nov 2026): one Docker box for the monorepo,
+  as rrc/rrcd use — Ubuntu with real Claude Code installed and logged in, all
+  five packages installed from their release tarballs, made-up fixture data,
+  never the real corpus. Scripts run from James's terminal or `!` (Claude's
+  Bash tool can't reach the Docker socket), log to
+  `test/docker/results/<time>/ run.log`, and tear down what they started.
+  Hooks that call a model use the box's login. Alongside each package's
+  `test/run-tests.sh`, and before §4.11's machinery tests on the real install.
 - No data in any repo; tests use made-up fixtures. Model rebuilds change only
   the runtimes' build directories, never package code. Re-releases are for
   code changes only.
@@ -943,7 +951,8 @@ stage lists only what blocks that stage.
    (§5 Data and state); `validation-answers.jsonl` is the pipeline's.
 3. Answered: a refusing runtime carries on safely and says so (§5 Data and
    state).
-4. How the packages are tested end to end, and the release order (§8.6).
+4. Answered: end-to-end tests in one Docker box (§5). Open: the release
+   order (§8.6).
 5. The 13 §8.1 design choices, each confirmed or changed.
 
 **Stage 1 – `embedding-lib` and the corpus (the pipeline's extraction half)**
@@ -1365,12 +1374,6 @@ was put to him.
 - Which estimates still need measuring: Bitbucket PR and comment volume,
   commits per GSD plan (the after-each-plan figure in §6 rests on an assumed
   count), the number of PRs per repo.
-- How the packages are tested end to end against real Claude Code. The
-  rrc/rrcd packages used Docker: `confirm.sh sandbox-rrc`, `integration.sh`
-  and `integration.sh --app`, run in James's terminal (Claude's Bash tool
-  can't reach the Docker socket) with output logged to
-  `results/<time>/run.log`; all passed on Claude Code 2.1.308 on 2 Nov
-  (`test/docker/results/20261102-194809/`).
 - Each install adds its own sandbox exclusion with a wildcard (`"rrc *"`); a
   bare entry matches only the bare command — relevant if any package's
   commands must run outside the sandbox.
