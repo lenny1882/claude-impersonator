@@ -68,11 +68,14 @@ Left out:
 
 ### 2.2 Storage
 
-- Corpus directory: the pipeline's data directory, writable by
-  Claude's Bash tool. A local git repo.
-  It has no remote. Corpus data will need to be
-  gitignored before any is written there. About 20 MB, each message stored
-  once.
+- Corpus: in `voice-decision-pipeline`'s own state, `~/.claude/
+  voice-decision-pipeline/` (per-package state, §5 Data and state).
+  About 20 MB, each message
+  stored once. `~/.claude` is outside Claude's Bash sandbox, so the
+  pipeline's commands get a `sandbox.excludedCommands` entry, as `rrc *`
+  has.
+- The planning documents live in their own local git repo, with no remote.
+  No corpus data is written there.
 - Real names are kept in the stored corpus, so it stays readable and
   searchable.
 - No data ever goes into a package repo or release.
@@ -115,9 +118,9 @@ Left out:
   anonymise-before-sending covers them is open (§8.3).
 - `/gsd:profile-user` is not run as shipped (its agent reads raw transcript
   samples). Its steps are run by hand: run the sampler, anonymise the sample,
-  give the anonymised file to `bm-user-profiler`, keep the output in the data
-  directory, and answer "neither" to writing it into a CLAUDE.md. GSD's plugin
-  files are not edited.
+  give the anonymised file to `bm-user-profiler`, keep the output in the
+  pipeline's state, and answer "neither" to writing it into a CLAUDE.md. GSD's
+  plugin files are not edited.
 
 ### 2.4 Time
 
@@ -428,10 +431,10 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   holds this material, and anonymised questions would be hard to answer from
   a phone.
 - Every answer, from any channel, is written back to one local question
-  record (a file in the data directory holding each question, its status, the
-  answer, the channel it came from and when); first answer wins and the other
-  channels are told (Slack gets a thread reply saying where it was answered;
-  §8.1).
+  record (`questions.jsonl` in `question-store`'s state, holding each
+  question, its status, the answer, the channel it came from and when); first
+  answer wins and the other channels are told (Slack gets a thread reply
+  saying where it was answered; §8.1).
 - One session command lists every question, open and answered, with the
   answer and the channel it came from.
 - Open questions are mirrored to GSD blockers (`gsd_add_blocker`; resolved
@@ -515,7 +518,7 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   standing, trades-against, last seen), with quotes only on request.
   Principles outside the three kinds are kept (`kind: other`): they never
   decide alone, but feed recommendations and the "principles that came
-  close" in questions. Schema, layout and migration: §5, Data directory.
+  close" in questions. Schema, layout and migration: §5, Data and state.
 
 ### 4.11 Validation
 
@@ -559,7 +562,8 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   run, spread across kinds (audiences and purposes for voice). The
   candidate model is built without that holdout; the tested model is the
   one released, and the holdout rejoins the evidence at the next rebuild.
-  Each run's holdout is listed by item id in `live/holdouts.jsonl`.
+  Each run's holdout is listed by item id in `holdouts.jsonl` in the
+  pipeline's state (§5).
 
 ### 4.12 Trust levels
 
@@ -656,8 +660,8 @@ fire on several events.
   (corpus, labels, guide, principles, indexes, the short agent block of
   §4.3, review steps, validation, rebuilds). The others use what it built
   and write evidence records (drafts and approved versions, answers,
-  decision-log entries and every review block) back into the data directory
-  for the next build. Nothing is trained
+  decision-log entries and every review block) into their own state, which
+  the pipeline reads at the next build. Nothing is trained
   in the machine-learning sense; building means producing files.
 - **Build order:** the voice model is built first, then the decision model.
   The reason: the decision model's main source, Claude
@@ -681,27 +685,56 @@ fire on several events.
   install directory with a version check.)
 - **`embedding-lib`** owns the Python environment (sentence-transformers, CPU
   PyTorch, `bge-base-en-v1.5`) and an embed library with a version constant.
-  The data directory records which model and version built each index; a
-  consumer refuses a mismatch until the pipeline re-embeds.
-- **Data directory**:
+  Each voice build's manifest records which model and version built its index;
+  a consumer refuses a mismatch until the pipeline re-embeds.
+- **Data and state**
+  There is no shared data directory. Each package keeps its data in
+  its own state, where the kit's layout puts it from the package's name
+  (`claude-package-kit/skill/reference/layout.md`): `voice-runtime` (a skill)
+  in `~/.claude/skills/voice-runtime/state/`; `decision-runtime`,
+  `question-store` and `voice-decision-pipeline` (commands) in
+  `~/.claude/<name>/`. No path or setting is configured or shared.
+  - The pipeline writes each build into the runtimes' state and, at the
+    start of each build, reads their live files and `question-store`'s
+    questions into the corpus. The runtimes never read the pipeline's
+    state, so the pipeline can stay uninstalled; each runtime keeps
+    working on the last build delivered to it. `decision-runtime` reaches
+    questions only through `question-store`'s park/read interface.
+  - What must agree across packages is checked when read, not configured:
+    the embedding model and version in the voice build's manifest, each
+    file's schema version, and principle ids (carried across rebuilds by
+    `supersedes`/`superseded_by`).
+  - Runtime commands that write state from other repos' sessions get a
+    `sandbox.excludedCommands` entry, as `rrc *` has; hooks run outside the
+    Bash sandbox.
   - JSON for every file except the binary embedding indexes. The voice guide
     is JSON entries per audience and purpose, with the rule text as strings,
     so `voice-runtime` loads only the cells a draft needs. The agent block
     (§4.3) is generated from the principles at build time as plain text.
-  - Manifest: one `manifest.json` naming the current build and each file's
-    own schema version, written last. Each rebuild goes into a new
-    `builds/<build-time>/` directory, and the previous build stays until the
-    next succeeds, so a rebuild that dies halfway is never read. Each
-    runtime checks only the files it reads, so a voice-only format change
+  - Manifest: in each runtime's state, one `manifest.json` naming the current
+    build and each file's own schema version, written last. Each rebuild goes
+    into a new `builds/<build-time>/` directory, and the previous build stays
+    until the next succeeds, so a rebuild that dies halfway is never read.
+    Each runtime checks only the files it reads, so a voice-only format change
     doesn't make `decision-runtime` refuse.
-  - Layout: `builds/<build-time>/decision/` (`principles.json`,
-    `priorities.json`, `tech-positions.json`, `client-constraints.json`,
-    `cases.json`, `agent-block.txt`) and `voice/` (`guide.json`,
-    `exemplars.json`, `stats.json`, `index/`); `live/`, append-only and
-    never rebuilt: `decision-log.jsonl`, `questions.jsonl`,
-    `validation-answers.jsonl`, `drafts.jsonl`, `holdouts.jsonl`. Live files
-    sit outside builds because they can't be regenerated and the runtimes
-    write them between builds.
+  - Layout, by package:
+    - `voice-runtime`: `builds/<build-time>/` (`guide.json`,
+      `exemplars.json`, `stats.json`, `index/`), `manifest.json`, and
+      `drafts.jsonl` (live).
+    - `decision-runtime`: `builds/<build-time>/` (`principles.json`,
+      `priorities.json`, `tech-positions.json`, `client-constraints.json`,
+      `cases.json`, `agent-block.txt`), `manifest.json`, and
+      `decision-log.jsonl`, the reviewed-changes record and gate state
+      (live).
+    - `question-store`: `questions.jsonl` and delivery state (live).
+    - `voice-decision-pipeline`: the corpus, the anonymising map, the
+      corpus embedding index, labelling output, `holdouts.jsonl` (the
+      pipeline draws and uses holdouts, the runtimes never
+      read them).
+    - `embedding-lib`: no data.
+    - Where `validation-answers.jsonl` goes is open (§8.6). Live files sit
+      outside builds because they can't be regenerated and are written
+      between builds; whether uninstall may delete them is open (§8.6).
   - Principle record: `id`,
     `rule`, `kind` (libraries-tooling, code-structure, test-approach,
     other), `scope`, `trades_against`, `standing` (below-bar, at-bar,
@@ -713,19 +746,19 @@ fire on several events.
     against the full schema before it's written; refusals and `max_tokens`
     cut-offs are retried.
   - Migration: build files never migrate; the next build writes the new
-    version. A `live/` schema change ships with a migration step and
-    runtimes that read both versions. The migration takes the `live/` lock,
-    writes and validates a converted copy, swaps it in, keeps the old file
-    as `<name>.v<old>.jsonl` and updates the manifest; writers follow the
+    version. A live file's schema change ships with a migration step and
+    runtimes that read both versions. The migration takes the owning package's
+    lock, writes and validates a converted copy, swaps it in, keeps the old
+    file as `<name>.v<old>.jsonl` and updates the manifest; writers follow the
     manifest; the next release drops the old version. A refusal names the
-    file, the version found, the versions accepted and the command that
-    fixes it; whether a refusing hook blocks or carries on is open (§8.6).
+    file, the version found, the versions accepted and the command that fixes
+    it; whether a refusing hook blocks or carries on is open (§8.6).
 - **Anonymiser** stays inside the pipeline, the only thing that runs it. It
   splits out the same way if anonymising is ever needed at use time (e.g. if
   the Slack-connector route for new Slack data is used).
 - No data in any repo; tests use made-up fixtures. Model rebuilds change only
-  the data directory, never a package. Re-releases are for code changes
-  only.
+  the runtimes' build directories, never package code. Re-releases are for
+  code changes only.
 
 ## 6. Cost (estimates, input tokens)
 
@@ -834,11 +867,9 @@ stage lists only what blocks that stage.
 **Stage 0 – before any package is written**
 1. The monorepo is `claude-impersonator`, and each stage is
    built once its own questions are answered (§5).
-2. Whether each package keeps its own data in its own `state/` instead of
-   one shared data directory (§8.6). This replaces "how packages find the
-   data directory" and "where runtime state lives", and with it go
-   whether uninstall may delete live files and where
-   `validation-answers.jsonl` belongs (§8.6).
+2. Each package keeps its own data in its own state (§5 Data
+   and state). Following from it: whether uninstall may delete live
+   files, and where `validation-answers.jsonl` belongs (§8.6).
 3. Whether a refusing runtime fails loudly or carries on without the model
    (§8.6).
 4. How the packages are tested end to end, and the release order (§8.6).
@@ -849,7 +880,7 @@ stage lists only what blocks that stage.
    produce.
 7. Pseudonym format, and the client product names on the replacement list
    (§8.2).
-8. Data-directory protection: file modes, backup, deletion (§8.2).
+8. Protection of the packages' state: file modes, backup, deletion (§8.2).
 9. spaCy model size and where its environment lives (§8.2).
 10. Corpus formats: JSONL schema, index storage, anonymising map (§8.2).
 11. Source scope: sidechain transcripts, commit messages, other machines,
@@ -931,8 +962,6 @@ stage lists only what blocks that stage.
 - The exact Bitbucket repos (to be picked when run; rule set apart from the
   2018 boundary below).
 - spaCy model size: the large English model (~500 MB) or a smaller one.
-- Whether the data directory's name, `voice-decisions-data`, should follow the
-  package naming (`voice-decision-*`).
 - The two DMs whose other person has no resolvable name ("DM (no name)" and
   one shown only as a Slack user id) are kept by default.
 - Thresholds for "too short to show voice" and "mostly code or logs" in the
@@ -944,14 +973,11 @@ stage lists only what blocks that stage.
   colleagues) have no audience assigned yet.
 - Corpus file formats: the JSONL schema, how the embedding index is stored,
   how the anonymising map is stored.
-- Protection of the data directory (it holds colleagues' DMs).
-  Open: whether the pipeline keeps the corpus
-  and map files that way once written, what mode the anonymising map gets,
-  whether the directory is backed up, and whether and when it's ever
+- Protection of the packages' state (the pipeline's holds colleagues' DMs;
+  `voice-runtime`'s holds exemplars). Open:
+  what modes the pipeline's corpus and anonymising map and `voice-runtime`'s
+  exemplars get, whether they are backed up, and whether and when they're ever
   deleted.
-- How packages find the data directory: replaced by whether there is a
-  shared data directory at all (§8.6). The data directory's name and its
-  protection, above, depend on that answer.
 - Bot messages and channel events (joins, topic changes) dropped from the
   corpus: not decided.
 - Whether Bitbucket content is limited to PRs the owner authored or reviewed
@@ -966,8 +992,7 @@ stage lists only what blocks that stage.
 - The pseudonym format (stable pseudonym plus role tag, e.g. `colleague-07`;
   clients as codes).
 - Where spaCy's environment lives, now `embedding-lib` owns the embedding
-  environment: its own environment in the data directory, inside the
-  pipeline package, or `embedding-lib`'s.
+  environment: inside the pipeline package, or `embedding-lib`'s.
 - Which product, store and project names that identify a client on their own
   are added to the anonymising replacement list (§2.3).
 - That sending work through subagents multiplies the volume of text sent to
@@ -1244,52 +1269,16 @@ stage lists only what blocks that stage.
 - The by-hand `/gsd:profile-user` run: the workflow deletes its temp
   directory holding the sample (`{temp_dir}/profile-sample.jsonl`, the file
   to anonymise) and the analysis (the agent's `<analysis>` JSON block), so
-  both must be copied to the data directory before cleanup.
-- When a runtime package refuses (missing data directory, wrong embed model,
+  both must be copied to the pipeline's state before cleanup.
+- When a runtime package refuses (no build delivered yet, wrong embed model,
   unknown format version — §5 already says it refuses): whether the hook or
   skill fails loudly or carries on without the model.
-- Whether each package keeps its own data in its own `state/`, instead of
-  one shared data directory. Under per-package state:
-  - Each package's state is where the kit's layout puts it, from the
-    package's name (`claude-package-kit/skill/reference/layout.md`):
-    `voice-runtime` (a skill) in `~/.claude/skills/voice-runtime/state/`;
-    `decision-runtime`, `question-store` and `voice-decision-pipeline`
-    (commands) in `~/.claude/<name>/`. No path or setting is configured
-    or shared.
-  - `voice-runtime`: voice builds (`guide.json`, `exemplars.json`,
-    `stats.json`, `index/`), `manifest.json`, `drafts.jsonl`.
-    `decision-runtime`: decision builds (`principles.json`,
-    `priorities.json`, `tech-positions.json`, `client-constraints.json`,
-    `cases.json`, `agent-block.txt`), `manifest.json`,
-    `decision-log.jsonl`, `holdouts.jsonl`, the reviewed-changes record
-    and gate state. `question-store`: `questions.jsonl` and delivery state.
-    The pipeline: the corpus, the anonymising map, the corpus embedding
-    index, labelling output. `embedding-lib`: no data.
-  - The pipeline writes each build into the runtimes' `state/` (new build
-    directory, manifest written last) and reads their live files and
-    `question-store`'s questions at the start of a build. The runtimes
-    never read the pipeline's state, so the pipeline can stay uninstalled.
-    `decision-runtime` reaches questions only through `question-store`'s
-    park/read interface.
-  - What must agree across packages is checked at read time, not
-    configured: the embedding model and version recorded in the voice
-    build, each file's schema version in its manifest, and principle ids.
-  - Runtime commands that write state from other repos' sessions need a
-    `sandbox.excludedCommands` entry, as `rrc *` has; hooks run outside the
-    Bash sandbox.
-  - If adopted, these change: §2.2 (corpus location, gitignore), §2.3
-    (where the `/gsd:profile-user` output is kept), §4.7 (the question
-    record's location), §4.10 and §4.11 (`live/holdouts.jsonl`), §5 lines
-    on evidence written "back into the data directory", the index record,
-    the Data directory block and "rebuilds change only the data
-    directory", §8.2's data-directory name and protection items, and this
-    section's `/gsd:profile-user` copy and "missing data directory".
 - Whether `uninstall.sh` deleting a package's state is acceptable for live
   files that can't be regenerated (`decision-log.jsonl`, `drafts.jsonl`,
   `questions.jsonl`): the kit's `uninstall.sh` removes state unless given
-  `--keep-state`. Only arises under per-package state.
+  `--keep-state` (§5 Data and state).
 - Whether `validation-answers.jsonl` belongs to the pipeline, which runs
-  validation, or to each runtime. Only arises under per-package state.
+  validation, or to each runtime.
 - Whether pipeline rebuilds (folding in new transcripts, PRs and GSD
   records) are run by hand in review sessions or scheduled automatically.
 - Running costs not estimated in §6: the 300–600-token block
