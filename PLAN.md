@@ -772,6 +772,14 @@ fire on several events.
 - **Anonymiser** stays inside the pipeline, the only thing that runs it. It
   splits out the same way if anonymising is ever needed at use time (e.g. if
   the Slack-connector route for new Slack data is used).
+- **End-to-end tests**: one Docker box for the monorepo,
+  as rrc/rrcd use — Linux with real Claude Code installed and logged in, all
+  five packages installed from their release tarballs, made-up fixture data,
+  never the real corpus. Scripts run from the owner's terminal or `!` (Claude's
+  Bash tool can't reach the Docker socket), log to
+  `test/docker/results/<time>/ run.log`, and tear down what they started.
+  Hooks that call a model use the box's login. Alongside each package's
+  `test/run-tests.sh`, and before §4.11's machinery tests on the real install.
 - No data in any repo; tests use made-up fixtures. Model rebuilds change only
   the runtimes' build directories, never package code. Re-releases are for
   code changes only.
@@ -888,7 +896,8 @@ stage lists only what blocks that stage.
    (§5 Data and state); `validation-answers.jsonl` is the pipeline's.
 3. A refusing runtime carries on safely and says so (§5 Data and
    state).
-4. How the packages are tested end to end, and the release order (§8.6).
+4. End-to-end tests in one Docker box (§5). Open: the release
+   order (§8.6).
 5. The 13 §8.1 design choices, each confirmed or changed.
 
 **Stage 1 – `embedding-lib` and the corpus (the pipeline's extraction half)**
@@ -1274,11 +1283,6 @@ stage lists only what blocks that stage.
 - Which estimates still need measuring: Bitbucket PR and comment volume,
   commits per GSD plan (the after-each-plan figure in §6 rests on an assumed
   count), the number of PRs per repo.
-- How the packages are tested end to end against real Claude Code. The
-  rrc/rrcd packages used Docker: `confirm.sh sandbox-rrc`, `integration.sh`
-  and `integration.sh --app`, run in the owner's terminal (Claude's Bash tool
-  can't reach the Docker socket) with output logged to
-  `results/<time>/run.log`.
 - Each install adds its own sandbox exclusion with a wildcard (`"rrc *"`); a
   bare entry matches only the bare command — relevant if any package's
   commands must run outside the sandbox.
