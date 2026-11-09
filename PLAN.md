@@ -809,14 +809,26 @@ fire on several events.
   splits out the same way if anonymising is ever needed at use time (e.g. if
   the Slack-connector route for new Slack data is used). Claude's
   placement, never asked (§8.1).
+- **Releases** (James, 9 Nov 2026): in
+  dependency order, which is the build order — `embedding-lib`, the
+  pipeline, `voice-runtime`, `question-store`, `decision-runtime` — each
+  released as `<package>-v1.0.0` once its stage is built and its tests
+  pass. The pipeline's first release covers corpus extraction; minor
+  releases add the voice build and then the decision build. A runtime's
+  version says nothing about its model, which is gated by validation and
+  trust levels (§3.7, §4.11, §4.12). No pre-releases: the release workflow
+  never writes them to `versions.txt`, which installs and updates read.
 - **End-to-end tests** (James, 9 Nov 2026): one Docker box for the monorepo,
-  as rrc/rrcd use — Ubuntu with real Claude Code installed and logged in, all
-  five packages installed from their release tarballs, made-up fixture data,
-  never the real corpus. Scripts run from James's terminal or `!` (Claude's
-  Bash tool can't reach the Docker socket), log to
-  `test/docker/results/<time>/ run.log`, and tear down what they started.
-  Hooks that call a model use the box's login. Alongside each package's
-  `test/run-tests.sh`, and before §4.11's machinery tests on the real install.
+  as rrc/rrcd use — Ubuntu with real Claude Code installed and logged in, each
+  package copied from the checkout into the box (`tar` piped through `docker
+  exec`, as rrc/rrcd's `integration.sh` does) and installed there with its
+  `install.sh`, so no release is needed to test; made-up fixture data, never
+  the real corpus. The release-tarball rule covers installs on this machine,
+  not the box. Scripts run from James's terminal or `!` (Claude's Bash tool
+  can't reach the Docker socket), log to `test/docker/results/<time>/
+  run.log`, and tear down what they started. Hooks that call a model use the
+  box's login. Alongside each package's `test/run-tests.sh`, and before
+  §4.11's machinery tests on the real install.
 - No data in any repo; tests use made-up fixtures. Model rebuilds change only
   the runtimes' build directories, never package code. Re-releases are for
   code changes only.
@@ -951,8 +963,8 @@ stage lists only what blocks that stage.
    (§5 Data and state); `validation-answers.jsonl` is the pipeline's.
 3. Answered: a refusing runtime carries on safely and says so (§5 Data and
    state).
-4. Answered: end-to-end tests in one Docker box (§5). Open: the release
-   order (§8.6).
+4. Answered: end-to-end tests in one Docker box, and releases in
+   dependency order, each `v1.0.0` once its stage is built and tested (§5).
 5. The 13 §8.1 design choices, each confirmed or changed.
 
 **Stage 1 – `embedding-lib` and the corpus (the pipeline's extraction half)**
@@ -1368,7 +1380,6 @@ was put to him.
 
 ### 8.6 Packaging and process
 
-- Release order and how the first versions are cut.
 - Which hooks `question-store` itself registers (it's a command package
   with hook registrations, §5).
 - Which estimates still need measuring: Bitbucket PR and comment volume,
