@@ -194,15 +194,16 @@ developer).
   model assigning each message that audience. A model labels purposes on
   anonymised messages.
 - Checking, in parallel: James checks a sample of about 60 labelled messages
-  spread across audiences and purposes, and a second model labels messages
-  blind; its disagreements come to James too. Scope is pending James's
-  confirmation (§8.1): it was taken as all
-  ~17k (the label-check option said "the same messages"; the cost step
-  costed all ~17k, offered a sample-only cut, and James accepted the costs
-  with no cuts — §6), and Claude asked James on 9 Nov whether that matches
-  what he meant. Over
-  about 10% wrong, the labelling prompt is changed and rerun (threshold from
-  option text — see §8.2).
+  spread across audiences and purposes, and a second model labels all ~17k
+  messages blind (as the label-check option was written and the cost step
+  priced it, §6). Over about 10% wrong in James's sample, the labelling
+  prompt is changed and rerun (threshold from option text — see §8.2).
+- Second-model disagreements (James, 9 Nov 2026): the
+  disagreement rate per purpose is measured across all ~17k and shows where
+  the labelling prompt is weak; those purposes get the prompt fixed and are
+  relabelled. A fixed sample of about 60 disagreements comes to James to
+  grade. Every disagreement is recorded, with both models' labels, so James
+  can review all of them by hand if he wants to.
 
 ### 3.5 Output
 
@@ -648,9 +649,9 @@ option text (§8.2).
 
 Accepted as estimated; no cuts. Output tokens are much smaller (mostly labels
 and scores). Offered, and not taken up when James accepted the costs:
-second-model labelling on a sample only (whether that settles the second
-model's scope is still asked, §8.1), or fewer held-back voice drafts (would
-save 10–15M, at the cost of less certainty).
+second-model labelling on a sample only (the second model labels all ~17k,
+§3.4), or fewer held-back voice drafts (would save 10–15M, at the cost of less
+certainty).
 
 | Building, once | Tokens |
 |---|---|
@@ -760,10 +761,6 @@ option text and was never discussed on its own.
   are chosen), through `claude-package-kit` directly, or another route is
   not decided.
 - **When the build starts.** Nothing is to start until James says so.
-- **Second-model labelling scope.** Asked at the end of the 9 Nov session and
-  not yet answered: does the second model label all ~17k messages (as the
-  cost table priced it, ~5.5M, accepted), or only the ~60-message
-  check sample? Today §3.4 records it as pending.
 
 ### 8.2 Taken from option text, never discussed on its own
 
@@ -1237,7 +1234,8 @@ was put to him.
    only; git uses SSH).
 2. Pick the `oneiota` repos.
 3. Review the first anonymised batches, until he says stop.
-4. Check the audience mapping and the label sample; confirm inferred reasons
+4. Check the audience mapping, the label sample and the sample of
+   second-model disagreements (§3.4); confirm inferred reasons
    and bulk-accepted records.
 5. Grade the 60 blind voice pairs (more whenever he wants).
 6. Grade the prediction sample and every judge-marked wrong.
