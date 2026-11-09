@@ -1,1 +1,2 @@
-# Full session transcripts, subagent logs and Slack-derived text: kept local, never committed
+# The pipeline's local input file, with real names: never committed
+build-inputs.json
