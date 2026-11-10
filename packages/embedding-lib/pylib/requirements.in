@@ -1,0 +1,5 @@
+# The two libraries embedding-lib uses directly; tools/lock.sh resolves the
+# rest into requirements.txt. torch's +cpu build comes from PyTorch's CPU
+# index.
+sentence-transformers==6.2.0
+torch==2.15.0+cpu
