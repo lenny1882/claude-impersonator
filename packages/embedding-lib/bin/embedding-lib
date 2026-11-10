@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# embedding-lib — the local embedding environment the voice and decision
+# models share: a bundled Python 3.14, CPU PyTorch, sentence-transformers and
+# BAAI/bge-base-en-v1.5, all pinned.
+#
+# Why it exists. The voice model's exemplar search needs the index and the
+# query embedded by exactly the same setup, on three machines whose system
+# Pythons are 3.8 (Ubuntu 20.04), 3.12 (the WorkSpace's Ubuntu 24.04) and
+# 3.14 (EndeavourOS, rolling). No one set of current libraries installs on
+# all three, and a venv built on Arch's Python breaks each time Arch moves
+# to a new one. So the package downloads its own Python and builds its venv
+# from that, on every machine (PLAN §5). Everything is pinned —
+# Python by SHA256, libraries by hash, the model by commit — so the same
+# release gives the same vectors everywhere, and `identity` says exactly
+# which setup made them (PLAN §5).
+#
+# The download is about 1.9 GB on disk. `setup` asks first unless --yes, and
+# downloads only what isn't already there at the pinned version, so a
+# reinstall or update that changes none of the pins downloads nothing.
+set -euo pipefail
+
+HOME_DIR="${EMBEDDING_LIB_HOME:-$HOME/.local/share/embedding-lib}"
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+if [ -d "$HOME_DIR/pylib/embedding_lib" ]; then PYLIB="$HOME_DIR/pylib"
+else PYLIB="$(cd "$(dirname "$SELF")/../pylib" && pwd)"; fi
+VENV="$HOME_DIR/venv"
+VPY="$VENV/bin/python"
+LOG="${EMBEDDING_LIB_LOG:-/tmp/embedding-lib-setup.log}"
+NEED_MB=2600   # 1.9 GB installed, plus the tarball and pip's downloads in flight
+
+usage() {
+  cat <<EOF
+embedding-lib — pinned local text embeddings (bge-base-en-v1.5, CPU)
+
+USAGE
+  embedding-lib <command> [options]
+
+COMMANDS
+  setup [--yes]     download what's missing: Python, libraries, model
+                    (about 1.9 GB; asks first unless --yes). Logs to $LOG
+  check             embed two test sentences and report; exit 0 if it works
+  identity          the JSON record an index stores (model, revision,
+                    Python, lock hash, library versions)
+  check-identity    stdin: a recorded identity; exit 3 and the differences
+                    on stderr unless it matches this environment
+  embed             stdin JSONL {"id","text"}; stdout JSONL {"id","vector"}
+  tokens            stdin JSONL {"id","text"}; stdout JSONL {"id","tokens"}
+  paths             where everything lives, for dependents' install checks
+
+Dependents run Python through $VPY
+with \`import embedding_lib\`, never through PATH, and check
+embedding_lib.EMBEDDING_LIB_API.
+EOF
+}
+
+die() { printf 'embedding-lib: %s\n' "$*" >&2; exit 1; }
+say() { printf '%s\n' "$*"; }
+
+runtime() { # loads PBS_RELEASE, PY_VERSION, SHA256_<arch>
+  [ -f "$PYLIB/runtime.env" ] || die "no $PYLIB/runtime.env — the package is incomplete; reinstall it"
+  # shellcheck disable=SC1091
+  . "$PYLIB/runtime.env"
+}
+
+arch() {
+  case "$(uname -m)" in
+    x86_64|amd64)  echo x86_64 ;;
+    aarch64|arm64) echo aarch64 ;;
+    *) die "no bundled Python for $(uname -m); only x86_64 and aarch64 are pinned" ;;
+  esac
+}
+
+sha256() { sha256sum "$1" | cut -d' ' -f1; }
+
+python_stamp() { echo "$PY_VERSION $PBS_RELEASE $(arch)"; }
+venv_stamp()   { echo "$(python_stamp) $(sha256 "$PYLIB/requirements.txt")"; }
+model_ok()     { [ -f "$HOME_DIR/hf/hub/models--BAAI--bge-base-en-v1.5/snapshots/$REVISION/model.safetensors" ]; }
+
+python_ok() {
+  [ -x "$HOME_DIR/python/bin/python3" ] \
+    && [ "$(cat "$HOME_DIR/.python-stamp" 2>/dev/null)" = "$(python_stamp)" ] \
+    && "$HOME_DIR/python/bin/python3" -c 'pass' 2>/dev/null
+}
+venv_ok() {
+  [ -x "$VPY" ] \
+    && [ "$(cat "$HOME_DIR/.venv-stamp" 2>/dev/null)" = "$(venv_stamp)" ] \
+    && "$VPY" -c 'import embedding_lib' 2>/dev/null
+}
+
+REVISION=$(sed -n 's/^REVISION = "\([0-9a-f]*\)".*/\1/p' "$PYLIB/embedding_lib/__init__.py")
+
+# --- setup ------------------------------------------------------------------
+
+setup_python() {
+  local a sha_var sha f url tmp
+  a=$(arch); sha_var="SHA256_$a"; sha="${!sha_var:-}"
+  [ -n "$sha" ] || die "runtime.env has no $sha_var"
+  f="cpython-$PY_VERSION+$PBS_RELEASE-$a-unknown-linux-gnu-install_only_stripped.tar.gz"
+  url="${EMBEDDING_LIB_PBS_BASE:-https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_RELEASE}/${f//+/%2B}"
+  say "== Python $PY_VERSION ($a)"
+  tmp=$(mktemp -d "$HOME_DIR/.python.XXXXXX")
+  curl -fL --retry 3 -sS -o "$tmp/py.tgz" "$url" || { rm -rf "$tmp"; die "download failed: $url"; }
+  if [ "$(sha256 "$tmp/py.tgz")" != "$sha" ]; then
+    rm -rf "$tmp"; die "SHA256 of $f doesn't match runtime.env — not installed"
+  fi
+  tar -xzf "$tmp/py.tgz" -C "$tmp" || { rm -rf "$tmp"; die "couldn't unpack $f"; }
+  [ -x "$tmp/python/bin/python3" ] || { rm -rf "$tmp"; die "$f has no python/bin/python3"; }
+  rm -rf "$HOME_DIR/python" && mv "$tmp/python" "$HOME_DIR/python" && rm -rf "$tmp"
+  python_stamp > "$HOME_DIR/.python-stamp"
+  # The venv is tied to the interpreter it was built from.
+  rm -f "$HOME_DIR/.venv-stamp"
+  say "  ok    $("$HOME_DIR/python/bin/python3" --version)"
+}
+
+setup_venv() {
+  local site
+  say "== Libraries (pip --require-hashes from $PYLIB/requirements.txt)"
+  # A venv's scripts carry the absolute path they were built at, so it is
+  # built in place under its final name. The stamp goes first and is written
+  # back last, so a build that dies halfway is rebuilt by the next setup and
+  # refused by every other command meanwhile.
+  rm -f "$HOME_DIR/.venv-stamp"
+  rm -rf "$VENV"; "$HOME_DIR/python/bin/python3" -m venv "$VENV"
+  "$VENV/bin/pip" install -q --disable-pip-version-check --no-deps --require-hashes \
+    --index-url "${EMBEDDING_LIB_INDEX_URL:-https://pypi.org/simple}" \
+    --extra-index-url "${EMBEDDING_LIB_EXTRA_INDEX_URL:-https://download.pytorch.org/whl/cpu}" \
+    -r "$PYLIB/requirements.txt" || die "pip install failed — see $LOG"
+  site=$("$VPY" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+  printf '%s\n' "$PYLIB" > "$site/embedding_lib.pth"
+  venv_stamp > "$HOME_DIR/.venv-stamp"
+  say "  ok    $("$VPY" -c 'import torch, sentence_transformers as s; print("torch", torch.__version__, "sentence-transformers", s.__version__)')"
+}
+
+setup_model() {
+  say "== Model BAAI/bge-base-en-v1.5 at $REVISION"
+  HF_HOME="$HOME_DIR/hf" HF_HUB_DISABLE_PROGRESS_BARS=1 "$VPY" - "$REVISION" <<'PY' || die "model download failed — see $LOG"
+import sys
+from huggingface_hub import snapshot_download
+snapshot_download("BAAI/bge-base-en-v1.5", revision=sys.argv[1],
+    allow_patterns=["*.json", "model.safetensors", "vocab.txt", "1_Pooling/*"])
+PY
+  model_ok || die "model downloaded but model.safetensors is missing"
+  say "  ok    $(du -sh "$HOME_DIR/hf" | cut -f1) in $HOME_DIR/hf"
+}
+
+cmd_setup() {
+  local yes=0
+  for a in "$@"; do
+    case "$a" in --yes|-y) yes=1 ;; *) die "setup: unknown option $a" ;; esac
+  done
+  runtime
+  mkdir -p "$HOME_DIR"
+  exec > >(tee -a "$LOG") 2>&1
+  say "== embedding-lib setup, $(date -Is), into $HOME_DIR"
+
+  local want=()
+  python_ok || want+=(python)
+  { python_ok && venv_ok; } || want+=(libraries)
+  model_ok || want+=(model)
+  if [ "${#want[@]}" -eq 0 ]; then
+    say "  ok    nothing to download: Python $PY_VERSION, the locked libraries and the model are in place"
+    return 0
+  fi
+
+  local free_mb
+  free_mb=$(df -Pm "$HOME_DIR" | awk 'NR==2 {print $4}')
+  [ "$free_mb" -ge "$NEED_MB" ] || die "needs about ${NEED_MB} MB free in $HOME_DIR, has ${free_mb} MB"
+
+  if [ "$yes" -eq 0 ]; then
+    if [ -t 0 ]; then
+      printf 'Download %s into %s (about 1.9 GB in all)? [y/N] ' "${want[*]}" "$HOME_DIR"
+      local r; read -r r
+      case "$r" in y|Y|yes) ;; *) die "nothing downloaded; run 'embedding-lib setup' when ready" ;; esac
+    else
+      die "needs to download ${want[*]} (about 1.9 GB); run 'embedding-lib setup --yes' to go ahead without a prompt"
+    fi
+  fi
+
+  case " ${want[*]} " in *" python "*) setup_python ;; esac
+  case " ${want[*]} " in *" libraries "*) setup_venv ;; esac
+  case " ${want[*]} " in *" model "*) setup_model ;; esac
+  say "== done: $(du -sh "$HOME_DIR" | cut -f1) in $HOME_DIR"
+}
+
+# --- use --------------------------------------------------------------------
+
+need_env() {
+  runtime
+  [ -x "$VPY" ] || { printf 'embedding-lib: not set up; run: embedding-lib setup\n' >&2; exit 4; }
+  if ! "$VPY" -c 'pass' 2>/dev/null; then
+    printf 'embedding-lib: the environment in %s no longer starts; run: embedding-lib setup\n' "$VENV" >&2; exit 4
+  fi
+  if ! venv_ok; then
+    printf 'embedding-lib: the environment in %s was built for a different release of embedding-lib; run: embedding-lib setup\n' "$VENV" >&2; exit 4
+  fi
+}
+
+case "${1:-}" in
+  -h|--help|help|"") usage ;;
+  setup) shift; cmd_setup "$@" ;;
+  check)
+    need_env
+    out=$("$VPY" -m embedding_lib probe) || { printf 'embedding-lib: check failed: %s\n' "$out" >&2; exit 1; }
+    say "ok: $out" ;;
+  identity|embed|tokens|check-identity)
+    need_env; exec "$VPY" -m embedding_lib "$1" ;;
+  paths)
+    printf 'home %s\npython %s\npylib %s\nlog %s\n' "$HOME_DIR" "$VPY" "$PYLIB" "$LOG" ;;
+  *) printf 'unknown command: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+esac

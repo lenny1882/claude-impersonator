@@ -1,0 +1,5 @@
+kit=1.3.0
+name=claude-impersonator
+kind=monorepo
+slug=lenny1882/claude-impersonator
+release=1
