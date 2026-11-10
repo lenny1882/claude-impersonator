@@ -1020,50 +1020,56 @@ stage lists only what blocks that stage.
 12. Exemplar filter thresholds, and the audience for group DMs outside the
     senior set (§8.1).
 13. Whether the reviewed anonymised batches must cover every source (§8.1).
+14. The two DMs with no resolvable name, kept by default and never
+    discussed (§8.1).
+15. That sending work through subagents multiplies the text sent to the
+    API, raised and never discussed (§8.1).
+16. How much of the corpus may be sent: withdrawn and never re-asked;
+    full sending, anonymised, is assumed by §4.9 and §6 (§8.1).
 
 **Stage 2 – voice model and `voice-runtime`**
-14. Which models draft, label and judge, and whether the blind-labelling
+17. Which models draft, label and judge, and whether the blind-labelling
     "second model" is a different model or a different prompt (§8.2).
-15. Where the review pages run, and how the blind-pair page saves progress
+18. Where the review pages run, and how the blind-pair page saves progress
     (§8.2).
-16. Whether James also reviews the judge's worst-scored drafts and a random
+19. Whether James also reviews the judge's worst-scored drafts and a random
     few, on top of the 60 blind pairs (§8.2).
-17. How James's own rules get into the generated guide (§8.2).
-18. The 1:1 audience split, the generic-phrase reference list, and the
+20. How James's own rules get into the generated guide (§8.2).
+21. The 1:1 audience split, the generic-phrase reference list, and the
     fallback for thin audience-and-purpose cells (§8.2).
-19. Drafting time: who sets audience and purpose, how an edited-after-
+22. Drafting time: who sets audience and purpose, how an edited-after-
     sending version is captured, `jira-comments.md` wording, `/gsd:ship`
     and `/code-review` formats (§8.2).
-20. The exact CLAUDE.md line that loads the skill (§8.2); last, before voice
+23. The exact CLAUDE.md line that loads the skill (§8.2); last, before voice
     goes live.
 
 **Stage 3 – `question-store`**
-21. All of §8.4.
-22. Which hooks it registers (§8.5).
+24. All of §8.4.
+25. Which hooks it registers (§8.5).
 
 **Stage 4 – decision model and `decision-runtime`**
-23. Similarity search or keyword lookup (§8.3); decides whether
+26. Similarity search or keyword lookup (§8.3); decides whether
     `decision-runtime` depends on `embedding-lib`.
-24. Extraction weighting: "You decide" answers, grill-with-docs rounds
+27. Extraction weighting: "You decide" answers, grill-with-docs rounds
     (§8.3).
-25. What counts as an approved entry, and whether a comment in a plan can set
+28. What counts as an approved entry, and whether a comment in a plan can set
     aside a principle (§8.3).
-26. Gates: marked paths, per-stack patterns, test-framework switch, timeout
+29. Gates: marked paths, per-stack patterns, test-framework switch, timeout
     behaviour, overriding a false block (§8.3).
-27. Reviewers: hook type and model, what happens on a problem and on
+30. Reviewers: hook type and model, what happens on a problem and on
     repeated blocks, the pre-filter, `asyncRewake`, plan files as
     decisions, un-anonymised diffs (§8.3).
-28. Coverage: `SubagentStart` skip list and a delivery test, advisor
+31. Coverage: `SubagentStart` skip list and a delivery test, advisor
     agents, `autonomous` and its UI phases, OpenSpec, non-git folders,
     other machines (§8.3).
-29. Behaviour before the model passes validation (§8.3).
-30. Build task, not a question: search every available transcript for a
+32. Behaviour before the model passes validation (§8.3).
+33. Build task, not a question: search every available transcript for a
     dependable marker of Claude's recommendations (§4.5).
-31. The remaining §8.3 items, mostly checks rather than choices.
-32. Cost figures still to measure (§8.5), once the decision pipeline runs.
+34. The remaining §8.3 items, mostly checks rather than choices.
+35. Cost figures still to measure (§8.5), once the decision pipeline runs.
 
 **Any time, blocks nothing**
-33. A reminder when a deferred tool is installed (grill-me,
+36. A reminder when a deferred tool is installed (grill-me,
     grill-with-docs, OpenSpec), so its deferred items are revisited:
     mechanism and owner open (James, 10 Nov 2026). Deferred by James. Options
     put: in `question-store` as a question parked with an install trigger
