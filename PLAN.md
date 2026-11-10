@@ -749,6 +749,13 @@ fire on several events.
   install directory with a version check was confirmed on 9 Nov 2026.)
 - **`embedding-lib`** owns the Python environment (sentence-transformers, CPU
   PyTorch, `bge-base-en-v1.5`) and an embed library with a version constant.
+  The environment always runs on a Python 3.14 that `embedding-lib`
+  downloads into its own directory (python-build-standalone 3.14.10), on
+  every machine, never the system Python (James, 10 Nov 2026). The three
+  machines it runs on have no shared system Python: this one's Ubuntu 20.04
+  has 3.8, the WorkSpace's Ubuntu 24.04 has 3.12, and EndeavourOS follows
+  Arch, now 3.14. One bundled Python lets every machine share one set of
+  pinned library versions, so an index built on one is accepted on the others.
   Each voice build's manifest records which model and version built its index;
   a consumer refuses a mismatch until the pipeline re-embeds (Claude's design,
   confirmed by James, 10 Nov 2026).
