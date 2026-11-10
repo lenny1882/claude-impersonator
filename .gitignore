@@ -17,3 +17,6 @@ build-inputs.json
 .claude/*
 !.claude/skills/
 .mcp.json
+
+# Docker test runs
+test/docker/results/
