@@ -714,6 +714,12 @@ fire on several events.
   install directory with a version check.)
 - **`embedding-lib`** owns the Python environment (sentence-transformers, CPU
   PyTorch, `bge-base-en-v1.5`) and an embed library with a version constant.
+  The environment always runs on a Python 3.14 that `embedding-lib`
+  downloads into its own directory (python-build-standalone 3.14.10), on
+  every machine, never the system Python. Machines it runs on
+  need not share a system Python version.
+  One bundled Python lets every machine share one set of
+  pinned library versions, so an index built on one is accepted on the others.
   Each voice build's manifest records which model and version built its index;
   a consumer refuses a mismatch until the pipeline re-embeds.
 - **Data and state**
