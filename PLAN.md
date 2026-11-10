@@ -835,9 +835,9 @@ fire on several events.
 
 Output tokens are much smaller (mostly labels
 and scores). Possible cuts:
-second-model labelling on a sample only (the second model labels every item,
-§3.4), or fewer held-back voice drafts (would save 10–15M, at the cost of less
-certainty).
+second-model labelling on a sample only (the second model labels
+all ~17k, §3.4), or fewer held-back voice drafts
+(would save 10–15M, at the cost of less certainty).
 
 | Building, once | Tokens |
 |---|---|
@@ -1111,6 +1111,7 @@ stage lists only what blocks that stage.
 - Which model writes drafts, and which runs the labelling and the judge.
 - Whether the owner also reviews the judge's worst-scored drafts and a random few
   on top of the 60 blind pairs.
+  Whether the worst-and-random review is added
 - When an audience-and-purpose cell has too few exemplars, whether to fall
   back to the same purpose in another audience.
 - Whether "second model" for blind labelling means a different model, or the
