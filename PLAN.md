@@ -875,9 +875,9 @@ fire on several events.
 
 Accepted as estimated; no cuts. Output tokens are much smaller (mostly labels
 and scores). Offered, and not taken up when James accepted the costs:
-second-model labelling on a sample only (the second model labels all ~17k,
-§3.4), or fewer held-back voice drafts (would save 10–15M, at the cost of less
-certainty).
+second-model labelling on a sample only (the second model labels
+all ~17k, §3.4), or fewer held-back voice drafts
+(would save 10–15M, at the cost of less certainty).
 
 | Building, once | Tokens |
 |---|---|
@@ -1191,8 +1191,8 @@ stage lists only what blocks that stage.
   (part of the judge option he chose), on top of the 60 blind pairs. As
   offered, the judge option replaced James's pairs ("you review only the
   worst and a random few"). James chose it in parallel with the blind pairs
-  (options 1 and 3), so whether the worst-and-random review is added on top is
-  the open point.
+  (options 1 and 3), so whether the worst-and-random review is added
+  on top is the open point.
 - When an audience-and-purpose cell has too few exemplars, whether to fall
   back to the same purpose in another audience (Claude's proposal; not
   discussed).

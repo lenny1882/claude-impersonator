@@ -235,9 +235,9 @@ not stopped.
 | Cost of a catch | one commit | one plan | the last wave; nothing dependent started | can exceed the tokens saved |
 | Fits park rule | partly | partly (other plans in the wave carry on) | yes | no |
 
-James ruled out every commit, and review time for the rework it risks.
-**Chosen: after each plan** (wave check rejected as duplicating it; GSD
-already waits for every plan in a wave before starting the next).
+James ruled out every commit, and review time because it risks too much
+rework. **Chosen: after each plan** (wave check rejected as duplicating it;
+GSD already waits for every plan in a wave before starting the next).
 
 Main-session work (from four weeks of transcripts):
 
@@ -309,8 +309,8 @@ it can also spawn other agents, D.3).
   offered and not chosen: `proxy-*`, `persona-*`, `delegate-*`. Suffix set
   Claude proposed: `voice-decision-builder`, `voice-runtime`,
   `decision-runtime`, `embedding-lib`, `question-store`; James changed
-  `-builder` to `-pipeline`. His naming rule: a suffix naming what the package
-  does, with the voice/decision prefixes kept (PLAN §5).
+  `-builder` to `-pipeline`. His naming rule: a suffix naming what the
+  package does, with the voice/decision prefixes kept (PLAN §5).
 
 ### B.7 The rrc/rrcd pattern followed
 
