@@ -20,3 +20,6 @@ build-inputs.json
 
 # Docker test runs
 test/docker/results/
+
+# Python bytecode
+__pycache__/
