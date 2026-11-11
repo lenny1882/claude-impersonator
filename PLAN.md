@@ -90,8 +90,8 @@ Left out:
   PRs the owner authored, commented on or approved; a
   silent approval counts, as a record that the owner accepted the approach. Every
   PR in the picked repos is to be read as well (§4.14).
-  Inline comments get the code under them from the API; the owner adds
-  `read:repository` to the Bitbucket token when the pipeline is run.
+  Inline comments get the code under them from the API, which needs
+  `read:repository` on the Bitbucket token, which it has.
 
 ### 2.2 Storage
 
@@ -797,9 +797,7 @@ fire on several events.
 - **Build order:** the voice model is built first, then the decision model.
   The reason: the decision model's main source, Claude
   Code transcripts, keeps growing, so a later build has more data, and
-  the voice model can start from the Slack export already on disk. The
-  voice model's Bitbucket PR part still needs `read:repository` on the
-  token (§9).
+  the voice model can start from the Slack export already on disk.
 - **When the build starts**: each stage of §8.0 is built
   once its own questions are answered — the monorepo scaffold and
   `embedding-lib` after Stage 0, the corpus extraction after Stage 1, the
@@ -1438,7 +1436,7 @@ stage lists only what blocks that stage.
 
 ## 9. Needs the owner when it runs
 
-1. Add `read:repository` to the Bitbucket token. The token is in `~/.netrc` (REST
+1. The Bitbucket token's scopes: none to add; it has `read:repository`.
 2. Pick the `oneiota` repos.
 3. Review the first anonymised batches, until the owner says stop.
 4. Check the audience mapping, the label sample and the sample of
