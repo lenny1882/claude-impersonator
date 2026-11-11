@@ -25,9 +25,9 @@ uses, analysis, output, loading, validation, upkeep — is planned separately.
 | Source | Used for | Scope |
 |---|---|---|
 | Slack export (JSON, 2020–2026) | voice and decisions | the owner's messages, after the exclusions below |
-| Bitbucket PR descriptions and comments | voice (technical team audience) and code-level decisions (what the owner approves, rejects and asks to be changed) | `oneiota` repos only; repos with no update since 2018 are normally left out (a guideline, not a hard cut), applied when the repos are picked (whether 2018 itself is kept: §8.1); the exact repos are picked when the pipeline is run |
+| Bitbucket PR descriptions and comments | voice (technical team audience) and code-level decisions (what the owner approves, rejects and asks to be changed) | `oneiota` repos only; hard rule: repos last updated before 2019 are left out; the exact repos are picked when the pipeline is run |
 | Claude Code transcripts (`~/.claude/projects/*/*.jsonl`) | technical decisions only — never voice (prompts are written to Claude, not colleagues). Probably the strongest decision source, because corrections there state a decision outright | everything kept from now on |
-| GSD written records: decisions in `.planning/STATE.md`, phase `CONTEXT.md` | decisions, weighted by origin (§4.9) | GSD repos with `.planning/config.json` (whether repos with `.planning/` but no config count: §8.1). Their `STATE.md` files mention "decisions" (word match; the sections themselves were not checked) |
+| GSD written records: decisions in `.planning/STATE.md`, phase `CONTEXT.md` | decisions, weighted by origin (§4.9) | GSD repos: every repo with `.planning/` counts, including those without `.planning/config.json` whose `.planning/` is empty or holds only `codebase/`; their `STATE.md` and `CONTEXT.md` are read once they exist. |
 | grill-with-docs ADRs (`docs/adr/`) and `GLOSSARY.md` | read once grill-with-docs is in use | Decisions made in grill sessions reach the model through transcripts |
 | `/gsd:profile-user` output | decisions | run on anonymised copies only (§2.3) |
 
@@ -55,6 +55,18 @@ Left out:
 - **Slack:** each of the owner's messages keeps its thread if threaded; otherwise
   the messages before it in that conversation from the previous 2 hours (up to
   20), and the same after it (up to 20), plus emoji reactions. The "after"
+- **Bot messages and channel events**: neither is a
+  corpus item. A bot message (build, alert and PR notifications) is kept as
+  context when it sits in the thread or window of one of the owner's messages,
+  tagged `bot`, never used as voice or as the owner's decision, and anonymised like
+  the rest. Channel events (room created, joins, topic and canvas changes)
+  are dropped.
+- **The owner's reactions on other people's messages**:
+  agreement reactions (thumbs-up, plus, tick and OK-hand kinds) make the
+  message reacted to, with its context, a corpus item tagged
+  `reaction:<name>`. The decision extraction treats it as a possible
+  agreement only where the message proposes something; it is never voice.
+  Other reactions are kept as context only.
 - **Pasted code, logs, links and attachments:** kept and tagged. The voice
   analysis skips them; the decision analysis reads them. Links kept as URLs,
   attachments as file names.
@@ -62,7 +74,23 @@ Left out:
   it, a one-line summary per tool call (which file, which command),
   AskUserQuestion questions and answers, project name and date. Claude's
   preceding reply is kept because it is usually what the owner was correcting.
+  Main-session transcripts only: subagent (sidechain) transcripts are left
+  out. Their text is Claude's, and the owner's own words
+  and answers are all in the main sessions.
+  Transcripts from the owner's other machines are included;
+  claude.ai cloud sessions are not. Before a build,
+  the owner copies each machine's `~/.claude/projects` here with one `rsync`
+  per machine, and the pipeline's `import-transcripts <dir>` reads it
+  through the same anonymising and filters. Whether those machines hold
+  transcripts is not
+  checked.
+- **Git commit messages:** not a source. Most are
+  short subject lines, and PR descriptions and threads cover the same
+  changes for Bitbucket repos.
 - **Bitbucket:** each comment with its PR title, description and thread.
+  PRs the owner authored, commented on or approved; a
+  silent approval counts, as a record that the owner accepted the approach. Every
+  PR in the picked repos is to be read as well (§4.14).
   Inline comments get the code under them from the API; the owner adds
   `read:repository` to the Bitbucket token when the pipeline is run.
 
@@ -71,12 +99,44 @@ Left out:
 - Corpus: in `voice-decision-pipeline`'s own state, `~/.claude/
   voice-decision-pipeline/` (per-package state, §5 Data and state).
   About 20 MB, each message
-  stored once. `~/.claude` is outside Claude's Bash sandbox, so the
+  stored once. One record per message, one file per source
+  (`slack.jsonl`, `transcripts.jsonl`, `bitbucket.jsonl`), context held as
+  ids. Fields: `id`, `source`, `conversation`,
+  `author` (real id), `audience`, `ts`, `text`, `tags` (code, log, link and
+  attachment spans), `context_ids` (thread, or before/after window),
+  `reactions`, `source_fields` (per-source object), `schema_version`.
+  Readers join on ids to rebuild a context window; `forget` deletes records
+  by `author` or `conversation`.
+- Embedding indexes (the corpus index and `voice-runtime`'s `index/`): a
+  NumPy `.npy` float32 matrix, `ids.json` mapping each row to a record id,
+  and `identity.json` holding `embedding-lib`'s `identity()`.
+  Search is a dot product over every row; `forget` rewrites the
+  matrix without the dropped rows.
+- Anonymising map: one append-only `anonymising-map.json`
+  Each entry holds a real id, every alias seen, its kind (person,
+  client, product), role, pseudonym and origin (`users.json`, a list,
+  spaCy, mining). A counter per role means numbers are never reused or
+  renumbered. `forget` keeps the person's entry, so mentions of them in
+  other people's messages are still replaced and their number never passes
+  to someone else. `~/.claude` is outside Claude's Bash sandbox, so the
   pipeline's commands get a `sandbox.excludedCommands` entry, as `rrc *`
   has.
 - This repo, `claude-impersonator`, holds the planning documents; its
   checkout also holds `build-inputs.json` (gitignored).
   No corpus data is written there.
+- All four packages' state is owner-only: directories
+  700, files 600. Each package's scripts set umask 077 before writing; each
+  install creates its state directory as 700 and its verify step checks the
+  modes.
+- No backup. Losing the system disk or `~/.claude`
+  loses the live files (decision log, reviewed-changes record, gate state,
+  questions, drafts, validation answers, holdouts) and the anonymising map;
+  builds and the corpus can be rebuilt from the sources.
+- State is kept until the owner deletes it. The pipeline
+  has a `forget <person|conversation>` command: it removes their items from
+  the corpus and its index and adds them to the struck list, so later
+  builds skip them; the next build drops them from every built output and
+  anonymised copy.
 - Real names are kept in the stored corpus, so it stays readable and
   searchable.
 - No data ever goes into a package repo or release.
@@ -90,34 +150,61 @@ Left out:
 - Anonymising uses lists (every name in `users.json`, Slack user ids and
   @mentions, client names from channel and repo names, email addresses,
   phone numbers, client-domain URLs) **plus spaCy** named-entity tagging for
-  names the lists miss (where spaCy's environment lives is open — §8.1).
+  names the lists miss. spaCy runs in the pipeline's own venv, built from
+  `embedding-lib`'s bundled Python, with spaCy pinned in the pipeline's own
+  lock file; `embedding-lib` stays embedding-only and the runtimes never
+  install spaCy. The pipeline's verify step fails if `embedding-lib`'s
+  Python version changes, until the venv is rebuilt.
+  Whether spaCy has Python 3.14 wheels is not checked. The model is
+  `en_core_web_trf`, for the highest published
+  name-finding score (~0.90 NER F against ~0.85 for the others, not
+  measured here); it brings its own CPU PyTorch into the pipeline's venv
+  (about 1.2 GB in all) and makes a corpus pass slower.
   spaCy also tags some ordinary words as names and blanks them. Product,
-  store and project names that identify a client on their own
-  get through unless they are added to the replacement list; which ones to
-  add is not decided (§8.1).
-- Replacements are stable pseudonyms with a
-  role tag (e.g. `colleague-07`, `client-pm-02`) and clients become codes
-  (§8.1).
+  store and project names that identify a client on their own are found
+  by mining the corpus: while building it, the pipeline
+  collects every term spaCy tags as an organisation or product, and
+  capitalised terms concentrated in one client's channels or repos. The owner
+  strikes or keeps each on one local review page before the first review
+  batch is sent; kept terms join the replacement list.
+- Replacements are stable pseudonyms with a role tag (e.g. `colleague-07`,
+  `client-pm-02`), and clients become codes (e.g. `client-03`); each person
+  keeps one pseudonym across every source.
 - Credentials (AWS, Slack and Bitbucket keys, JWTs, private keys,
   `password=` lines) are pattern-matched and replaced with
   `[REDACTED:<type>]` while building the corpus. Findings are logged by type
   and count, never value.
 - The first batches sent are reviewed together with the owner before they go
   (50 anonymised messages each, every replacement highlighted).
-  Review continues until the owner says stop.
+  Review continues until the owner says stop. Batches are drawn per
+  source (Slack, Bitbucket PRs, transcripts, GSD records; imported
+  transcripts count as transcripts), and nothing from a source is sent
+  until its own first batch is approved; "stop" applies per source.
 - Exemplars loaded into drafting prompts are sent anonymised: the pipeline
   stores a pre-anonymised copy of each exemplar at build time, so
-  `voice-runtime` never runs the anonymiser. (This follows the
-  anonymise-before-sending rule.
-  Whether exemplars are covered is open — §8.2.)
+  `voice-runtime` never runs the anonymiser.
+- All of the corpus may be sent, anonymised: every
+  kept message with its context, 1:1 DMs included, for labelling,
+  second-model labelling, extraction and validation, plus the decision
+  filter's 10% miss-rate sample, as §4.9 and §6 assume.
+- Corpus text reaches the model only through the pipeline's own scripts
+  each batch goes out in one call and its result is
+  written straight to the pipeline's state, so each item is sent once per
+  pass, as §6 assumes. Subagents and Workflows never carry corpus text; at
+  most they start the script. The passes run outside any Claude Code
+  session, log to a file Claude monitors, stop cleanly at a usage limit and
+  resume from the last finished batch; prompts are adjusted between passes,
+  not during one.
 - Accepted exception: Slack questions and replies go through the Slack
   connector with real names (§4.7).
 - Not covered by this rule: reviewer hooks send code diffs
   from the working repo to the API un-anonymised (they aren't corpus data).
-- Not settled: the built outputs (voice guide, exemplars, principles,
-  evidence quotes, client constraints).
-  Evidence quotes in prompts would name real people; whether
-  anonymise-before-sending covers them is open (§8.2).
+- Built outputs are anonymised: the voice guide,
+  exemplars, principles, evidence quotes and client constraints are each
+  stored twice, with real names and as an anonymised copy, and only the
+  anonymised copy is sent.
+  Client constraints are matched to a repo locally,
+  against the real-name copy, and only the client code is sent.
 - `/gsd:profile-user` is not run as shipped (its agent reads raw transcript
   samples). Its steps are run by hand: run the sampler, anonymise the sample,
   give the anonymised file to `bm-user-profiler`, keep the output in the
@@ -159,8 +246,12 @@ approval of the exact text.
 
 Each conversation is assigned by its name and members; the owner checks the
 mapping. Any other internal channel not covered goes to the project team
-(because those channels are less technical). Unassigned group
-DMs: §8.1.
+(because those channels are less technical). Group DMs not
+made up of the senior/management people get no rule: the owner assigns each on the mapping page,
+and a group DM new in a later export comes up there the same way.
+A DM with a client-side contact takes the Clients audience;
+the owner's DM
+with themselves (notes to self), left out of voice and kept for decisions.
 
 ### 3.3 Purposes
 
@@ -208,8 +299,13 @@ developer).
   business writing that the owner uses rarely or never (e.g. "Hope this helps",
   exclamation marks to clients), each with the owner's count;
   built locally, no API.
-- Exemplars drawn from the whole labelled corpus, minus very short messages
-  (e.g. "ok", "thanks") and messages that are mostly code or logs.
+- Exemplars drawn from the whole labelled corpus, minus messages of 3 words
+  or fewer and messages at least 50% code
+  or logs by characters, counting fenced blocks and unfenced log or
+  stack-trace lines. Dropped messages still count in
+  the measured statistics (never-say list, length per audience). The
+  thresholds are config values; changing them re-runs exemplar selection
+  only.
 - Exemplar choice uses both: labels narrow the pool to the right audience and
   purposes, then similarity search picks the closest few. How many is set by
   validation: the model judge scores held-back drafts made with 3, 5 and 8
@@ -638,6 +734,11 @@ Structural lint rules and the owner's own orchestration scripts: revisit once th
 decision model exists (which principles are lintable) and the reviewer has a
 track record (where it misses).
 
+Every Bitbucket PR in the picked repos, not only the owner's, is
+to be read eventually, so that decisions from repos the owner took no part in
+are extracted too. Open: how those decisions, which are other
+people's, are labelled and weighed against the owner's own principles.
+
 ---
 
 ## 5. Packaging
@@ -854,7 +955,7 @@ all ~17k, §3.4), or fewer held-back voice drafts
 | Running, per year | Tokens |
 |---|---|
 | End-of-turn review | ~25–35M |
-| After-each-plan review | ~4–10M. Its ~750–1,000 checks are an unmeasured estimate, which overstates, since only some of the active repos use GSD (§8.1); commits per plan not measured. APPENDIX B.4's own figures give ~7–11M (every-commit tokens less repeated overhead) or ~4–15M (checks × tokens per check) |
+| After-each-plan review | ~4–10M. Its ~750–1,000 checks are an unmeasured estimate, which overstates, since only the active repos with `.planning/` use GSD (§1); commits per plan not measured. APPENDIX B.4's own figures give ~7–11M (every-commit tokens less repeated overhead) or ~4–15M (checks × tokens per check) |
 | `SubagentStop` and plan reviews | small; volume unknown |
 | Drafting | small (guide cached) |
 
@@ -954,25 +1055,44 @@ stage lists only what blocks that stage.
    decision-log rules, the voice review page saving progress.
 
 **Stage 1 – `embedding-lib` and the corpus (the pipeline's extraction half)**
-6. Real names in built outputs (§8.2). It sets what the anonymiser must
-   produce.
-7. Pseudonym format, and the client product names on the replacement list
-   (§8.1).
-8. Protection of the packages' state: file modes, backup, deletion (§8.1).
-9. spaCy model size and where its environment lives (§8.1).
-10. Corpus formats: JSONL schema, index storage, anonymising map (§8.1).
-11. Source scope: sidechain transcripts, commit messages, other machines,
-    the 2018 cut-off, Bitbucket limited to PRs the owner authored or reviewed,
-    which repos, the `.planning/` repos without `config.json`, bot
-    messages, emoji reactions (§8.1).
-12. Exemplar filter thresholds, and the audience for group DMs outside the
-    senior set (§8.1).
-13. Whether the reviewed anonymised batches must cover every source (§8.1).
-14. DMs with no resolvable name, kept by default
-    (§8.1).
-15. That sending work through subagents multiplies the text sent to the
-    API, open (§8.1).
-16. Full sending, anonymised, as assumed by §4.9 and §6 (§8.1).
+6. Built outputs are anonymised, stored with a real-name copy
+   (§2.3).
+7. Role-tagged pseudonyms, and client product names found by
+   mining the corpus and reviewed by the owner (§2.3).
+8. The packages' state is owner-only, not backed up, and kept
+   until the owner deletes it, with a `forget` command (
+   §2.2).
+9. spaCy runs in the pipeline's own venv on `embedding-lib`'s
+   Python, with `en_core_web_trf` (§2.3).
+10. Corpus JSONL with one record per message, one file per
+    source, context as ids; indexes as `.npy` with `ids.json` and
+    `identity.json`; one append-only `anonymising-map.json`
+    (§2.2).
+11. Source scope. Sidechain transcripts: left out.
+    Commit messages: left out (§2.1).
+    Other machines: the owner's other machines included, cloud
+    sessions not (§2.1). The 2018 cut-off:
+    a hard rule, repos last updated before `bitbucket.CUTOFF` left out
+    Bitbucket: PRs the owner authored, commented on or
+    approved, widened to every PR (§2.1, §4.14).
+    `.planning/` repos without `config.json` count as GSD repos
+    (§1). Open: which repos (picked when the pipeline
+    runs, §1). Bot messages kept only as tagged context, channel events
+    dropped; agreement reactions on others' messages are decision
+    candidates (§2.1).
+12. Exemplar thresholds of 3 words or fewer and 50% code; group
+    DMs outside the senior set assigned one by one by the owner on the mapping
+    page (§3.2, §3.5).
+13. Review batches are drawn per source, and each source is held
+    until its first batch is approved (§2.3).
+14. The user-id DM is with a client contact, Clients audience;
+    The owner's self-DM is out of voice, kept for decisions.
+    (§3.2).
+15. Corpus text is sent only by the pipeline's scripts, one call
+    per batch, never through subagents or Workflows (
+    §2.3).
+16. All of the corpus may be sent, anonymised.
+    (§2.3).
 
 **Stage 2 – voice model and `voice-runtime`**
 17. Which models draft, label and judge, and whether the blind-labelling
@@ -1023,51 +1143,8 @@ stage lists only what blocks that stage.
 
 ### 8.1 Sources and corpus
 
-- Whether subagent (sidechain) transcripts are included, or only main-session
-  ones.
-- Whether git commit messages in the local clones are a decision source.
 - The exact Bitbucket repos (to be picked when run; rule set apart from the
-  2018 boundary below).
-- spaCy model size: the large English model (~500 MB) or a smaller one.
-- The two DMs whose other person has no resolvable name ("DM (no name)" and
-  one shown only as a Slack user id) are kept by default.
-- Thresholds for "too short to show voice" and "mostly code or logs" in the
-  exemplar filter.
-- Whether the owner's own emoji reactions to other people's messages are a
-  signal. A 👍 on a proposal can be an agreement, i.e. a
-  decision. Today only reactions on the owner's messages are kept, as context.
-- Group DMs outside the senior/management set (e.g. one with the owner and two
-  colleagues) have no audience assigned yet.
-- Corpus file formats: the JSONL schema, how the embedding index is stored,
-  how the anonymising map is stored.
-- Protection of the packages' state (the pipeline's holds colleagues' DMs;
-  `voice-runtime`'s holds exemplars).
-  Open: what modes the pipeline's corpus
-  and anonymising map and `voice-runtime`'s exemplars get, whether they are
-  backed up, and whether and when they're ever deleted.
-- Bot messages and channel events (joins, topic changes) dropped from the
-  corpus: not decided.
-- Whether Bitbucket content is limited to PRs the owner authored or reviewed
-- Whether a repo last updated in 2018 is kept: the guideline drew the line
-  (drops 2018).
-- Whether the repos that have `.planning/` but no `.planning/config.json`
-  are GSD repos whose `STATE.md` and `CONTEXT.md` count as decision sources
-  (§1).
-- Whether the reviewed anonymised batches must include each source (Slack,
-  PRs, transcripts) before the owner stops review, since each anonymises
-  differently.
-- The pseudonym format (stable pseudonym plus role tag, e.g. `colleague-07`;
-  clients as codes).
-- Where spaCy's environment lives, now `embedding-lib` owns the embedding
-  environment: inside the pipeline package, or `embedding-lib`'s.
-- Which product, store and project names that identify a client on their own
-  are added to the anonymising replacement list (§2.3).
-- That sending work through subagents multiplies the volume of text sent to
-  the API: open.
-  Full sending (anonymised) is assumed by
-  §4.9 and §6.
-- Whether Claude Code transcripts from other machines or cloud sessions exist
-  and should be included.
+  pre-2019 rule in §1).
 
 ### 8.2 Voice
 
@@ -1087,16 +1164,6 @@ stage lists only what blocks that stage.
   local page keeps it on this machine, a claude.ai page would send it off it —
   and how the blind-pair page saves progress between sittings. (The pages
   are part of `voice-decision-pipeline`.)
-- Real names in built outputs: the voice guide, exemplars, principles,
-  evidence quotes and client constraints. All of them reach the API — the
-  guide in every drafting prompt, exemplars at each draft, principles,
-  quotes and constraints through every lookup.
-  §2.3 assumes exemplars
-  are sent anonymised (a pre-anonymised copy stored at build time); nothing
-  is set for the guide, principles, quotes or constraints. Options: real
-  names in all of them; anonymised in all of them; or a split, e.g.
-  exemplars and guide anonymised, client constraints with real client names
-  (they probably need them to match a repo).
 - How `jira-comments.md`'s own wording rules (e.g. no second person,
   shorter) sit against the voice model where they disagree. Today §3.1
   keeps only the file's structure. Options: the file's
@@ -1186,8 +1253,6 @@ stage lists only what blocks that stage.
 - Whether OpenSpec runs its own agents (its docs don't say).
 - How the `SessionStart` block behaves in sessions that never touch code (it
   fires in every session; behaviour not decided).
-- Real names in principles, evidence quotes and client constraints: see
-  §8.2.
 - What counts as an "approved entry" for the gates. If an agent can log its
   own decision and then pass the gate, the gate is circular; it needs to be
   limited to entries backed by a usable principle or by the owner's answer.
