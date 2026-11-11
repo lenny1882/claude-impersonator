@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# voice-decision-pipeline — builds the corpus the voice and decision models
+# are made from: Slack, Bitbucket PRs, Claude Code transcripts and GSD
+# records, credentials redacted, anonymised copies, review batches, and the
+# corpus embedding index.
+#
+# Why it exists. Everything sent to the Anthropic API to build the models
+# has to be anonymised first, by local scripts, with James approving the
+# first batch from each source before any of it goes (PLAN §2.3). Doing that
+# by hand in a session leaks: a subagent reading the export carries real
+# names into its prompt. So the corpus is built by these scripts alone, its
+# text reaches a model only through them, and the stored corpus keeps real
+# names locally while a parallel anonymised copy is what gets sent.
+#
+# Two interpreters, both from embedding-lib's bundled Python 3.14 (PLAN
+# §2.3, §5): the pipeline's own venv (spaCy and en_core_web_trf, for the
+# name-finding pass) runs everything except `index`, which runs on
+# embedding-lib's venv so the corpus index is embedded by exactly the setup
+# voice-runtime will query with. The pipeline's venv is tied to
+# embedding-lib's Python version: when that changes, every command refuses
+# until `setup` rebuilds the venv.
+#
+# State is ~/.claude/voice-decision-pipeline/, owner-only. ~/.claude is
+# outside Claude Code's Bash sandbox, so the install adds this command to
+# sandbox.excludedCommands.
+set -euo pipefail
+umask 077
+
+PKG=voice-decision-pipeline
+HOME_DIR="${VDP_HOME:-$HOME/.local/share/$PKG}"
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+if [ -d "$HOME_DIR/pylib/vdp" ]; then PYLIB="$HOME_DIR/pylib"
+else PYLIB="$(cd "$(dirname "$SELF")/../pylib" && pwd)"; fi
+EL_HOME="${EMBEDDING_LIB_HOME:-$HOME/.local/share/embedding-lib}"
+EL_PY="$EL_HOME/python/bin/python3"
+EL_VPY="$EL_HOME/venv/bin/python"
+VENV="$HOME_DIR/venv"
+VPY="$VENV/bin/python"
+LOGDIR="${VDP_LOG_DIR:-/tmp}"
+NEED_MB=2400   # about 1.8 GB installed, plus pip's downloads in flight
+
+usage() {
+  cat <<EOF
+voice-decision-pipeline — builds the corpus for the voice and decision models
+
+USAGE
+  voice-decision-pipeline <command> [options]
+
+SET UP
+  setup [--yes]              build the pipeline's venv (spaCy, en_core_web_trf;
+                             about 1.8 GB; asks first unless --yes)
+  check                      find both names in a made-up sentence with spaCy
+  init-inputs <file>         copy build-inputs.json into the pipeline's state
+
+BUILD THE CORPUS
+  pick-repos <ws/repo>... [--me <id>] [--remove <ws/repo>]
+                             the Bitbucket repos to read, and James's account
+  extract <source|all>       slack, transcripts, gsd, bitbucket
+  import-transcripts <dir> [--machine <name>]
+                             add another machine's copied ~/.claude/projects
+  anonymise                  rebuild the anonymised copies and mining candidates
+  index                      embed James's voice items (runs on embedding-lib)
+
+REVIEW
+  review [--port N] [--no-browser]
+                             the local page: mining candidates and batches
+  batch <source>             draw the next batch of 50 for a source
+  sendable <source>          exit 0 once a source's first batch is approved
+
+  forget <person|conversation>
+                             remove someone's or a conversation's records
+  status                     what's built, reviewed and sendable (JSON)
+  paths                      where everything lives
+
+Each command logs to $LOGDIR/$PKG-<command>.log.
+EOF
+}
+
+die() { printf '%s: %s\n' "$PKG" "$*" >&2; exit 1; }
+say() { printf '%s\n' "$*"; }
+sha256() { sha256sum "$1" | cut -d' ' -f1; }
+
+log_to() { # log_to <command>: everything after this also goes to the log
+  local log="$LOGDIR/$PKG-$1.log"
+  exec > >(tee -a "$log") 2>&1
+  say "== $PKG $*, $(date -Is)"
+}
+
+el_python_version() {
+  [ -x "$EL_PY" ] || return 1
+  "$EL_PY" -c 'import platform; print(platform.python_version())'
+}
+
+el_ok() {
+  [ -x "$EL_VPY" ] && "$EL_VPY" -c \
+    'import embedding_lib as e, sys; sys.exit(0 if e.EMBEDDING_LIB_API == 1 else 1)' 2>/dev/null
+}
+
+stamp() { echo "$(el_python_version) $(sha256 "$PYLIB/requirements.txt")"; }
+
+venv_ok() {
+  [ -x "$VPY" ] && [ "$(cat "$HOME_DIR/.venv-stamp" 2>/dev/null)" = "$(stamp)" ] \
+    && "$VPY" -c 'import spacy, en_core_web_trf' 2>/dev/null
+}
+
+need_el() {
+  el_ok || { printf '%s: embedding-lib is not installed or not set up; install it first, then run: embedding-lib setup\n' "$PKG" >&2; exit 4; }
+}
+
+need_env() {
+  need_el
+  if ! venv_ok; then
+    if [ -x "$VPY" ]; then
+      printf "%s: the venv was built for another embedding-lib Python or lock (built: %s; now: %s); run: %s setup\n" \
+        "$PKG" "$(cat "$HOME_DIR/.venv-stamp" 2>/dev/null)" "$(stamp)" "$PKG" >&2
+    else
+      printf '%s: not set up; run: %s setup\n' "$PKG" "$PKG" >&2
+    fi
+    exit 4
+  fi
+}
+
+run_py() { PYTHONPATH="$PYLIB" exec "$VPY" -m vdp "$@"; }
+
+cmd_setup() {
+  local yes=0
+  for a in "$@"; do
+    case "$a" in --yes|-y) yes=1 ;; *) die "setup: unknown option $a" ;; esac
+  done
+  need_el
+  mkdir -p "$HOME_DIR"
+  chmod 700 "$HOME_DIR"
+  log_to setup
+  if venv_ok; then
+    say "  ok    nothing to do: the venv matches embedding-lib's Python $(el_python_version) and the lock"
+    return 0
+  fi
+  local free_mb
+  free_mb=$(df -Pm "$HOME_DIR" | awk 'NR==2 {print $4}')
+  [ "$free_mb" -ge "$NEED_MB" ] || die "needs about ${NEED_MB} MB free in $HOME_DIR, has ${free_mb} MB"
+  if [ "$yes" -eq 0 ]; then
+    if [ -t 0 ]; then
+      printf 'Build the venv in %s (spaCy and en_core_web_trf, about 1.8 GB)? [y/N] ' "$VENV"
+      local r; read -r r
+      case "$r" in y|Y|yes) ;; *) die "nothing downloaded; run '$PKG setup' when ready" ;; esac
+    else
+      die "needs to download spaCy and en_core_web_trf (about 1.8 GB); run '$PKG setup --yes' to go ahead without a prompt"
+    fi
+  fi
+  say "== venv on embedding-lib's Python $(el_python_version), from $PYLIB/requirements.txt"
+  # The stamp goes first and is written back last, so a build that dies
+  # halfway is rebuilt by the next setup and refused by every other command.
+  rm -f "$HOME_DIR/.venv-stamp"
+  rm -rf "$VENV"
+  "$EL_PY" -m venv "$VENV"
+  "$VPY" -m pip install -q --disable-pip-version-check --no-deps --require-hashes --only-binary :all: \
+    --index-url "${VDP_INDEX_URL:-https://pypi.org/simple}" \
+    --extra-index-url "${VDP_EXTRA_INDEX_URL:-https://download.pytorch.org/whl/cpu}" \
+    -r "$PYLIB/requirements.txt" || die "pip install failed — see $LOGDIR/$PKG-setup.log"
+  stamp > "$HOME_DIR/.venv-stamp"
+  say "  ok    $("$VPY" -c 'import spacy; print("spacy", spacy.__version__)'), en_core_web_trf"
+  say "== done: $(du -sh "$VENV" | cut -f1) in $VENV"
+}
+
+case "${1:-}" in
+  -h|--help|help|"") usage ;;
+  setup) shift; cmd_setup "$@" ;;
+  check)
+    need_env
+    out=$(PYTHONPATH="$PYLIB" "$VPY" -m vdp probe 2>/dev/null) || { printf '%s: check failed: %s\n' "$PKG" "$out" >&2; exit 1; }
+    say "ok: $out" ;;
+  paths)
+    printf 'home %s\nvenv %s\npylib %s\nstate %s\nembedding-lib %s\nlogs %s/%s-<command>.log\n' \
+      "$HOME_DIR" "$VENV" "$PYLIB" "${VDP_STATE:-${CLAUDE_DIR:-$HOME/.claude}/$PKG}" "$EL_HOME" "$LOGDIR" "$PKG" ;;
+  index)
+    need_env
+    log_to index
+    PYTHONPATH="$PYLIB:$EL_HOME/pylib" exec "$EL_VPY" -m vdp "$@" ;;
+  init-inputs|extract|import-transcripts|pick-repos|anonymise|batch|forget)
+    need_env
+    log_to "$1"
+    run_py "$@" ;;
+  review)
+    need_env
+    log_to review
+    run_py "$@" ;;
+  status|sendable)
+    need_env
+    run_py "$@" ;;
+  *) printf 'unknown command: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+esac

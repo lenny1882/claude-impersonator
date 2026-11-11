@@ -19,6 +19,7 @@ shipped without touching the rest.
 | Package | What it does |
 | --- | --- |
 | [`embedding-lib`](packages/embedding-lib/) | Pinned local text embeddings (`bge-base-en-v1.5`, CPU) on a bundled Python 3.14, with an identity record each index stores so a mismatched one is refused |
+| [`voice-decision-pipeline`](packages/voice-decision-pipeline/) | Builds the corpus for the voice and decision models: four sources read, credentials redacted, an anonymised copy, per-source review batches and a local embedding index |
 <!-- new-package.sh --monorepo adds a row above this line -->
 
 ## Install a package

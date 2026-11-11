@@ -1,0 +1,11 @@
+# What the pipeline's own venv needs beyond the standard library: spaCy and
+# the en_core_web_trf model for the anonymiser's name-finding pass (PLAN
+# §2.3, James 11 Nov 2026). tools/lock.sh resolves the rest into
+# requirements.txt. torch's +cpu build comes from PyTorch's CPU index and is
+# pinned to the version embedding-lib uses, so one wheel set serves both.
+spacy==3.8.18
+en_core_web_trf @ https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl
+torch==2.15.0+cpu
+# en_core_web_trf 3.8.0 needs spacy-curated-transformers <0.4; 0.3.1 caps
+# Python below 3.14, and 0.3.0 is the newest without that cap.
+spacy-curated-transformers==0.3.0
