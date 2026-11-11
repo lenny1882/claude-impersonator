@@ -4,7 +4,8 @@
 # directory, so nothing here touches the real config either.
 #
 # Logs to /tmp/claude-impersonator-tests.log as well as the terminal. Each
-# suite also writes its own log (embedding-lib: /tmp/embedding-lib-tests.log).
+# suite also writes its own log (embedding-lib: /tmp/embedding-lib-tests.log;
+# voice-decision-pipeline: /tmp/voice-decision-pipeline-tests.log).
 set -uo pipefail
 
 LOGFILE="${IMPERSONATOR_TEST_LOG:-/tmp/claude-impersonator-tests.log}"
