@@ -97,10 +97,8 @@ Left out:
   PRs James authored, commented on or approved (James, 11 Nov 2026); a
   silent approval counts, as a record that he accepted the approach. Later
   widened to every PR in the picked repos (§4.14).
-  Inline comments get the code under them from the API; James adds
-  `read:repository` to the Bitbucket token when the pipeline is run.
-  `~/.claude/auth-recipes/bitbucket.md` needs its scopes and gotchas 5 and 8
-  updated at the same time.
+  Inline comments get the code under them from the API, which needs
+  `read:repository` on the Bitbucket token, which it has.
 
 ### 2.2 Storage
 
@@ -835,9 +833,7 @@ fire on several events.
   (James, 9 Nov 2026, after the planning session). Claude's
   reason, chosen as recommended: the decision model's main source, Claude
   Code transcripts, grows from now on, so waiting gives it more data, and
-  the voice model can start from the Slack export already on disk. The
-  voice model's Bitbucket PR part still needs `read:repository` on the
-  token (§9).
+  the voice model can start from the Slack export already on disk.
 - **When the build starts** (James, 9 Nov 2026): each stage of §8.0 is built
   once its own questions are answered — the monorepo scaffold and
   `embedding-lib` after Stage 0, the corpus extraction after Stage 1, the
@@ -1529,10 +1525,7 @@ stage lists only what blocks that stage.
 
 ## 9. Needs James when it runs
 
-1. Add `read:repository` to the Bitbucket token; at the same time
-   `~/.claude/auth-recipes/bitbucket.md` gets its scopes and gotchas 5
-   (branch refs) and 8 (PR diffstat) updated. The token is in `~/.netrc` (REST
-   only; git uses SSH).
+1. The Bitbucket token's scopes: none to add; it has `read:repository`.
 2. Pick the `oneiota` repos.
 3. Review the first anonymised batches, until he says stop.
 4. Check the audience mapping, the label sample and the sample of
