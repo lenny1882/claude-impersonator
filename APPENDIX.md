@@ -228,7 +228,7 @@ not stopped.
 |---|---|---|---|---|
 | Hook point | `PreToolUse` on `git commit` and `bm-sdk … commit`, or `Stop`/`SubagentStop` | `SubagentStop` on `gsd:bm-executor` | `PreToolUse` on the Agent call launching the next wave | phase-end audit or PR review |
 | Work it sees | all commits | GSD execute runs only | GSD execute runs only | whatever is reviewed |
-| Checks a year | a few thousand (from repo history) | ~750–1,000 (estimated, unmeasured; overstates, since only 6–8 of the active repos use GSD: 8 have `.planning/`, 6 a `config.json`, PLAN §8.1) | up to plan count; median phase 1 plan | one per phase or PR; unmeasured |
+| Checks a year | a few thousand (from repo history) | ~750–1,000 (estimated, unmeasured; overstates, since only 8 of the active repos use GSD: every repo with `.planning/`, PLAN §1) | up to plan count; median phase 1 plan | one per phase or PR; unmeasured |
 | Tokens per check | ~3k median, ~12k p90 | ~5–15k | one wave's diff | tens of thousands, chunked |
 | Tokens a year | ~12–15M | same diff lines, ~4–5M less repeated overhead | similar to per plan | ~6M less than every commit |
 | Found | straight away | before the plan hands back | before dependent work starts | after later work built on it |
