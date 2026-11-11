@@ -154,7 +154,9 @@ Left out:
   lock file; `embedding-lib` stays embedding-only and the runtimes never
   install spaCy. The pipeline's verify step fails if `embedding-lib`'s
   Python version changes, until the venv is rebuilt.
-  Whether spaCy has Python 3.14 wheels is not checked. The model is
+  spaCy 3.8 has Python 3.14 wheels (checked at build time);
+  `spacy-curated-transformers` is pinned to 0.3.0, the newest 0.x that
+  installs on 3.14, which `en_core_web_trf` 3.8.0 needs. The model is
   `en_core_web_trf`, for the highest published
   name-finding score (~0.90 NER F against ~0.85 for the others, not
   measured here); it brings its own CPU PyTorch into the pipeline's venv
@@ -803,6 +805,25 @@ fire on several events.
   `embedding-lib` after Stage 0, the corpus extraction after Stage 1, the
   voice model after Stage 2, `question-store` after Stage 3, the decision
   model after Stage 4.
+  `voice-decision-pipeline`, the corpus extraction (Stage 1).
+  The pipeline
+  reads all four sources, redacts credentials, writes the anonymised copies
+  and mining candidates, serves the review page, draws per-source batches,
+  and has `forget` and the corpus index; nothing in it sends anything.
+  Design choices in the build:
+  - The Stage 1 review page (mining candidates and batches) is a small
+    server on 127.0.0.1 run by `voice-decision-pipeline review`, writing
+    each click to the pipeline's state. Where the voice review pages run
+    is open (§8).
+  - The owner's own pseudonym is `self-01`. A person is `client-contact` when
+    outside the owner's Slack team and in no internal conversation, otherwise
+    `colleague`; a name only spaCy finds becomes `person-NN`.
+  - The anonymised copies leave out full paths, working directories and
+    repo slugs, keeping only their last part, anonymised; record ids are
+    hashed.
+  - The corpus index holds the owner's Slack and Bitbucket voice items only.
+  - A workspace's custom agreement emoji are listed in the inputs
+    (`agreement_reactions_extra`), not in the package.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
@@ -1054,6 +1075,7 @@ stage lists only what blocks that stage.
    decision-log rules, the voice review page saving progress.
 
 **Stage 1 – `embedding-lib` and the corpus (the pipeline's extraction half)**
+(§5)
 6. Built outputs are anonymised, stored with a real-name copy
    (§2.3).
 7. Role-tagged pseudonyms, and client product names found by
