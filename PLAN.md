@@ -51,7 +51,6 @@ Left out:
   run; the Slack connector route stays open but unused (it would send real
   names to the API before anonymising).
 
-
 ## 2. Shared: corpus preparation
 
 ### 2.1 Context kept per item
