@@ -1468,7 +1468,8 @@ stage lists only what blocks that stage.
 3. Review the first anonymised batches, until the owner says stop.
 4. Check the audience mapping, the label sample and the sample of
    second-model disagreements (§3.4); confirm inferred reasons
-   and bulk-accepted records.
+   and bulk-accepted records. The group DMs the hand-written list left
+   open are assigned on the mapping page.
 5. Grade the 60 blind voice pairs (more whenever the owner wants).
 6. Grade every held-back decision case (at least 52 per kind, §4.11).
 7. Decide every old-against-new conflict before an orchestrator gets the
