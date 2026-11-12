@@ -76,20 +76,21 @@ Left out:
   Main-session transcripts only: subagent (sidechain) transcripts are left
   out. Their text is Claude's, and the owner's own words
   and answers are all in the main sessions.
-  Transcripts from the owner's other machines are included;
-  claude.ai cloud sessions are not. Before a build,
-  the owner copies each machine's `~/.claude/projects` here with one `rsync`
-  per machine, and the pipeline's `import-transcripts <dir>` reads it
-  through the same anonymising and filters. Whether those machines hold
-  transcripts is not
-  checked.
+  Transcripts from other machines are left out of this build.
+  claude.ai cloud sessions are not a source.
+  If another machine's `~/.claude/projects` is copied here later,
+  the pipeline's `import-transcripts <dir>` reads it through the same
+  anonymising and filters.
 - **Git commit messages:** not a source. Most are
   short subject lines, and PR descriptions and threads cover the same
   changes for Bitbucket repos.
 - **Bitbucket:** each comment with its PR title, description and thread.
   PRs the owner authored, commented on or approved; a
-  silent approval counts, as a record that the owner accepted the approach. Every
-  PR in the picked repos is to be read as well (§4.14).
+  silent approval counts, as a record that the owner accepted the approach. A PR
+  the owner was only added to as a reviewer, with no comment or approval, is left
+  out. It covers every PR in the picked repos
+  (§4.14). The repos are picked from a pre-pass that counts, per repo,
+  the PRs the owner authored, commented on or approved.
   Inline comments get the code under them from the API, which needs
   `read:repository` on the Bitbucket token, which it has.
 
@@ -822,6 +823,29 @@ fire on several events.
   - The corpus index holds the owner's Slack and Bitbucket voice items only.
   - A workspace's custom agreement emoji are listed in the inputs
     (`agreement_reactions_extra`), not in the package.
+  The Bitbucket extract finds from the PR list which PRs the owner authored, commented on or approved, and
+  fetches only those, leaving out PRs the owner was only added to as a reviewer.
+  `voice-decision-pipeline` saves each finished repo of a Bitbucket
+  extract, so a stopped run resumes at the next repo, and prints a progress
+  line per repo. It also has:
+  - The audience mapping page (§3.2) on the review page: each Slack
+    conversation the inputs leave without an audience, with its members and
+    the owner's longest messages there, and a button per audience. A change
+    holds batches until `extract slack` and `anonymise` have run again.
+  - Group DM names (`mpdm-<handle>--<handle>-N`) anonymised handle by
+    handle, however short a handle is.
+  - A leak check at the end of `anonymise`: every real name, handle, email
+    and client name the pipeline knows, searched for in every anonymised
+    record, with what it finds on the review page.
+  - A name only spaCy finds is replaced wherever it appears once spaCy has
+    tagged it anywhere: a single word as written, or
+    in any case inside a URL or path, a name of two or more words in any
+    case; a client or kept product of the same name stays that.
+  - `forget` works before `anonymise`, from the sources' own people lists,
+    and takes a Bitbucket repo or PR; a forgotten PR stays out of later
+    extracts.
+  - `show bitbucket`, the owner's Bitbucket items as text, kept in the state.
+  - A `~/.netrc` that Python refuses is reported as that.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
@@ -1089,14 +1113,15 @@ stage lists only what blocks that stage.
     (§2.2).
 11. Source scope. Sidechain transcripts: left out.
     Commit messages: left out (§2.1).
-    Other machines: the owner's other machines included, cloud
-    sessions not (§2.1). The 2018 cut-off:
+    Other machines: only this one's transcripts; cloud
+    sessions not a source (§2.1). Bitbucket:
     a hard rule, repos last updated before `bitbucket.CUTOFF` left out
     Bitbucket: PRs the owner authored, commented on or
-    approved, widened to every PR (§2.1, §4.14).
+    approved, not those they were only added to as a reviewer, covering
+    every PR (§2.1, §4.14).
     `.planning/` repos without `config.json` count as GSD repos
-    (§1). Open: which repos (picked when the pipeline
-    runs, §1). Bot messages kept only as tagged context, channel events
+    (§1). The repos are the picked list in the
+    pipeline's inputs (§2.1). Bot messages kept only as tagged context, channel events
     dropped; agreement reactions on others' messages are decision
     candidates (§2.1).
 12. Exemplar thresholds of 3 words or fewer and 50% code; group
@@ -1437,6 +1462,8 @@ stage lists only what blocks that stage.
 ## 9. Needs the owner when it runs
 
 1. The Bitbucket token's scopes: none to add; it has `read:repository`.
+   `~/.netrc` has to be readable by its owner only (mode 600): Python's
+   `netrc` module refuses any other, though `curl` reads it.
 2. Pick the `oneiota` repos.
 3. Review the first anonymised batches, until the owner says stop.
 4. Check the audience mapping, the label sample and the sample of

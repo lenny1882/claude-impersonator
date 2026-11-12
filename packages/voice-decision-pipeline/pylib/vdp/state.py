@@ -60,6 +60,10 @@ def write_json(dest, obj):
                              f.write("\n")))
 
 
+def write_text(dest, text):
+    _atomic(dest, lambda f: f.write(text))
+
+
 def read_json(src, default=None):
     try:
         with open(src, encoding="utf-8") as f:

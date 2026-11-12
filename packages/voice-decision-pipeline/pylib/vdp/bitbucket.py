@@ -40,8 +40,14 @@ def _auth():
     try:
         # The tests point VDP_NETRC at a made-up file; nothing else sets it.
         a = netrc.netrc(os.environ.get("VDP_NETRC") or None).authenticators(host)
-    except (FileNotFoundError, netrc.NetrcParseError):
+    except FileNotFoundError:
         a = None
+    except netrc.NetrcParseError as e:
+        # Python refuses a ~/.netrc others can read; curl doesn't, so the
+        # token can look fine from the shell (PLAN §9).
+        hint = (" Make it readable by you only: chmod 600 ~/.netrc."
+                if "permissions" in str(e) or "too permissive" in str(e) else "")
+        raise ApiError(f"voice-decision-pipeline: can't read ~/.netrc: {e.msg}.{hint}")
     if not a:
         raise ApiError(f"voice-decision-pipeline: no ~/.netrc entry for {host}")
     import base64
@@ -204,7 +210,7 @@ def extract(d, counts=None):
         saved = load_progress(slug, me_ids)
         if saved:
             for r in saved["records"]:
-                if r["author"] not in struck_authors:
+                if r["author"] not in struck_authors and r["conversation"] not in struck:
                     recs[r["id"]] = r
             stats.update(saved["stats"])
             counts.update(saved["counts"])
@@ -228,6 +234,9 @@ def extract(d, counts=None):
             if not involved(pr_stub, me_ids):
                 if any(is_me(p.get("user"), me_ids) for p in pr_stub.get("participants") or []):
                     rs["prs-added-only"] += 1
+                continue
+            if f"{slug}#{pr_stub['id']}" in struck:
+                rs["prs-struck"] += 1
                 continue
             pr = get(f"/repositories/{slug}/pullrequests/{pr_stub['id']}")
             parts = pr.get("participants") or []

@@ -55,6 +55,9 @@ def cmd_extract(a):
             if s == "bitbucket":
                 from . import bitbucket
                 bitbucket.clear_progress()
+            if s == "slack":
+                state.write_json(state.path("slack-meta.json"),
+                                 {"audiences_hash": inputs.audiences_hash(d)})
             print(f"  ok    corpus/{s}.jsonl: {len(recs)} records {dict(stats)}")
             if counts:
                 print(f"  ok    credentials redacted, by type: {dict(counts)}")
@@ -110,6 +113,11 @@ def cmd_forget(a):
     from . import forget
     with state.lock():
         forget.run(a.who)
+
+
+def cmd_show(a):
+    from . import show
+    show.bitbucket(a.repo)
 
 
 def cmd_index(a):
@@ -173,6 +181,8 @@ def main(argv=None):
     s = sub.add_parser("review"); s.add_argument("--port", type=int, default=8765)
     s.add_argument("--no-browser", action="store_true"); s.set_defaults(f=cmd_review)
     s = sub.add_parser("forget"); s.add_argument("who"); s.set_defaults(f=cmd_forget)
+    s = sub.add_parser("show"); s.add_argument("source", choices=["bitbucket"])
+    s.add_argument("--repo"); s.set_defaults(f=cmd_show)
     s = sub.add_parser("index"); s.set_defaults(f=cmd_index)
     s = sub.add_parser("status"); s.set_defaults(f=cmd_status)
     s = sub.add_parser("sendable"); s.add_argument("source", choices=SOURCES); s.set_defaults(f=cmd_sendable)
