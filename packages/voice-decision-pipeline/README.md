@@ -29,8 +29,9 @@ that are each versioned, released and installed on their own.
     $ voice-decision-pipeline review
       ok    review page at http://127.0.0.1:8765/
 
-The review page lists the candidate client product, store and project names
-to keep or strike, then shows each source's batches of 50 anonymised items
+The review page lists the Slack conversations the inputs leave without an
+audience (group DMs outside the senior set) for you to assign, the candidate
+client product, store and project names to keep or strike, then each source's batches of 50 anonymised items
 with every replacement highlighted. Approving a source's first batch is what
 lets later passes send it (`voice-decision-pipeline sendable <source>`).
 
@@ -99,7 +100,11 @@ anonymising map, the mining and batch decisions, the inputs with their
     review [--port N] [--no-browser]
     batch <source>               draw the next batch of 50
     sendable <source>            exit 0 once its first batch is approved, else 5
-    forget <person|conversation> remove their records; strike them
+    forget <person|conversation> remove their records; strike them. A person by
+                                 name or id, before or after anonymise; a
+                                 conversation, Bitbucket repo or <repo>#<pr>
+    show bitbucket [--repo <ws/repo>]
+                                 your Bitbucket items as text, in views/
     status                       JSON: records, items, batches, sendable, modes
     paths                        where everything lives
 
@@ -120,6 +125,8 @@ files 600), never backed up:
 | `mining-candidates.json`, `mining-decisions.json` | candidate names and James's keep or strike |
 | `batches/`, `review-state.json` | drawn batches; per-source approvals and stops |
 | `index/` | `vectors.npy`, `ids.json`, `identity.json` |
+| `leak-report.json` | real names the leak check found in the anonymised copies, with where |
+| `views/` | `show bitbucket`'s text, real names |
 | `spacy-cache.jsonl` | spaCy's tags by text hash, so reruns tag only new text |
 | `bitbucket-progress/` | each finished repo of an `extract bitbucket` still running or stopped |
 
@@ -147,7 +154,9 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   those he was only added to as a reviewer. Which PRs those are is read from the PR
   list, so only they are fetched one by one; each comment with its PR and
   thread, inline comments with the code under them. Reads the REST token in
-  `~/.netrc`; inline code needs `read:repository` on it. Prints a line per
+  `~/.netrc`, which must be readable by you only (`chmod 600`: Python's
+  `netrc` refuses any other, though `curl` reads it); inline code needs
+  `read:repository` on it. Prints a line per
   repo (PRs seen, kept, added-only, calls) and saves each finished repo to
   `bitbucket-progress/`, so a run stopped partway starts again at the first
   unfinished repo; the saved repos are cleared once `corpus/bitbucket.jsonl`
@@ -155,12 +164,21 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
 - **Anonymising:** Slack mentions, emails and phone numbers; every name
   `users.json` gives each person; the client names in the inputs and the
   product names kept on the review page, inside URLs and channel names too;
-  then names spaCy (`en_core_web_trf`) tags as people. Pseudonyms are
+  each handle in a group DM's name (`mpdm-a--b-1`), however short; then names spaCy (`en_core_web_trf`) tags as people, replaced wherever
+  they appear once spaCy has tagged them anywhere (a single word as written,
+  or in any case inside a URL or path; a name of two or more words in any
+  case), unless a client or kept product has the same name. Pseudonyms are
   role-tagged (`self-01`, `colleague-07`, `client-contact-02`, `client-03`,
   `product-04`, `person-05`) and one person keeps one across every source; a
   Bitbucket account is matched to its Slack person by name.
+- **Leak check:** the last step of `anonymise` searches every anonymised
+  record, source fields too, for every full name, handle of 3 characters or
+  more and email in `users.json`, the Bitbucket accounts' names, the map's
+  aliases and unique first names, and the client and kept product names.
+  Anything found is listed on the review page with where it was.
 - **Gates:** no batch is drawn while a mining candidate is undecided, or after
-  a decision until `anonymise` has run again.
+  a decision until `anonymise` has run again; nor after an audience is set on
+  the review page until `extract slack` and then `anonymise` have run again.
 - **Index:** James's Slack and Bitbucket voice items, each embedded with the
   message it answers, trimmed from the start of that message to fit 512
   tokens. Not transcripts, GSD records, reactions, approvals or the self-DM.

@@ -83,20 +83,21 @@ Left out:
   Main-session transcripts only: subagent (sidechain) transcripts are left
   out (James, 11 Nov 2026). Their text is Claude's, and James's own words
   and answers are all in the main sessions.
-  Transcripts from the aws-workspace WorkSpace and EndeavourOS are included;
-  claude.ai cloud sessions are not (James, 11 Nov 2026). Before a build,
-  James copies each machine's `~/.claude/projects` here with one `rsync`
-  per machine, and the pipeline's `import-transcripts <dir>` reads it
-  through the same anonymising and filters. Whether those machines hold
-  transcripts, and whether they still expire them after 30 days, is not
-  checked; `cleanupPeriodDays` set on both stops further loss.
+  Transcripts from other machines are left out of this build (James, 12 Nov
+  2026), and claude.ai cloud sessions are not a source (James, 11 Nov
+  2026). If another machine's `~/.claude/projects` is copied here later,
+  the pipeline's `import-transcripts <dir>` reads it through the same
+  anonymising and filters.
 - **Git commit messages:** not a source (James, 11 Nov 2026). Most are
   short subject lines, and PR descriptions and threads cover the same
   changes for Bitbucket repos.
 - **Bitbucket:** each comment with its PR title, description and thread.
   PRs James authored, commented on or approved (James, 11 Nov 2026); a
-  silent approval counts, as a record that he accepted the approach. Later
-  widened to every PR in the picked repos (§4.14).
+  silent approval counts, as a record that he accepted the approach. A PR
+  he was only added to as a reviewer, with no comment or approval, is left
+  out (James, 12 Nov 2026). Later widened to every PR in the picked repos
+  (§4.14). The repos were picked from a pre-pass that counted, per repo,
+  the PRs he authored, commented on or approved (James, 12 Nov 2026).
   Inline comments get the code under them from the API, which needs
   `read:repository` on the Bitbucket token, which it has.
 
@@ -859,6 +860,30 @@ fire on several events.
   - The corpus index holds James's Slack and Bitbucket voice items only.
   - A workspace's custom agreement emoji are listed in the inputs
     (`agreement_reactions_extra`), not in the package.
+- **Changed since** (12 Nov 2026): `voice-decision-pipeline-v1.0.1` reads
+  from the PR list which PRs James authored, commented on or approved, and
+  fetches only those, leaving out PRs he was only added to as a reviewer.
+  `voice-decision-pipeline-v1.0.2` saves each finished repo of a Bitbucket
+  extract, so a stopped run resumes at the next repo, and prints a progress
+  line per repo. `voice-decision-pipeline-v1.0.3` adds:
+  - The audience mapping page (§3.2) on the review page: each Slack
+    conversation the inputs leave without an audience, with its members and
+    James's longest messages there, and a button per audience. A change
+    holds batches until `extract slack` and `anonymise` have run again.
+  - Group DM names (`mpdm-<handle>--<handle>-N`) anonymised handle by
+    handle, however short a handle is.
+  - A leak check at the end of `anonymise`: every real name, handle, email
+    and client name the pipeline knows, searched for in every anonymised
+    record, with what it finds on the review page.
+  - A name only spaCy finds is replaced wherever it appears once spaCy has
+    tagged it anywhere (James, 12 Nov 2026): a single word as written, or
+    in any case inside a URL or path, a name of two or more words in any
+    case; a client or kept product of the same name stays that.
+  - `forget` works before `anonymise`, from the sources' own people lists,
+    and takes a Bitbucket repo or PR; a forgotten PR stays out of later
+    extracts.
+  - `show bitbucket`, James's Bitbucket items as text, kept in the state.
+  - A `~/.netrc` that Python refuses is reported as that.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask James without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
@@ -1150,14 +1175,15 @@ stage lists only what blocks that stage.
     2026; §2.2).
 11. Source scope. Sidechain transcripts answered: left out (James, 11 Nov
     2026; §2.1); commit messages left out (James, 11 Nov 2026; §2.1).
-    Other machines answered: the WorkSpace and EndeavourOS included, cloud
-    sessions not (James, 11 Nov 2026; §2.1). The 2018 cut-off answered:
+    Other machines: only this one's transcripts (James, 12 Nov 2026); cloud
+    sessions not a source (James, 11 Nov 2026; §2.1). The 2018 cut-off answered:
     a hard rule, repos last updated before 2019 left out (James, 11 Nov
     2026; §1). Bitbucket answered: PRs James authored, commented on or
-    approved, widened to every PR later (James, 11 Nov 2026; §2.1, §4.14).
+    approved, not those he was only added to as a reviewer, widened to
+    every PR later (James, 11 and 12 Nov 2026; §2.1, §4.14).
     The 2 `.planning/` repos without `config.json` count as GSD repos
-    (James, 11 Nov 2026; §1). Open: which repos (picked when the pipeline
-    runs, §1). Bot messages kept only as tagged context, channel events
+    (James, 11 Nov 2026; §1). The repos are the picked list in the
+    pipeline's inputs (§2.1). Bot messages kept only as tagged context, channel events
     dropped; agreement reactions on others' messages are decision
     candidates (James, 11 Nov 2026; §2.1). All answered.
 12. Answered: exemplar thresholds of 3 words or fewer and 50% code; group
@@ -1526,7 +1552,9 @@ stage lists only what blocks that stage.
 ## 9. Needs James when it runs
 
 1. The Bitbucket token's scopes: none to add; it has `read:repository`.
-2. Pick the `oneiota` repos.
+   `~/.netrc` has to be readable by its owner only (mode 600): Python's
+   `netrc` module refuses any other, though `curl` reads it.
+2. Pick the `oneiota` repos: done (12 Nov 2026).
 3. Review the first anonymised batches, until he says stop.
 4. Check the audience mapping, the label sample and the sample of
    second-model disagreements (§3.4); confirm inferred reasons

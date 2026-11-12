@@ -41,7 +41,7 @@ def slack(root):
     w(f"{exp}/users.json", [
         user(ME, "Jamie Testperson", "Jamie", "Testperson"),
         user("UCOLPRIYA", "Priya Raman", "Priya", "Raman"),
-        user("UCOLTOMBB", "Tom Baker", "Tom", "Baker"),
+        user("UCOLTOMBB", "Tom Baker", "Tom", "Baker", handle="tom"),
         user("UCLIGREGR", "Gregor Whitfield", "Gregor", "Whitfield", team="T0CLIENT"),
         user("UBOTDEPLY", "Deploy Bot", "Deploy", "Bot", bot=True),
     ])
@@ -56,7 +56,9 @@ def slack(root):
         {"id": "DSELFNOTE", "members": [ME]},
         {"id": "DPRIYADMX", "members": [ME, "UCOLPRIYA"]},
     ])
-    w(f"{exp}/mpims.json", [])
+    w(f"{exp}/mpims.json", [
+        {"id": "GMPIMTRIO", "name": "mpdm-jamie.testperson--priya.raman--tom-1", "members": [ME, "UCOLPRIYA", "UCOLTOMBB"]},
+    ])
     t = 17.0 * 10 ** 8
     w(f"{exp}/CPROJACME/2023-11-14.json", [
         msg(t, "UCOLPRIYA", "Morning, the build for Acme Corp is red again",
@@ -88,6 +90,9 @@ def slack(root):
     w(f"{exp}/DPRIYADMX/2023-11-16.json", [
         msg(t + 2 * DAY, "UCOLPRIYA", "Can I take Friday off?"),
         msg(t + 2 * DAY + 30, ME, "Yes, of course")])
+    w(f"{exp}/GMPIMTRIO/2023-11-17.json", [
+        msg(t + 3 * DAY, "UCOLTOMBB", "Who is on call this weekend?"),
+        msg(t + 3 * DAY + 30, ME, "I am, swap with me next week")])
     w(f"{exp}/CSTRUCKXX/2023-11-16.json", [msg(t + 2 * DAY, ME, "struck conversation message")])
     inputs = {
         "_about": "test fixture",
@@ -102,6 +107,9 @@ def slack(root):
              "status": "kept", "audience": None, "james_messages": 1},
             {"id": "DPRIYADMX", "folder": "DPRIYADMX", "kind": "DM", "name": "DM Priya Raman",
              "status": "kept", "audience": "1:1 colleagues", "james_messages": 1},
+            {"id": "GMPIMTRIO", "folder": "GMPIMTRIO", "kind": "group DM", "name": "mpdm-jamie.testperson--priya.raman--tom-1",
+             "status": "kept", "audience": "senior/management if the same people, else unassigned",
+             "james_messages": 1},
             {"id": "CSTRUCKXX", "folder": "CSTRUCKXX", "kind": "channel", "name": "random-chat",
              "status": "struck", "audience": None, "james_messages": 1},
         ],

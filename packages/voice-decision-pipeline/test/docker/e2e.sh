@@ -89,12 +89,21 @@ check init "init-inputs" run "init-inputs $F/build-inputs.json"
 check pick "pick-repos" run "pick-repos ws/new-repo ws/old-repo --me '{me-uuid}'"
 run "extract all --gsd-root $F/dev" > "$RESULTS/extract.txt" 2>&1
 check extract "extract all reads all four sources" bash -c \
-  "grep -q 'corpus/slack.jsonl: 14' '$RESULTS/extract.txt' && grep -q 'corpus/bitbucket.jsonl: 5' '$RESULTS/extract.txt' && grep -q 'corpus/gsd.jsonl: 4' '$RESULTS/extract.txt' && grep -q 'corpus/transcripts.jsonl: 3' '$RESULTS/extract.txt'"
+  "grep -q 'corpus/slack.jsonl: 16' '$RESULTS/extract.txt' && grep -q 'corpus/bitbucket.jsonl: 5' '$RESULTS/extract.txt' && grep -q 'corpus/gsd.jsonl: 4' '$RESULTS/extract.txt' && grep -q 'corpus/transcripts.jsonl: 3' '$RESULTS/extract.txt'"
 check extract-log "extract logs to /tmp/$P-extract.log" as_dev "test -s /tmp/$P-extract.log"
 run "anonymise" > "$RESULTS/anonymise.txt" 2>&1
 check anonymise "anonymise with the real spaCy model" grep -q 'ok    anon/slack.jsonl' "$RESULTS/anonymise.txt"
 check anon-clean "no real name, email, phone or client name is left in the copies" as_dev \
   "! grep -q -i -e Priya -e Raman -e Gregor -e Whitfield -e Jamie -e acme -e '7700 900123' $ST/anon/*.jsonl"
+check leak-check "anonymise ends with a clean leak check" grep -q 'ok    leak check: none of' "$RESULTS/anonymise.txt"
+check group-dm "a group DM's name is all pseudonyms, the short handle too" as_dev \
+  "grep -q 'mpdm-self-01--colleague-01--colleague-02-1' $ST/anon/slack.jsonl && ! grep -q -- '--tom-1' $ST/anon/slack.jsonl"
+run "show bitbucket" > "$RESULTS/show.txt" 2>&1
+check show "show bitbucket writes the view through the installed command" bash -c \
+  "grep -q 'views/bitbucket.txt' '$RESULTS/show.txt'"
+check show-view "the view holds your reply and the inline code" as_dev \
+  "grep -q 'replying to Priya Raman' $ST/views/bitbucket.txt && grep -q '| +import json' $ST/views/bitbucket.txt"
+check show-log "show logs to /tmp/$P-show.log" as_dev "test -s /tmp/$P-show.log"
 check mining "the client product is a mining candidate" as_dev "jq -e 'map(.term)|index(\"Zephyrline\")' $ST/mining-candidates.json"
 check gate "a batch can't be drawn while it's undecided" as_dev "! $B batch slack"
 run "index" > "$RESULTS/index.txt" 2>&1

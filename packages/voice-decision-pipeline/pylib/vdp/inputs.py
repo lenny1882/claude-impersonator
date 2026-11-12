@@ -11,6 +11,8 @@ can be deleted and nothing with real names stays beside a public repo.
 original after that, so `init-inputs` refuses to overwrite it unless told to.
 """
 
+import hashlib
+import json
 import re
 
 from . import state
@@ -60,6 +62,31 @@ def audience(raw):
     if m and " if " not in key:
         return CANONICAL_AUDIENCES[m.group(1)]
     return None
+
+
+def audiences_hash(d):
+    """A fingerprint of every conversation's audience. The Slack extract and
+    anonymise each record the one they ran with, so a later change on the
+    mapping page shows up as a gate until both have run again."""
+    m = {c["id"]: audience(c.get("audience")) for c in d.get("conversations", [])}
+    return hashlib.sha1(json.dumps(m, sort_keys=True).encode()).hexdigest()
+
+
+def set_audience(conv_id, value):
+    """James's choice on the mapping page (PLAN §3.2). The hand-written rule
+    it replaces is kept beside it as `audience_rule`."""
+    if value not in CANONICAL_AUDIENCES:
+        raise ValueError(f"unknown audience {value!r}")
+    d = load()
+    for c in d.get("conversations", []):
+        if c["id"] == conv_id:
+            if "audience_rule" not in c:
+                c["audience_rule"] = c.get("audience")
+            c["audience"] = value
+            c["audience_set_on"] = "mapping page"
+            save(d)
+            return
+    raise SystemExit(f"voice-decision-pipeline: no conversation {conv_id}")
 
 
 def me(d):

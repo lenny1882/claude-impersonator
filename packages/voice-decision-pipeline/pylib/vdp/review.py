@@ -1,6 +1,9 @@
 """The local review page: `voice-decision-pipeline review` (PLAN §2.3).
 
-Two jobs, both James's, both before anything is sent:
+Three jobs, all James's, all before anything is sent:
+  - audiences: pick the audience of each Slack conversation the hand-written
+    list leaves open (PLAN §3.2: group DMs outside the senior set). Saved to
+    the inputs; the Slack extract and anonymise then run again.
   - mining: keep or strike each candidate client product, store or project
     name. Kept terms join the replacement list at the next `anonymise`.
   - batches: read 50 anonymised items from one source, every replacement
@@ -20,7 +23,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import SOURCES, batches, state
+from . import SOURCES, batches, inputs, leaks, state
 from .record import flags
 
 CSS = """
@@ -57,6 +60,11 @@ function bulk(d){const body={};for(const tr of document.querySelectorAll('tr[dat
 if(!tr.querySelector('button[aria-pressed=true]'))body[tr.dataset.term]=d}
 if(!Object.keys(body).length)return;if(!confirm(Object.keys(body).length+' undecided terms will be marked '+d))return;
 post('/api/mining',body).then(()=>location.reload())}
+function setaud(btn,id,a){post('/api/audience',{[id]:a}).then(()=>{
+for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria-pressed',
+b.dataset.a===a?'true':'false');const left=document.getElementById('left');
+if(left)left.textContent=[...document.querySelectorAll('.card')].filter(c=>
+!c.querySelector('button[aria-pressed=true]')).length})}
 """
 
 
@@ -97,13 +105,50 @@ def home():
     gates = batches.gates()
     g = ("".join(f"<li class=err>{html.escape(x)}</li>" for x in gates)
          if gates else "<li>none: batches can be drawn</li>")
+    try:
+        arows = mapping_rows()
+    except SystemExit:
+        arows = []
+    aleft = sum(1 for c, _ in arows if inputs.audience(c.get("audience")) is None)
     return page("Corpus review", f"""
+<h2>Audiences: conversations the hand-written list leaves open</h2>
+<p><a href='/audiences'>{len(arows)} conversations</a>, {aleft} without an audience.</p>
+<h2>Leak check: real names left in the anonymised copies</h2>
+<p>{leak_line()}</p>
 <h2>Mining: client product, store and project names</h2>
 <p><a href='/mining'>{len(cands)} candidates</a>, {left} undecided.</p>
 <h2>What blocks the next batch</h2><ul>{g}</ul>
 <h2>Sources</h2>
 <table><tr><th>Source</th><th>Records</th><th>Items</th><th>Approved batches</th>
 <th>Open batch</th><th>May be sent</th></tr>{''.join(rows)}</table>""")
+
+
+def leak_line():
+    lr = leaks.load()
+    if lr is None:
+        return "Not run yet: it runs at the end of <code>anonymise</code>."
+    if not lr["hits"]:
+        return f"None of {lr['terms_checked']} names, handles, emails and client names is left."
+    return (f"<span class=err><a href='/leaks'>{len(lr['terms'])} terms left "
+            f"{lr['hits']} times</a></span>, of {lr['terms_checked']} checked.")
+
+
+def leaks_page():
+    lr = leaks.load()
+    if not lr or not lr["hits"]:
+        return page("Leak check", f"<p>{leak_line()}</p>")
+    rows = []
+    for t in lr["terms"]:
+        ex = "".join(f"<div class=meta>{html.escape(e['source'])} · {html.escape(e['id'])}</div>"
+                     f"<pre>{html.escape(e['text'])}</pre>" for e in t["examples"])
+        rows.append(f"<tr><td><b>{html.escape(t['term'])}</b><div class=meta>{html.escape(t['kind'])}"
+                    f" · {t['count']}×</div>{ex}</td></tr>")
+    return page("Leak check", f"""
+<p>Each term below is a real name, handle, email or client name the pipeline knows,
+found in the anonymised copies after <code>anonymise</code>. Each is a place the
+replacement missed. Fix the cause, or strike the person with <code>forget</code>,
+then run <code>anonymise</code> again.</p>
+<table><tr><th>Term, kind, where it was found</th></tr>{''.join(rows)}</table>""")
 
 
 def mining():
@@ -139,6 +184,63 @@ Strike it to leave it as written. <span id=left>{left}</span> undecided. Each cl
 <p class=row><button onclick="bulk('strike')">Strike every undecided term</button>
 <button onclick="bulk('keep')">Keep every undecided term</button></p>
 <table><tr><th>Term, where it was found, two examples</th><th></th></tr>{''.join(rows)}</table>""")
+
+
+def mapping_rows():
+    """The Slack conversations James assigns by hand (PLAN §3.2): kept, not
+    struck, no settled audience, and not his self-DM; plus any already
+    assigned here, so a choice can be changed."""
+    from .anonymise import slack_meta, slack_users
+    d = inputs.load()
+    me = inputs.me(d)
+    meta = slack_meta(d)
+    names = {u.get("id"): u.get("real_name") or u.get("name") or u.get("id")
+             for u in slack_users(d)}
+    struck = set(d["struck_conversations"])
+    rows = []
+    for c in d.get("conversations", []):
+        if c.get("status") != "kept" or c["id"] in struck:
+            continue
+        members = set((meta.get(c["id"]) or {}).get("members") or [])
+        if c.get("kind") == "DM" and members and members <= {me}:
+            continue
+        if inputs.audience(c.get("audience")) is None or c.get("audience_set_on"):
+            rows.append((c, sorted(names.get(m, m) for m in members if m != me)))
+    return rows
+
+
+def mapping():
+    rows = mapping_rows()
+    me = inputs.me(inputs.load())
+    mine = {}
+    for r in state.read_jsonl(state.corpus_file("slack")):
+        if "item" in flags(r) and r.get("author") == me:
+            mine.setdefault(r["conversation"], []).append(r)
+    out = []
+    left = 0
+    for c, members in rows:
+        cur = inputs.audience(c.get("audience"))
+        left += cur is None
+        items = mine.get(c["id"], [])
+        ex = "".join(f"<pre>{html.escape((r.get('text') or '')[:300])}</pre>"
+                     for r in sorted(items, key=lambda r: -len(r.get("text") or ""))[:3])
+        cid = html.escape(c["id"])
+        buttons = "".join(
+            f"<button class=keep data-a='{a}' aria-pressed={'true' if cur == a else 'false'} "
+            f"onclick=\"setaud(this,'{cid}','{a}')\">{a}</button>"
+            for a in inputs.CANONICAL_AUDIENCES)
+        out.append(
+            f"<div class=card><b>{html.escape(c.get('name') or c['id'])}</b>"
+            f"<div class=meta>{html.escape(c.get('kind') or '')} · {cid} · {len(items)} of your items"
+            f" · with {html.escape(', '.join(members) or 'nobody listed')}</div>"
+            f"<details><summary>Your three longest messages here</summary>{ex}</details>"
+            f"<p class=row>{buttons}</p></div>")
+    return page("Audiences", f"""
+<p>Each conversation here has no audience from the hand-written list. Pick one;
+each click is saved to the inputs. <span id=left>{left}</span> still without one.
+Once you have picked, run <code>voice-decision-pipeline extract slack</code> and then
+<code>anonymise</code>, so the records carry the audience; batches wait until both have run.</p>
+{''.join(out) or '<p>Nothing to assign.</p>'}""")
 
 
 def batch_page(source):
@@ -209,6 +311,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, home())
             if u.path == "/mining":
                 return self._send(200, mining())
+            if u.path == "/leaks":
+                return self._send(200, leaks_page())
+            if u.path == "/audiences":
+                return self._send(200, mapping())
             if u.path == "/batch":
                 return self._send(200, batch_page((q.get("source") or [""])[0]))
             return self._send(404, page("Not found", ""))
@@ -229,6 +335,9 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError(d)
                     dec[term] = {"decision": d}
                 state.write_json(state.path("mining-decisions.json"), dec)
+            elif p == "/api/audience":
+                for conv_id, a in body.items():
+                    inputs.set_audience(conv_id, a)
             elif p == "/api/draw":
                 batches.draw(body["source"])
             elif p == "/api/decide":

@@ -162,12 +162,17 @@ def slack_meta(d):
     return conversation_meta(exp) if exp and os.path.isdir(exp) else {}
 
 
+MPDM = re.compile(r"mpdm-(.+)-(\d+)")
+URLISH = re.compile(r"https?://\S+|(?<![\w@])[\w.-]+\.[a-z]{2,}(?:/\S*)?|(?:~|\.{0,2})/[\w./-]+")
+
+
 class Replacer:
     def __init__(self, d, amap, ner):
         self.d, self.amap, self.ner = d, amap, ner
         self.me = inputs.me(d)
         self.people = {}       # slack id -> entry
         self.ids = {}          # any author id -> entry
+        self.handles = {}      # slack handle, any length -> entry
         self._people(d)
         self._bitbucket_people()
         self._clients_and_products()
@@ -212,6 +217,8 @@ class Replacer:
                 self.amap.dirty = True
             self.people[u["id"]] = e
             self.ids[u["id"]] = e
+            if handle:
+                self.handles[handle.lower()] = e
 
     def _bitbucket_people(self):
         from .bitbucket import people_file
@@ -250,11 +257,11 @@ class Replacer:
                                  origin="mining", aliases=[term])
 
     def _compile(self):
-        multi, single = [], {}
+        multi, single, spacy = [], {}, []
         for e in self.amap.entries:
             if e["kind"] == "person":
                 for a in e["aliases"]:
-                    multi.append((a, e))
+                    (spacy if e.get("origin") == "spacy" else multi).append((a, e))
                 for fn in e.get("first_names", []):
                     single.setdefault(fn, []).append(e)
         orgs = [(a, e) for e in self.amap.entries if e["kind"] in ("client", "product")
@@ -274,6 +281,21 @@ class Replacer:
             return re.compile("|".join(f"(?:{p})" for p in pats), flags), lookup
         self.person_rx, self.person_lookup = build(multi, re.I)
         self.org_rx, self.org_lookup = build(orgs, re.I)
+        # Names only spaCy found, replaced wherever they appear, not only where
+        # spaCy tagged them (James, 12 Nov 2026). Matched as written, case
+        # included, so a common word spaCy once took for a name isn't replaced
+        # in every sentence; a client or kept product of the same name stays
+        # that, not a person.
+        org_norms = {self.norm(a) for a, _ in orgs}
+        spacy = [(a, e) for a, e in spacy if self.norm(a) not in org_norms]
+        # A name of two or more words is matched in any case; a single word
+        # only as written, except inside a URL or path, where text is lower
+        # case anyway.
+        self.spacy_rx, _ = build(
+            [(a, e) for a, e in spacy if len(re.split(r"[\s\-_.]+", a.strip())) == 1], 0)
+        self.spacy_multi_rx, _ = build(
+            [(a, e) for a, e in spacy if len(re.split(r"[\s\-_.]+", a.strip())) > 1], re.I)
+        self.spacy_any_rx, self.spacy_lookup = build(spacy, re.I)
         self.first_names = single
         self.first_rx = (re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
             re.escape(f) for f in sorted(single, key=len, reverse=True)) + r")(?![A-Za-z0-9])")
@@ -317,6 +339,16 @@ class Replacer:
                 es = self.first_names.get(m.group(1))
                 if es and len(es) == 1:
                     add(m.start(), m.end(), es[0]["pseudonym"], "person")
+        for rx, where in ((self.spacy_rx, [(0, len(text))]),
+                          (self.spacy_multi_rx, [(0, len(text))]),
+                          (self.spacy_any_rx, [u.span() for u in URLISH.finditer(text)])):
+            if not rx:
+                continue
+            for a0, b0 in where:
+                for m in rx.finditer(text, a0, b0):
+                    e = self.spacy_lookup.get(self.norm(m.group(0)))
+                    if e:
+                        add(m.start(), m.end(), e["pseudonym"], "person")
         listed = list(found)
         if use_ner:
             for a, b, label in self.ner.ents(text):
@@ -376,9 +408,21 @@ class Replacer:
     def replace_plain(self, s):
         return self.apply(s, use_ner=False)[0] if isinstance(s, str) else s
 
+    def group_dm_name(self, s):
+        """A Slack group DM's name is its members' handles, mpdm-a--b--c-1.
+        Each handle becomes that member's pseudonym, however short: the
+        general handle rule skips handles under 4 characters, which would
+        leave a name like "ed" in place."""
+        m = MPDM.fullmatch(s)
+        if not m:
+            return s
+        parts = [(self.handles.get(h.lower()) or {}).get("pseudonym") or "person-unknown"
+                 for h in m.group(1).split("--")]
+        return f"mpdm-{'--'.join(parts)}-{m.group(2)}"
+
     def deep(self, v):
         if isinstance(v, str):
-            return self.replace_plain(v)
+            return self.replace_plain(self.group_dm_name(v))
         if isinstance(v, list):
             return [self.deep(x) for x in v]
         if isinstance(v, dict):
@@ -489,6 +533,12 @@ def run(log=print):
             if isinstance(v, str):
                 texts.append(v)
     ner.tag_all(texts, log=log)
+    # A first pass gives every name only spaCy finds its map entry, so the
+    # second, which writes the copies, replaces it in every text, not only in
+    # the ones after spaCy first tagged it.
+    rep = Replacer(d, amap, ner)
+    for t in texts:
+        rep.spans(t, True)
     rep = Replacer(d, amap, ner)
     counts = Counter()
     for s in SOURCES:
@@ -544,10 +594,20 @@ def run(log=print):
     state.write_json(state.path("anon-meta.json"), {
         "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "decisions_hash": hashlib.sha1(json.dumps(decisions, sort_keys=True).encode()).hexdigest(),
+        "audiences_hash": inputs.audiences_hash(d),
         "map_entries": len(amap.entries),
         "replacements": dict(counts),
     })
     undecided = sum(1 for c in old.values() if c["term"] not in decisions)
     log(f"  ok    {sum(counts.values())} replacements {dict(counts)}; "
         f"{len(amap.entries)} map entries; {undecided} mining candidates undecided")
+    from . import leaks
+    lr = leaks.scan(d, amap)
+    if lr["hits"]:
+        log(f"  warn  leak check: {len(lr['terms'])} real names or handles left "
+            f"{lr['hits']} times in the anonymised copies, of {lr['terms_checked']} checked; "
+            "see the review page's leak check")
+    else:
+        log(f"  ok    leak check: none of {lr['terms_checked']} real names, handles, "
+            "emails or client names is left in the anonymised copies")
     return counts

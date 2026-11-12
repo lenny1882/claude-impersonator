@@ -10,7 +10,9 @@ source (James, 11 Nov 2026).
 Two gates come before the first batch: every mining candidate has been kept
 or struck (PLAN §2.3: "before the first review batch is sent"), and the
 anonymised copies were rebuilt after the last mining decision, so kept terms
-are already replaced in what James reviews.
+are already replaced in what James reviews. A third: the Slack extract and
+the anonymised copies were built with the audiences now in the inputs, so
+an audience set on the mapping page reaches the records before review.
 
 `sendable(source)` is the check every later pass that sends text must make.
 """
@@ -20,7 +22,7 @@ import json
 import random
 import time
 
-from . import SOURCES, state
+from . import SOURCES, inputs, state
 from .record import flags
 
 BATCH_SIZE = 50
@@ -40,6 +42,17 @@ def load_review():
 def gates():
     """Reasons a new batch can't be drawn yet; empty when it can."""
     reasons = []
+    d = inputs.load(required=False)
+    if d.get("conversations"):
+        h = inputs.audiences_hash(d)
+        slack_meta = state.read_json(state.path("slack-meta.json"), None)
+        anon_meta = state.read_json(state.path("anon-meta.json"), None)
+        if (slack_meta or {}).get("audiences_hash") != h:
+            reasons.append("audiences changed since the Slack extract: run "
+                           "'voice-decision-pipeline extract slack', then 'anonymise'")
+        elif anon_meta is not None and anon_meta.get("audiences_hash") != h:
+            reasons.append("audiences changed since the anonymised copies were built: "
+                           "run 'voice-decision-pipeline anonymise' again")
     cands = state.read_json(state.path("mining-candidates.json"), None)
     decisions = state.read_json(state.path("mining-decisions.json"), {}) or {}
     meta = state.read_json(state.path("anon-meta.json"), None)

@@ -63,12 +63,15 @@ BUILD THE CORPUS
 
 REVIEW
   review [--port N] [--no-browser]
-                             the local page: mining candidates and batches
+                             the local page: audiences, leak check, mining
+                             candidates and batches
   batch <source>             draw the next batch of 50 for a source
   sendable <source>          exit 0 once a source's first batch is approved
 
   forget <person|conversation>
                              remove someone's or a conversation's records
+  show bitbucket [--repo <workspace/repo>]
+                             your Bitbucket items as text, written to the state
   status                     what's built, reviewed and sendable (JSON)
   paths                      where everything lives
 
@@ -176,7 +179,7 @@ case "${1:-}" in
     need_env
     log_to index
     PYTHONPATH="$PYLIB:$EL_HOME/pylib" exec "$EL_VPY" -m vdp "$@" ;;
-  init-inputs|extract|import-transcripts|pick-repos|anonymise|batch|forget)
+  init-inputs|extract|import-transcripts|pick-repos|anonymise|batch|forget|show)
     need_env
     log_to "$1"
     run_py "$@" ;;

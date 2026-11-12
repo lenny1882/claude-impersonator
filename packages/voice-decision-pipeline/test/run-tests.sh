@@ -87,8 +87,8 @@ out=$(vdp extract all --gsd-root "$F/dev" 2>&1); rc=$?; EXTRACT_OUT=$out
 
 S="$ST/corpus/slack.jsonl"
 items(){ jq -c 'select(any(.tags[]; .type=="item"))' "$1"; }
-check "Slack: James's 5 messages and 2 agreement reactions are items" \
-  test "$(items "$S" | wc -l)" = 7
+check "Slack: James's 6 messages and 2 agreement reactions are items" \
+  test "$(items "$S" | wc -l)" = 8
 check "Slack: a custom agreement emoji listed in the inputs counts" \
   q -s 'map(select(.text|startswith("Morning")))[0].tags|map(.type)|index("reaction:bigthumb")' "$S"
 check "Slack: the struck conversation is left out" \
@@ -177,7 +177,71 @@ check "Bitbucket: the rerun writes the same corpus" cmp -s "$B" "$TMP/bitbucket-
 check "Bitbucket: the saved repo is cleared after the rerun" \
   bash -c "! ls '$ST/bitbucket-progress/'*.json 2>/dev/null"
 
+# forget before anonymise has built the map, each on its own copy of the state
+fresh(){ rm -rf "$TMP/st-$1"; cp -a "$ST" "$TMP/st-$1"; echo "$TMP/st-$1"; }
+check "forget before anonymise: there is no map yet" test ! -e "$ST/anonymising-map.json"
+F1=$(fresh person)
+check "forget before anonymise: a Slack person by name" env VDP_STATE="$F1" "$PY" -m vdp forget "Tom Baker"
+check "forget before anonymise: their Slack messages are gone" \
+  bash -c "! grep -q '\"author\": \"UCOLTOMBB\"' '$F1/corpus/slack.jsonl'"
+check "forget before anonymise: they are on the struck list" q '.struck_authors|index("UCOLTOMBB")' "$F1/inputs.json"
+F2=$(fresh both)
+check "forget before anonymise: a person in Slack and Bitbucket, by name" \
+  env VDP_STATE="$F2" "$PY" -m vdp forget "Priya Raman"
+check "forget: their Bitbucket comments go with their Slack messages" \
+  bash -c "! grep -q -e '\"author\": \"bitbucket:{priya-uuid}\"' -e '\"author\": \"UCOLPRIYA\"' '$F2'/corpus/*.jsonl"
+check "forget: both their ids are struck" \
+  q '.struck_authors|(index("UCOLPRIYA") and index("bitbucket:{priya-uuid}"))' "$F2/inputs.json"
+F3=$(fresh james)
+env VDP_STATE="$F3" "$PY" -m vdp forget "Jamie Testperson" >/dev/null 2>&1 \
+  && no "forget: James by name is refused" "it ran" || ok "forget: James by name is refused"
+F4=$(fresh repo)
+check "forget: a Bitbucket repo" env VDP_STATE="$F4" "$PY" -m vdp forget ws/new-repo
+check "forget: every record of the repo's PRs is gone" bash -c "! grep -q 'ws/new-repo#' '$F4/corpus/bitbucket.jsonl'"
+F5=$(fresh pr)
+check "forget: one Bitbucket PR" env VDP_STATE="$F5" "$PY" -m vdp forget 'ws/new-repo#2'
+env VDP_STATE="$F5" "$PY" -m vdp extract bitbucket >/dev/null 2>&1
+check "forget: a forgotten PR stays out of a later extract" \
+  bash -c "! grep -q 'ws/new-repo#2' '$F5/corpus/bitbucket.jsonl' && grep -q 'ws/new-repo#1' '$F5/corpus/bitbucket.jsonl'"
+
+# A netrc Python refuses because others can read it; curl would read it.
+mkdir -p "$TMP/nh" && cp "$F/test-netrc" "$TMP/nh/.netrc" && chmod 644 "$TMP/nh/.netrc"
+F6=$(fresh netrc)
+NOUT=$(env -u VDP_NETRC HOME="$TMP/nh" VDP_STATE="$F6" "$PY" -m vdp extract bitbucket 2>&1)
+check "Bitbucket: a netrc others can read is reported as that, with the chmod" \
+  bash -c "grep -q \"can't read ~/.netrc\" <<< \"\$1\" && grep -q 'chmod 600 ~/.netrc' <<< \"\$1\" && ! grep -q 'no ~/.netrc entry' <<< \"\$1\"" _ "$NOUT"
+
+check "show bitbucket writes your items as text" vdp show bitbucket
+V="$ST/views/bitbucket.txt"
+check "show: the view is owner-only" bash -c "[ \"\$(stat -c %a '$V')\" = 600 ]"
+check "show: a PR heading, your description, comment, reply and approval" \
+  bash -c "grep -q '^ws/new-repo#2  \[MERGED\]  Switch to json logging' '$V' && grep -q 'your PR description' '$V' && grep -q 'replying to Priya Raman' '$V' && grep -q 'you approved' '$V'"
+check "show: an inline comment shows its file, line and code" \
+  bash -c "grep -q 'on src/app.py line 2' '$V' && grep -q '| +import json' '$V'"
+check "show: other people's PRs without an item of yours are left out" bash -c "! grep -q 'ws/new-repo#3' '$V'"
+check "show --repo writes that repo's view" \
+  bash -c "\"$PY\" -m vdp show bitbucket --repo ws/new-repo >/dev/null && test -s '$ST/views/bitbucket-ws__new-repo.txt'"
+
+# A name only spaCy finds, tagged in one text, is replaced in every text. The
+# spaCy cache is seeded with that one tag, so this runs without the model.
+F7=$(fresh spacyname)
+"$PY" - "$F7" <<'EOF'
+import hashlib, json, sys
+t = "note to self: check Zephyrline caching"
+with open(sys.argv[1] + "/spacy-cache.jsonl", "a") as f:
+    f.write(json.dumps({"h": hashlib.sha1(t.encode()).hexdigest(), "e": [[20, 30, "PERSON"]]}) + "\n")
+EOF
+check "spaCy name: anonymise with one seeded tag" env VDP_STATE="$F7" "$PY" -m vdp anonymise
+check "spaCy name: replaced in every text, not only the tagged one, URLs too" \
+  bash -c "! grep -q -i zephyrline '$F7/anon/slack.jsonl' && grep -q 'The person-01 launch needs the person-01 banner' '$F7/anon/slack.jsonl' && grep -q 'staging.client-01.com/person-01' '$F7/anon/slack.jsonl'"
+check "spaCy name: the leak check is clean" q '.hits==0' "$F7/leak-report.json"
+echo '{"Zephyrline": {"decision": "keep"}}' > "$F7/mining-decisions.json"
+env VDP_STATE="$F7" "$PY" -m vdp anonymise >/dev/null 2>&1
+check "spaCy name: once kept on the mining page it is a product, not a person" \
+  bash -c "grep -q 'The product-01 launch' '$F7/anon/slack.jsonl' && ! grep -q 'person-01' '$F7/anon/slack.jsonl'"
+
 check "anonymise" vdp anonymise
+check "leak check: the fixtures' anonymised copies are clean" q '.hits==0 and .terms_checked>10' "$ST/leak-report.json"
 A="$ST/anon/slack.jsonl"
 check "anon: no real name, handle, email, phone or client name is left" \
   bash -c "! grep -q -i -e 'Priya' -e 'Raman' -e 'Gregor' -e 'Whitfield' -e 'Jamie' -e 'acme' -e '7700 900123' -e 'gregor@' '$ST'/anon/*.jsonl"
@@ -186,6 +250,8 @@ check "anon: a unique first name becomes the person's pseudonym" grep -q "collea
 check "anon: an ordinary first name (Tom) is left to spaCy, not the list" \
   bash -c "! grep -q 'colleague-02' <(jq -r .text '$A' | grep -v '^colleague')"
 check "anon: client names inside URLs are replaced" grep -q "staging.client-01.com" "$A"
+check "anon: a group DM's name has every handle replaced, a short one too" \
+  q -s 'map(.source_fields.conversation_name|select(.!=null and startswith("mpdm-")))|unique==["mpdm-self-01--colleague-01--colleague-02-1"]' "$A"
 check "anon: authors are pseudonyms" q -s 'map(.author)|unique|sort==["bot","client-contact-01","colleague-01","colleague-02","self-01"]' "$A"
 check "anon: record ids are opaque" bash -c "! grep -q -e 'slack:' -e 'ws/new-repo' '$ST'/anon/*.jsonl"
 check "anon: replacements are marked at their place in the new text" \
@@ -218,7 +284,7 @@ vdp sendable slack; [ $? = 5 ] && ok "slack is not sendable before a batch is ap
   || no "slack is not sendable before a batch is approved" "sendable said yes"
 check "a batch of items is drawn" test "$(post api/draw '{"source":"slack"}')" = 200
 check "the batch holds only items, each with its context" \
-  q '.items|length==7 and all(.[]; .item.tags|map(.type)|index("item"))' "$ST/batches/slack-001.json"
+  q '.items|length==8 and all(.[]; .item.tags|map(.type)|index("item"))' "$ST/batches/slack-001.json"
 check "the batch page highlights replacements" bash -c "curl -sf '${URL}batch?source=slack' | grep -q \"<mark title='person'>\""
 check "a second batch can't be drawn while one is open" test "$(post api/draw '{"source":"slack"}')" = 409
 check "stopping before any approval is refused" test "$(post api/stop '{"source":"slack"}')" = 409
@@ -228,6 +294,29 @@ vdp sendable bitbucket; [ $? = 5 ] && ok "approval is per source: bitbucket stil
   || no "approval is per source: bitbucket still isn't sendable" "it is"
 check "stopping a source after an approval" test "$(post api/stop '{"source":"slack"}')" = 200
 check "a stopped source draws no more batches" test "$(post api/draw '{"source":"slack"}')" = 409
+
+gates(){ "$PY" -m vdp status | jq -r '.blocks_next_batch|join("\n")'; }
+export -f gates; export PY
+check "audiences: the page lists the group DM with no audience, not the self-DM" \
+  bash -c "p=\$(curl -sf '${URL}audiences'); grep -q 'mpdm-jamie.testperson--priya.raman--tom-1' <<< \"\$p\" && ! grep -q DSELFNOTE <<< \"\$p\""
+check "audiences: the home page counts it" bash -c "curl -sf '$URL' | grep -q '1 without an audience'"
+check "audiences: the Slack items in it carry no audience yet" \
+  q -s 'map(select(.conversation=="GMPIMTRIO" and .author=="UJAMESAAA"))|length==1 and .[0].audience==null' "$S"
+check "audiences: an unknown audience is refused" test "$(post api/audience '{"GMPIMTRIO":"everyone"}')" = 400
+check "audiences: picking one is saved" test "$(post api/audience '{"GMPIMTRIO":"project team"}')" = 200
+check "audiences: the inputs keep the hand-written rule beside the choice" \
+  q '.conversations|map(select(.id=="GMPIMTRIO"))[0]|.audience=="project team" and (.audience_rule|startswith("senior/management if")) and .audience_set_on=="mapping page"' "$ST/inputs.json"
+check "audiences: batches wait for the Slack extract to run again" \
+  bash -c "gates | grep -q 'audiences changed since the Slack extract'"
+vdp extract slack >/dev/null 2>&1
+check "audiences: the re-extracted items carry the chosen audience" \
+  q -s 'map(select(.conversation=="GMPIMTRIO" and .author=="UJAMESAAA"))[0].audience=="project team"' "$S"
+check "audiences: then batches wait for anonymise" \
+  bash -c "gates | grep -q 'audiences changed since the anonymised copies were built'"
+vdp anonymise >/dev/null 2>&1
+check "audiences: after anonymise no audience gate is left" bash -c "! gates | grep -q audiences"
+check "audiences: the page still lists it, with the choice pressed, so it can be changed" \
+  bash -c "curl -sf '${URL}audiences' | grep -q \"data-a='project team' aria-pressed=true\""
 kill "$RPID" 2>/dev/null
 
 check "forget a person by name" vdp forget "Gregor Whitfield"
@@ -243,6 +332,20 @@ check "forget: the conversation is struck" q '.struck_conversations|index("DPRIY
 vdp forget UJAMESAAA >/dev/null 2>&1 && no "forgetting James is refused" "it ran" || ok "forgetting James is refused"
 vdp forget "Nobody Atall" >/dev/null 2>&1 && no "forgetting an unknown name is refused" "it ran" \
   || ok "forgetting an unknown name is refused"
+check "leak check: a real name left in an anonymised copy is found" "$PY" - <<EOF
+import json
+from vdp import leaks, inputs, state
+from vdp.anonmap import Map
+with open(state.anon_file("gsd"), "a") as f:
+    f.write(json.dumps({"id": "x1", "text": "ask Priya Raman", "source_fields": {"t": "tom"}}) + "\\n")
+r = leaks.scan(inputs.load(), Map.load())
+got = {t["term"]: t for t in r["terms"]}
+assert "priya raman" in got and got["priya raman"]["kind"] == "person name", r
+assert got["priya raman"]["examples"][0]["id"] == "x1", r
+assert "tom" in got and got["tom"]["kind"] == "slack handle", r
+EOF
+check "leak check: the review page lists the term" \
+  "$PY" -c "from vdp import review; p = review.leaks_page(); assert 'priya raman' in p and 'x1' in p, p"
 check "state is owner-only" bash -c "[ -z \"\$(find '$ST' -perm /077 -print -quit)\" ]"
 check "status reports owner-only state and per-source review" \
   bash -c "\"$PY\" -m vdp status | jq -e '.not_owner_only==[] and .sources.slack.sendable and (.sources.bitbucket.sendable|not)' >/dev/null"
