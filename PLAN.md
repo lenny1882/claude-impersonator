@@ -161,7 +161,11 @@ Left out:
   `en_core_web_trf`, for the highest published
   name-finding score (~0.90 NER F against ~0.85 for the others, not
   measured here); it brings its own CPU PyTorch into the pipeline's venv
-  (about 1.2 GB in all) and makes a corpus pass slower.
+  (about 1.2 GB in all) and makes a corpus pass slower: a full
+  `anonymise` takes hours on a CPU-only machine.
+  spaCy's tags are cached by text, so a rerun tags only
+  new text. The run asks nothing; the owner's part comes after it (the leak
+  check, mining decisions, then the first batches).
   spaCy also tags some ordinary words as names and blanks them. Product,
   store and project names that identify a client on their own are found
   by mining the corpus: while building it, the pipeline
