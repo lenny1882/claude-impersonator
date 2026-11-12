@@ -3,7 +3,9 @@
 Only the repos picked with `pick-repos`; a repo whose updated_on is earlier
 than CUTOFF is skipped (James, 11 Nov 2026). In each, the PRs James
 authored, commented on or approved, approvals without a comment included
-(James, 11 Nov 2026). Each comment
+(James, 11 Nov 2026); a PR he was only added to as a reviewer is left out
+(James, 12 Nov 2026). Which PRs those are is read from the PR list, and only
+they are fetched. Each comment
 keeps its PR title, description and thread; inline comments also keep the
 code under them, which needs `read:repository` on the token (PLAN §9).
 
@@ -89,6 +91,21 @@ def is_me(u, me_ids):
     return bool(user_ids(u) & me_ids)
 
 
+def acted(p, me_ids):
+    """A participant entry that is James and shows he did something: approved,
+    asked for changes, or commented (Bitbucket sets participated_on then).
+    Being added as a reviewer alone leaves all three empty."""
+    return is_me(p.get("user"), me_ids) and bool(
+        p.get("approved") or p.get("state") or p.get("participated_on"))
+
+
+def involved(pr, me_ids):
+    """James authored the PR, or commented on or approved it. Decided from the
+    PR list's fields, so PRs he wasn't in are never fetched one by one."""
+    return is_me(pr.get("author"), me_ids) or any(
+        acted(p, me_ids) for p in pr.get("participants") or [])
+
+
 def code_under(diff, path, line_to, line_from):
     """The lines around an inline comment, from the PR's unified diff."""
     if not diff or not path:
@@ -158,14 +175,18 @@ def extract(d, counts=None):
             continue
         stats["repos"] += 1
         q = "&".join(f"state={s}" for s in ("OPEN", "MERGED", "DECLINED", "SUPERSEDED"))
-        for pr_stub in pages(f"/repositories/{slug}/pullrequests?{q}&pagelen=50&fields=next,values.id"):
-            pr = get(f"/repositories/{slug}/pullrequests/{pr_stub['id']}")
+        fields = ("next,values.id,values.author,values.participants.user,"
+                  "values.participants.approved,values.participants.participated_on,"
+                  "values.participants.state")
+        for pr_stub in pages(f"/repositories/{slug}/pullrequests?{q}&pagelen=50&fields={fields}"):
             stats["prs-seen"] += 1
+            if not involved(pr_stub, me_ids):
+                if any(is_me(p.get("user"), me_ids) for p in pr_stub.get("participants") or []):
+                    stats["prs-added-only"] += 1
+                continue
+            pr = get(f"/repositories/{slug}/pullrequests/{pr_stub['id']}")
             parts = pr.get("participants") or []
             authored = is_me(pr.get("author"), me_ids)
-            involved = authored or any(is_me(p.get("user"), me_ids) for p in parts)
-            if not involved:
-                continue
             stats["prs"] += 1
             conv = f"{slug}#{pr['id']}"
             pr_id = f"bitbucket:{slug}:pr:{pr['id']}"

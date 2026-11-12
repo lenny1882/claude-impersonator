@@ -145,6 +145,9 @@ check "GSD: repos without .planning are ignored" bash -c "! grep -q no-gsd '$G'"
 B="$ST/corpus/bitbucket.jsonl"
 check "Bitbucket: a repo last updated before 2019 is skipped" bash -c "! grep -q old-repo '$B'"
 check "Bitbucket: PRs James wasn't involved in are skipped" bash -c "! grep -q 'pr:3' '$B'"
+check "Bitbucket: a PR James was only added to as a reviewer is skipped" bash -c "! grep -q 'pr:4' '$B'"
+check "Bitbucket: PRs James wasn't in are never fetched one by one" \
+  bash -c "! grep -q 'Bitbucket 404' <<< \"\$1\"" _ "$out"
 check "Bitbucket: a silent approval is an item" \
   q -s 'map(select(.source_fields.kind=="approval"))|length==1 and (.[0].tags|map(.type)|index("item"))' "$B"
 check "Bitbucket: James's PR description and comment are items, others' are context" \

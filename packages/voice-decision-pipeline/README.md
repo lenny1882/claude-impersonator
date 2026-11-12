@@ -142,7 +142,9 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
 - **GSD:** each bullet under STATE.md's `### Decisions`, and each subsection
   of a CONTEXT.md `<decisions>` block, in every repo with `.planning/`.
 - **Bitbucket:** in the picked repos (`extract` skips any whose `updated_on`
-  is earlier than `2019-01-01`), the PRs James authored, commented on or approved; each comment with its PR and
+  is earlier than `2019-01-01`), the PRs James authored, commented on or approved, not
+  those he was only added to as a reviewer. Which PRs those are is read from the PR
+  list, so only they are fetched one by one; each comment with its PR and
   thread, inline comments with the code under them. Reads the REST token in
   `~/.netrc`; inline code needs `read:repository` on it.
 - **Anonymising:** Slack mentions, emails and phone numbers; every name
