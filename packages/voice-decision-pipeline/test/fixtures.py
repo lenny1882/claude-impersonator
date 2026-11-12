@@ -204,7 +204,20 @@ def bitbucket(root):
     routes = {
         "/2.0/repositories/ws/new-repo": {"full_name": "ws/new-repo", "updated_on": "2024-05-01T00:00:00Z"},
         "/2.0/repositories/ws/old-repo": {"full_name": "ws/old-repo", "updated_on": "2017-03-01T00:00:00Z"},
-        base + "/pullrequests": {"values": [{"id": 1}, {"id": 2}, {"id": 3}]},
+        # The list carries author and participants. PRs 3 and 4 have no route of
+        # their own: fetching either one would 404 and fail the extract.
+        base + "/pullrequests": {"values": [
+            {"id": 1, "author": priya,
+             "participants": [{"user": me, "approved": True, "role": "REVIEWER",
+                               "participated_on": "2024-04-02T10:00:00Z"}]},
+            {"id": 2, "author": me, "participants": [{"user": priya, "approved": False}]},
+            {"id": 3, "author": stranger, "participants": [{"user": priya, "approved": True}]},
+            {"id": 4, "author": stranger,
+             "participants": [{"user": me, "approved": False, "role": "REVIEWER",
+                               "participated_on": None, "state": None},
+                              {"user": priya, "approved": True,
+                               "participated_on": "2024-04-06T10:00:00Z"}]},
+        ]},
         base + "/pullrequests/1": {"id": 1, "title": "Add retries", "description": "Retries the Acme Corp sync",
                                    "state": "MERGED", "author": priya, "created_on": "2024-04-01T10:00:00Z",
                                    "participants": [{"user": me, "approved": True, "role": "REVIEWER",
@@ -222,9 +235,6 @@ def bitbucket(root):
              "content": {"raw": "deleted"}},
         ]},
         base + "/pullrequests/2/diff": {"__raw__": diff},
-        base + "/pullrequests/3": {"id": 3, "title": "Unrelated", "description": "", "state": "OPEN",
-                                   "author": stranger, "created_on": "2024-04-05T10:00:00Z",
-                                   "participants": [{"user": priya, "approved": True}]},
     }
     w(f"{root}/bitbucket-routes.json", routes)
     w(f"{root}/test-netrc", "machine 127.0.0.1 login tester password secret-token\n")
