@@ -52,6 +52,9 @@ def cmd_extract(a):
             print(f"== extract {s}", flush=True)
             recs, stats = extract_one(s, d, counts, a)
             state.write_jsonl(state.corpus_file(s), recs)
+            if s == "bitbucket":
+                from . import bitbucket
+                bitbucket.clear_progress()
             print(f"  ok    corpus/{s}.jsonl: {len(recs)} records {dict(stats)}")
             if counts:
                 print(f"  ok    credentials redacted, by type: {dict(counts)}")

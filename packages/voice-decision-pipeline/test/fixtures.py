@@ -204,6 +204,9 @@ def bitbucket(root):
     routes = {
         "/2.0/repositories/ws/new-repo": {"full_name": "ws/new-repo", "updated_on": "2024-05-01T00:00:00Z"},
         "/2.0/repositories/ws/old-repo": {"full_name": "ws/old-repo", "updated_on": "2017-03-01T00:00:00Z"},
+        # Its PR list has no route, so an extract that reaches it fails there:
+        # the stand-in for a run stopped partway.
+        "/2.0/repositories/ws/broken-repo": {"full_name": "ws/broken-repo", "updated_on": "2024-05-01T00:00:00Z"},
         # The list carries author and participants. PRs 3 and 4 have no route of
         # their own: fetching either one would 404 and fail the extract.
         base + "/pullrequests": {"values": [

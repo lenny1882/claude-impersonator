@@ -82,7 +82,7 @@ vdp init-inputs "$F/build-inputs.json" >/dev/null 2>&1 \
   && no "init-inputs refuses to overwrite" "it overwrote" || ok "init-inputs refuses to overwrite"
 check "struck conversation names become ids" q '.struck_conversations == ["CSTRUCKXX"]' "$ST/inputs.json"
 check "pick-repos records repos and James's account" vdp pick-repos ws/new-repo ws/old-repo --me '{me-uuid}'
-out=$(vdp extract all --gsd-root "$F/dev" 2>&1); rc=$?
+out=$(vdp extract all --gsd-root "$F/dev" 2>&1); rc=$?; EXTRACT_OUT=$out
 [ $rc = 0 ] && ok "extract all" || no "extract all" "$out"
 
 S="$ST/corpus/slack.jsonl"
@@ -147,7 +147,7 @@ check "Bitbucket: a repo last updated before 2019 is skipped" bash -c "! grep -q
 check "Bitbucket: PRs James wasn't involved in are skipped" bash -c "! grep -q 'pr:3' '$B'"
 check "Bitbucket: a PR James was only added to as a reviewer is skipped" bash -c "! grep -q 'pr:4' '$B'"
 check "Bitbucket: PRs James wasn't in are never fetched one by one" \
-  bash -c "! grep -q 'Bitbucket 404' <<< \"\$1\"" _ "$out"
+  bash -c "! grep -q 'Bitbucket 404' <<< \"\$1\"" _ "$EXTRACT_OUT"
 check "Bitbucket: a silent approval is an item" \
   q -s 'map(select(.source_fields.kind=="approval"))|length==1 and (.[0].tags|map(.type)|index("item"))' "$B"
 check "Bitbucket: James's PR description and comment are items, others' are context" \
@@ -157,6 +157,25 @@ check "Bitbucket: James's reply keeps the PR and the comment it answers" \
 check "Bitbucket: an inline comment keeps the code under it" \
   q -s 'map(select(.id|endswith(":c:21")))[0].source_fields.inline.code|contains("+import json")' "$B"
 check "Bitbucket: deleted comments are dropped" bash -c "! grep -q ':c:23' '$B'"
+check "Bitbucket: a progress line per repo, with PRs seen, kept and calls" \
+  bash -c "grep -q 'repo  1/2 ws/new-repo: 4 PRs seen, 2 kept, 1 added-only; [0-9]* calls' <<< \"\$1\"" _ "$EXTRACT_OUT"
+check "Bitbucket: nothing is left saved once the extract is written" \
+  bash -c "! ls '$ST/bitbucket-progress/'*.json 2>/dev/null"
+
+cp "$B" "$TMP/bitbucket-before.jsonl"
+vdp pick-repos ws/broken-repo >/dev/null
+out=$(vdp extract bitbucket 2>&1) && no "Bitbucket: a run that fails partway fails" "it passed" \
+  || ok "Bitbucket: a run that fails partway fails"
+check "Bitbucket: the failed run leaves the corpus as it was" cmp -s "$B" "$TMP/bitbucket-before.jsonl"
+check "Bitbucket: the repo finished before the failure is saved" \
+  test -f "$ST/bitbucket-progress/ws__new-repo.json"
+vdp pick-repos --remove ws/broken-repo >/dev/null
+RERUN_OUT=$(vdp extract bitbucket 2>&1)
+check "Bitbucket: the rerun takes the saved repo instead of fetching it" \
+  bash -c "grep -q 'saved 1/2 ws/new-repo: 2 PRs kept' <<< \"\$1\"" _ "$RERUN_OUT"
+check "Bitbucket: the rerun writes the same corpus" cmp -s "$B" "$TMP/bitbucket-before.jsonl"
+check "Bitbucket: the saved repo is cleared after the rerun" \
+  bash -c "! ls '$ST/bitbucket-progress/'*.json 2>/dev/null"
 
 check "anonymise" vdp anonymise
 A="$ST/anon/slack.jsonl"

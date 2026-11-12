@@ -28,6 +28,7 @@ from . import inputs, record, state, textutil
 API = os.environ.get("VDP_BITBUCKET_API", "https://api.bitbucket.org/2.0")
 CUTOFF = "2019-01-01"
 CODE_CONTEXT = 5
+CALLS = [0]  # API requests made by this process, retries included
 
 
 class ApiError(SystemExit):
@@ -55,6 +56,7 @@ def get(url, raw=False, _auth_header=[]):
     req = urllib.request.Request(url, headers={"Authorization": _auth_header[0],
                                                "Accept": "application/json"})
     for attempt in range(5):
+        CALLS[0] += 1
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
                 body = r.read().decode("utf-8", errors="replace")
@@ -139,6 +141,38 @@ def people_file():
     return state.path("bitbucket-people.json")
 
 
+# A finished repo's records, kept until the whole extract has been written,
+# so a run that stops partway starts again at the first unfinished repo.
+PROGRESS_VERSION = 1
+
+
+def progress_file(slug):
+    return state.path("bitbucket-progress", slug.replace("/", "__") + ".json")
+
+
+def save_progress(slug, me_ids, records, stats, counts):
+    state.write_json(progress_file(slug), {
+        "version": PROGRESS_VERSION, "repo": slug, "me": sorted(me_ids),
+        "records": records, "stats": dict(stats), "counts": dict(counts)})
+
+
+def load_progress(slug, me_ids):
+    """The saved repo, or None when there is none or it was made for another
+    account or by another version of this file's format."""
+    p = state.read_json(progress_file(slug))
+    if not p or p.get("version") != PROGRESS_VERSION or p.get("me") != sorted(me_ids):
+        return None
+    return p
+
+
+def clear_progress():
+    """Called once corpus/bitbucket.jsonl is written: the next extract fetches afresh."""
+    d = os.path.join(state.root(), "bitbucket-progress")
+    for f in (os.listdir(d) if os.path.isdir(d) else []):
+        if f.endswith(".json"):
+            os.unlink(os.path.join(d, f))
+
+
 def extract(d, counts=None):
     counts = counts if counts is not None else Counter()
     me = inputs.me(d)
@@ -165,29 +199,40 @@ def extract(d, counts=None):
                        "account_id": (u or {}).get("account_id")}
         return f"bitbucket:{key}"
 
-    for slug in repos:
-        if slug in struck:
+    todo = [s for s in repos if s not in struck]
+    for n, slug in enumerate(todo, 1):
+        saved = load_progress(slug, me_ids)
+        if saved:
+            for r in saved["records"]:
+                if r["author"] not in struck_authors:
+                    recs[r["id"]] = r
+            stats.update(saved["stats"])
+            counts.update(saved["counts"])
+            print(f"  saved {n}/{len(todo)} {slug}: {saved['stats'].get('prs', 0)} PRs kept, "
+                  "from an earlier run that stopped", flush=True)
             continue
+        calls_before = CALLS[0]
         meta = get(f"/repositories/{slug}?fields=full_name,updated_on")
         if (meta.get("updated_on") or "")[:10] < CUTOFF:
             stats["repos-before-2019"] += 1
             print(f"  skip  {slug}: last updated {meta.get('updated_on')}, before 2019")
             continue
-        stats["repos"] += 1
+        rrecs, rs, rc = {}, Counter(), Counter()
+        rs["repos"] += 1
         q = "&".join(f"state={s}" for s in ("OPEN", "MERGED", "DECLINED", "SUPERSEDED"))
         fields = ("next,values.id,values.author,values.participants.user,"
                   "values.participants.approved,values.participants.participated_on,"
                   "values.participants.state")
         for pr_stub in pages(f"/repositories/{slug}/pullrequests?{q}&pagelen=50&fields={fields}"):
-            stats["prs-seen"] += 1
+            rs["prs-seen"] += 1
             if not involved(pr_stub, me_ids):
                 if any(is_me(p.get("user"), me_ids) for p in pr_stub.get("participants") or []):
-                    stats["prs-added-only"] += 1
+                    rs["prs-added-only"] += 1
                 continue
             pr = get(f"/repositories/{slug}/pullrequests/{pr_stub['id']}")
             parts = pr.get("participants") or []
             authored = is_me(pr.get("author"), me_ids)
-            stats["prs"] += 1
+            rs["prs"] += 1
             conv = f"{slug}#{pr['id']}"
             pr_id = f"bitbucket:{slug}:pr:{pr['id']}"
             pr_author = author_of(pr.get("author"))
@@ -202,7 +247,7 @@ def extract(d, counts=None):
                 try:
                     diff = get(f"/repositories/{slug}/pullrequests/{pr['id']}/diff", raw=True)
                 except ApiError as e:
-                    stats["diffs-refused"] += 1
+                    rs["diffs-refused"] += 1
                     print(f"  warn  {e}")
             by_id = {c["id"]: c for c in comments}
 
@@ -218,10 +263,10 @@ def extract(d, counts=None):
                      "state": pr.get("state"), "author_name": (pr.get("author") or {}).get("display_name"),
                      "source_branch": ((pr.get("source") or {}).get("branch") or {}).get("name"),
                      "destination_branch": ((pr.get("destination") or {}).get("branch") or {}).get("name")}
-            recs[pr_id] = record.make(
+            rrecs[pr_id] = record.make(
                 id=pr_id, source="bitbucket", conversation=conv, author=pr_author,
                 audience="technical team", ts=pr.get("created_on"),
-                text=textutil.redact(desc, counts),
+                text=textutil.redact(desc, rc),
                 flags=(["item"] if authored else []),
                 context_ids=[], source_fields=dict(sf_pr, kind="pr"))
             for c in comments:
@@ -239,20 +284,20 @@ def extract(d, counts=None):
                                     "to": inl.get("to")}
                     code = code_under(diff, inl.get("path"), inl.get("to"), inl.get("from"))
                     if code:
-                        sf["inline"]["code"] = textutil.redact(code, counts)
+                        sf["inline"]["code"] = textutil.redact(code, rc)
                 ctx = [pr_id] + [f"bitbucket:{slug}:pr:{pr['id']}:c:{x['id']}"
                                  for x in threads[root_of(c)] if x["id"] != c["id"]]
-                recs[cid] = record.make(
+                rrecs[cid] = record.make(
                     id=cid, source="bitbucket", conversation=conv, author=a,
                     audience="technical team", ts=c.get("created_on"),
-                    text=textutil.redact((c.get("content") or {}).get("raw") or "", counts),
+                    text=textutil.redact((c.get("content") or {}).get("raw") or "", rc),
                     flags=(["item"] if mine else []),
                     context_ids=ctx if mine else [], source_fields=sf)
-                stats["comments-by-james" if mine else "comments-context"] += 1
+                rs["comments-by-james" if mine else "comments-context"] += 1
             for p in parts:
                 if p.get("approved") and is_me(p.get("user"), me_ids) and not authored:
                     aid = f"bitbucket:{slug}:pr:{pr['id']}:approval"
-                    recs[aid] = record.make(
+                    rrecs[aid] = record.make(
                         id=aid, source="bitbucket", conversation=conv, author=me,
                         audience="technical team",
                         ts=p.get("participated_on") or pr.get("updated_on"),
@@ -260,7 +305,17 @@ def extract(d, counts=None):
                         context_ids=[pr_id] + [f"bitbucket:{slug}:pr:{pr['id']}:c:{c['id']}"
                                                for c in comments],
                         source_fields=dict(sf_pr, kind="approval"))
-                    stats["approvals"] += 1
+                    rs["approvals"] += 1
+        # The repo is done: save it, and the people seen so far, so a run that
+        # stops later picks up from the next repo.
+        state.write_json(people_file(), people)
+        save_progress(slug, me_ids, list(rrecs.values()), rs, rc)
+        recs.update(rrecs)
+        stats.update(rs)
+        counts.update(rc)
+        print(f"  repo  {n}/{len(todo)} {slug}: {rs['prs-seen']} PRs seen, {rs['prs']} kept, "
+              f"{rs['prs-added-only']} added-only; {CALLS[0] - calls_before} calls "
+              f"({CALLS[0]} this run)", flush=True)
     state.write_json(people_file(), people)
     out = sorted(recs.values(), key=lambda r: (r["conversation"], r["ts"] or ""))
     return out, stats

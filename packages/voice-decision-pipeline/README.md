@@ -121,6 +121,7 @@ files 600), never backed up:
 | `batches/`, `review-state.json` | drawn batches; per-source approvals and stops |
 | `index/` | `vectors.npy`, `ids.json`, `identity.json` |
 | `spacy-cache.jsonl` | spaCy's tags by text hash, so reruns tag only new text |
+| `bitbucket-progress/` | each finished repo of an `extract bitbucket` still running or stopped |
 
 A record holds `id`, `source`, `conversation`, `author` (real id), `audience`,
 `ts`, `text`, `tags`, `context_ids`, `reactions`, `source_fields` and
@@ -146,7 +147,11 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   those he was only added to as a reviewer. Which PRs those are is read from the PR
   list, so only they are fetched one by one; each comment with its PR and
   thread, inline comments with the code under them. Reads the REST token in
-  `~/.netrc`; inline code needs `read:repository` on it.
+  `~/.netrc`; inline code needs `read:repository` on it. Prints a line per
+  repo (PRs seen, kept, added-only, calls) and saves each finished repo to
+  `bitbucket-progress/`, so a run stopped partway starts again at the first
+  unfinished repo; the saved repos are cleared once `corpus/bitbucket.jsonl`
+  is written.
 - **Anonymising:** Slack mentions, emails and phone numbers; every name
   `users.json` gives each person; the client names in the inputs and the
   product names kept on the review page, inside URLs and channel names too;
