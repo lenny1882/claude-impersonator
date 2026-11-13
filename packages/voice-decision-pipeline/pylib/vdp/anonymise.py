@@ -534,9 +534,71 @@ def mine(recs, rep, ner, convs_by_client):
             c["count"] = max(c["count"], total)
             c["client"] = top
             c["share"] = round(n / total, 2)
+    cands = {t: c for t, c in cands.items() if not junk_term(t)}
+    plain = Counter()
+    for r in recs:
+        t = URLISH.sub(" ", r.get("text") or "")
+        for w in re.findall(r"\b[a-z]{3,}\b", t):
+            plain[w] += 1
+    hits, spread = term_spread(recs, cands, convs_by_client)
+    out = []
     for term, c in cands.items():
+        pc = spread[term]
+        # Gone from the corpus, or spread over three clients or more: it
+        # can't point at any one client.
+        if not hits[term] or len(pc) >= MINING_MAX_CLIENTS:
+            continue
+        total = sum(pc.values())
+        top, n = pc.most_common(1)[0] if pc else (None, 0)
+        concentrated = total >= 3 and n / total >= 0.8
+        ws = re.findall(r"[A-Za-z]{3,}", term)
+        ordinary = bool(ws) and all(plain[w.lower()] >= 2 for w in ws)
+        if term[0].islower() or (ordinary and not concentrated):
+            c["suggest"] = "strike"
+        elif not ordinary and (concentrated or (len(pc) == 1 and total * 2 >= hits[term])):
+            # Concentrated, or seen in one client's conversations only and
+            # used there at least half the time.
+            c["suggest"] = "keep"
+        c["clients"] = len(pc)
+        c["ordinary"] = ordinary
+        if concentrated:
+            c["client"], c["share"] = top, round(n / total, 2)
         c["examples"] = examples[term]
-    return sorted(cands.values(), key=lambda c: (-c["count"], c["term"]))
+        out.append(c)
+    order = {None: 0, "keep": 1, "strike": 2}
+    return sorted(out, key=lambda c: (order[c.get("suggest")], -c["count"], c["term"]))
+
+
+MINING_MAX_CLIENTS = 3
+
+
+def junk_term(t):
+    """A fragment spaCy tagged that can't be a name: no letters, one or two
+    letters or digits, punctuation at either end, markup, or a line break."""
+    s = t.strip()
+    if not re.search(r"[A-Za-z]", s) or len(re.sub(r"[^A-Za-z0-9]", "", s)) <= 2:
+        return True
+    if re.match(r"[^A-Za-z0-9]", s) or re.search(r"[^A-Za-z0-9.)]$", s):
+        return True
+    return bool(re.search(r"[`*_<>{}\[\]|\\=\"\n]", s))
+
+
+def term_spread(recs, terms, convs_by_client):
+    """Per term: how many records hold it as a word, and how many of those
+    are in each client's conversations."""
+    rx = {t: re.compile(r"(?<!\w)" + re.escape(t) + r"(?!\w)") for t in terms}
+    hits, spread = Counter(), defaultdict(Counter)
+    for r in recs:
+        t = r.get("text") or ""
+        if not t:
+            continue
+        client = convs_by_client.get(r["conversation"])
+        for term, x in rx.items():
+            if term in t and x.search(t):
+                hits[term] += 1
+                if client:
+                    spread[term][client] += 1
+    return hits, spread
 
 
 def name_candidates(texts, tagged_in, amap, ner):
@@ -686,11 +748,7 @@ def run(log=print):
         state.write_jsonl(state.anon_file(s), out)
         log(f"  ok    anon/{s}.jsonl: {len(out)} records")
     cands = mine(allrecs, rep, ner, conversation_clients(d, allrecs, rep))
-    old = {c["term"]: c for c in state.read_json(state.path("mining-candidates.json"), []) or []}
-    for c in cands:
-        old[c["term"]] = c
-    state.write_json(state.path("mining-candidates.json"),
-                     sorted(old.values(), key=lambda c: (-c["count"], c["term"])))
+    state.write_json(state.path("mining-candidates.json"), cands)
     amap.save()
     names = name_candidates(texts, tagged_in, amap, ner)
     state.write_json(state.path("name-candidates.json"), names)
@@ -704,7 +762,7 @@ def run(log=print):
         "map_entries": len(amap.entries),
         "replacements": dict(counts),
     })
-    undecided = sum(1 for c in old.values() if c["term"] not in decisions)
+    undecided = sum(1 for c in cands if c["term"] not in decisions)
     log(f"  ok    {sum(counts.values())} replacements {dict(counts)}; "
         f"{len(amap.entries)} map entries; {undecided} mining candidates undecided")
     nleft = sum(1 for c in names if c["key"] not in ndec)

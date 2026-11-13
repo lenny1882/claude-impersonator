@@ -874,6 +874,20 @@ fire on several events.
   - Python runs unbuffered, so progress lines reach the log as they happen.
   A form spaCy tags as a person that is a client or kept product's name once spaces, hyphens,
   dots and underscores are dropped is replaced as that client or product.
+  The Mining list leaves terms off and each term carries a suggestion.
+  - Left off: fragments spaCy tagged that can't be a name (no letters, one
+    or two letters or digits, punctuation at either end, markup, a line
+    break); terms that appear in three or more clients' conversations; and
+    terms that the corpus no longer holds (each run
+    writes the list afresh).
+  - Suggested strike: a term starting in lower case, or one made of
+    ordinary words (each seen in lower case at least twice in the corpus,
+    outside URLs) that isn't concentrated in one client.
+  - Suggested keep: a term that isn't an ordinary word and either sits
+    mostly in one client's conversations, or appears in one client's
+    conversations only with at least half its uses there.
+  - The rest are left to check by hand and are listed first on the page,
+    which can apply every open suggestion at once.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
