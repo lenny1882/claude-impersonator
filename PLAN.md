@@ -872,6 +872,8 @@ fire on several events.
     the source name and tag types; counts a single spaCy word only once it
     is marked a name; and searches for shared first names.
   - Python runs unbuffered, so progress lines reach the log as they happen.
+  A form spaCy tags as a person that is a client or kept product's name once spaces, hyphens,
+  dots and underscores are dropped is replaced as that client or product.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.

@@ -292,6 +292,19 @@ got = rep.apply("Priya, ask Priya Kapoor")[0]
 assert got.startswith("colleague, ask colleague-"), got
 assert leaks.terms(d, Map()).get("priya") == "shared first name", leaks.terms(d, Map()).get("priya")
 EOF
+check "anon: a client listed as one word, written as two and tagged by spaCy as a person, is that client" "$PY" - <<'EOF'
+from vdp import inputs, leaks
+from vdp.anonmap import Map
+from vdp.anonymise import Ner, Replacer
+d = inputs.load()
+d["anonymiser_additions_candidates"] = {"names": ["Acme Corp", "Globexco"]}
+amap = Map()
+amap.ensure("spacy:globexco", kind="person", role="person", origin="spacy", aliases=["Globex Co"])
+rep = Replacer(d, amap, Ner())
+client = amap.get("client:globexco")["pseudonym"]
+assert rep.apply("ship it to Globex Co today")[0] == f"ship it to {client} today", rep.apply("ship it to Globex Co today")
+assert rep.apply("globex-co and GLOBEX CO")[0] == f"{client} and {client}", rep.apply("globex-co and GLOBEX CO")
+EOF
 check "leak check: only what is sent is searched, dictionary keys included" "$PY" - <<'EOF'
 import json
 from vdp import leaks, inputs, state
