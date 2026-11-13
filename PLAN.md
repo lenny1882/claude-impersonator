@@ -173,6 +173,13 @@ Left out:
   capitalised terms concentrated in one client's channels or repos. The owner
   strikes or keeps each on one local review page before the first review
   batch is sent; kept terms join the replacement list.
+- A single word only spaCy tags as a person is the owner's to decide.
+  Each is listed
+  on the review page with its counts and a suggestion, and the owner marks it a
+  name or not a name. A name is replaced everywhere in any case; not a name
+  is never replaced; until marked, it is replaced only where spaCy tagged
+  it, and no batch is drawn. A name of two or more words is
+  replaced everywhere in any case.
 - Replacements are stable pseudonyms with a role tag (e.g. `colleague-07`,
   `client-pm-02`), and clients become codes (e.g. `client-03`); each person
   keeps one pseudonym across every source.
@@ -850,6 +857,21 @@ fire on several events.
     extracts.
   - `show bitbucket`, the owner's Bitbucket items as text, kept in the state.
   - A `~/.netrc` that Python refuses is reported as that.
+  - Single words only spaCy took for a name go on the review page's Names
+    (§2.3), with batches held until each is marked and `anonymise` has run
+    again.
+  - First names are matched in any case, since a first name typed in lower
+    case is still the name; a first name two people share
+    becomes their role (`colleague`, or `person` when
+    their roles differ).
+  - Dictionary keys inside source fields are anonymised: a transcript's
+    answers and annotations are keyed by the question's text. Reaction
+    names are too, since a custom emoji can carry a name.
+  - The leak check searches only what is sent (text, source fields with
+    their keys, reactions, author), not the pipeline's own words such as
+    the source name and tag types; counts a single spaCy word only once it
+    is marked a name; and searches for shared first names.
+  - Python runs unbuffered, so progress lines reach the log as they happen.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
