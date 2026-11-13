@@ -888,6 +888,11 @@ fire on several events.
     conversations only with at least half its uses there.
   - The rest are left to check by hand and are listed first on the page,
     which can apply every open suggestion at once.
+  The Mining page is split into tabs: check by hand, suggested keep, suggested strike and
+  decided, each with its count. Only the open section's undecided terms are
+  listed, each with its suggestion as a coloured badge; a term leaves the
+  list as soon as it is decided, and each section has its own keep-all and
+  strike-all.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.

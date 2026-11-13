@@ -31,9 +31,9 @@ from .record import flags
 
 CSS = """
 :root{--bg:#fbfaf7;--fg:#1d1c1a;--muted:#6b6862;--line:#e3e0d8;--card:#fff;
---mark:#ffe08a;--markfg:#1d1c1a;--ok:#1f7a3a;--bad:#a12a2a;--accent:#2f5d9b}
+--mark:#ffe08a;--markfg:#1d1c1a;--ok:#1f7a3a;--bad:#a12a2a;--accent:#2f5d9b;--warn:#e0a526;--badgefg:#fff}
 @media (prefers-color-scheme:dark){:root{--bg:#1a1a18;--fg:#ecebe6;--muted:#a19d94;
---line:#34332f;--card:#22211f;--mark:#6b5410;--markfg:#fff3cf;--ok:#5fc27e;--bad:#e07a7a;--accent:#8fb3e8}}
+--line:#34332f;--card:#22211f;--mark:#6b5410;--markfg:#fff3cf;--ok:#5fc27e;--bad:#e07a7a;--accent:#8fb3e8;--warn:#e0b04a;--badgefg:#111}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
 font:15px/1.5 system-ui,sans-serif}main{max-width:980px;margin:0 auto;padding:16px}
 a{color:var(--accent)}h1{font-size:22px;margin:8px 0 16px}h2{font-size:17px;margin:20px 0 8px}
@@ -48,6 +48,21 @@ button.keep[aria-pressed=true]{background:var(--ok);color:#fff}
 button.strike[aria-pressed=true]{background:var(--bad);color:#fff}
 details{margin-top:6px}.err{color:var(--bad)}textarea{width:100%;font:inherit}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;position:sticky;top:0;
+background:var(--bg);padding:8px 0;z-index:1}.tab{font-weight:600}
+.tab.on{background:var(--accent);color:var(--badgefg);border-color:var(--accent)}
+.tab .n{display:inline-block;min-width:2em;padding:0 6px;border-radius:9px;
+background:var(--line);color:var(--fg);font-size:13px;text-align:center}
+.sechead{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.term{font-size:18px}.badge{display:inline-block;font-size:13px;font-weight:700;
+padding:2px 9px;border-radius:10px;vertical-align:middle;color:var(--badgefg)}
+.s-keep{background:var(--ok)}.s-strike{background:var(--bad)}.s-hand{background:var(--warn);color:#1d1c1a}
+.d-keep,.d-strike{display:none}tr.kept .d-keep{display:inline-block;background:var(--ok)}
+tr.struck .d-strike{display:inline-block;background:var(--bad)}
+tr.kept,tr.struck{opacity:.85}td.act{white-space:nowrap;width:1%}
+td.act button{padding:8px 16px;font-weight:600;margin-left:6px}[hidden]{display:none!important}
+button.keep{border-color:var(--ok);color:var(--ok);font-weight:600}
+button.strike{border-color:var(--bad);color:var(--bad);font-weight:600}
 """
 
 JS = """
@@ -59,14 +74,34 @@ for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria
 b.dataset.d===d?'true':'false');const left=document.getElementById('left');
 if(left)left.textContent=document.querySelectorAll('tr[data-term]').length-
 document.querySelectorAll('tr[data-term] button[aria-pressed=true]').length})}
-function bulk(d){const body={};for(const tr of document.querySelectorAll('tr[data-term]')){
-if(!tr.querySelector('button[aria-pressed=true]'))body[tr.dataset.term]=d}
-if(!Object.keys(body).length)return;if(!confirm(Object.keys(body).length+' undecided terms will be marked '+d))return;
-post('/api/mining',body).then(()=>location.reload())}
-function minesuggested(){const body={};for(const tr of document.querySelectorAll('tr[data-term]')){
-if(!tr.querySelector('button[aria-pressed=true]')&&tr.dataset.suggest)body[tr.dataset.term]=tr.dataset.suggest}
-if(!Object.keys(body).length)return;if(!confirm(Object.keys(body).length+' undecided terms will be marked as suggested; the rest stay for you to check'))return;
-post('/api/mining',body).then(()=>location.reload())}
+let TAB=null;
+function minerows(){return [...document.querySelectorAll('#mining tr[data-term]')]}
+function minevisible(tr){return TAB==='decided'?!!tr.dataset.decision:
+(!tr.dataset.decision&&tr.dataset.section===TAB)}
+function minerender(){const rows=minerows();
+if(!TAB){TAB=(location.hash.slice(1))||(['hand','keep','strike'].find(k=>rows.some(
+tr=>!tr.dataset.decision&&tr.dataset.section===k))||'decided')}
+let vis=0;for(const tr of rows){const v=minevisible(tr);tr.hidden=!v;if(v)vis++;
+tr.classList.toggle('kept',tr.dataset.decision==='keep');
+tr.classList.toggle('struck',tr.dataset.decision==='strike')}
+for(const el of document.querySelectorAll('[data-count]')){const k=el.dataset.count;
+el.textContent=rows.filter(tr=>k==='decided'?!!tr.dataset.decision:
+(!tr.dataset.decision&&tr.dataset.section===k)).length}
+for(const b of document.querySelectorAll('.tab'))b.classList.toggle('on',b.dataset.tab===TAB);
+const t=document.querySelector('.tab[data-tab='+TAB+']');
+document.getElementById('sectitle').textContent=t?t.firstChild.textContent.trim():'';
+for(const el of document.querySelectorAll('.vis'))el.textContent=vis;
+document.getElementById('secbulk').hidden=!vis||TAB==='decided';document.getElementById('empty').hidden=!!vis;
+document.getElementById('left').textContent=rows.filter(tr=>!tr.dataset.decision).length}
+function minetab(k){TAB=k;history.replaceState(null,'','#'+k);minerender();window.scrollTo(0,0)}
+function mineset(trs,d){const body={};for(const tr of trs)body[tr.dataset.term]=d;
+return post('/api/mining',body).then(()=>{for(const tr of trs){tr.dataset.decision=d;
+for(const b of tr.querySelectorAll('button'))b.setAttribute('aria-pressed',b.dataset.d===d?'true':'false')}
+minerender()})}
+function mine1(btn,d){mineset([btn.closest('tr')],d)}
+function minebulk(d){const trs=minerows().filter(minevisible);if(!trs.length)return;
+if(!confirm((d==='keep'?'Keep ':'Strike ')+trs.length+' terms in this section?'))return;mineset(trs,d)}
+document.addEventListener('DOMContentLoaded',()=>{if(document.getElementById('mining'))minerender()});
 function setname(btn,key,d){post('/api/names',{[key]:d}).then(()=>{
 for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria-pressed',
 b.dataset.d===d?'true':'false');const left=document.getElementById('left');
@@ -217,16 +252,25 @@ as spaCy tagged it. <span id=left>{left}</span> undecided. Each click is saved.<
 <table><tr><th>Word, counts, two places spaCy tagged it</th><th></th></tr>{''.join(rows)}</table>""")
 
 
+MINING_SECTIONS = (("hand", "Check by hand"), ("keep", "Suggested keep"),
+                   ("strike", "Suggested strike"))
+
+
 def mining():
+    """Mining in three sections, one shown at a time: terms to check by hand,
+    suggested keeps, suggested strikes. A decided term leaves its section
+    and is listed under Decided, where it can be changed."""
     cands = state.read_json(state.path("mining-candidates.json"), []) or []
     dec = state.read_json(state.path("mining-decisions.json"), {}) or {}
+    want = {i for c in cands for i in c.get("examples", [])[:2]}
     real = {}
     for s in SOURCES:
         for r in state.read_jsonl(state.corpus_file(s)):
-            real[r["id"]] = r.get("text") or ""
+            if r["id"] in want:
+                real[r["id"]] = r.get("text") or ""
     rows = []
     for c in cands:
-        d = (dec.get(c["term"]) or {}).get("decision")
+        d = (dec.get(c["term"]) or {}).get("decision") or ""
         ex = []
         for i in c.get("examples", [])[:2]:
             t = real.get(i, "")
@@ -235,33 +279,46 @@ def mining():
             ex.append(html.escape(snip).replace(html.escape(c["term"]),
                                                 f"<mark>{html.escape(c['term'])}</mark>"))
         t = html.escape(c["term"])
-        sug = c.get("suggest")
+        sec = c.get("suggest") or "hand"
+        n = c.get("clients", 0)
+        facts = [f"{c['count']}×", (f"in 1 client's conversations" if n == 1 else f"in {n} clients' conversations")
+                 if n else "in no client's conversations"]
+        if c.get("client"):
+            facts.append(f"{int(c.get('share', 0) * 100)}% in {html.escape(c['client'])}'s")
+        facts.append(", ".join(c.get("kinds", [])))
         rows.append(
-            f"<tr data-term='{t}' data-suggest='{sug or ''}'><td><b>{t}</b><div class=meta>"
-            f"suggested: {sug or 'check by hand'} · {', '.join(c.get('kinds', []))}"
-            f"{' · ' + html.escape(c['client']) + ' ' + str(int(c.get('share', 0) * 100)) + '%' if c.get('client') else ''}"
-            f" · {c['count']}× · in {c.get('clients', 0)} clients' conversations</div>"
+            f"<tr data-term='{t}' data-section='{sec}' data-decision='{d}'><td>"
+            f"<div class=term><b>{t}</b> <span class='badge s-{sec}'>"
+            f"{dict(MINING_SECTIONS)[sec].lower()}</span> <span class='badge d-keep'>kept</span>"
+            f"<span class='badge d-strike'>struck</span></div>"
+            f"<div class=meta>{' · '.join(facts)}</div>"
             f"{''.join(f'<pre>{x}</pre>' for x in ex)}</td>"
-            f"<td class=row><button class=keep data-d=keep aria-pressed={'true' if d == 'keep' else 'false'} "
-            f"onclick=\"mark(this,this.closest('tr').dataset.term,'keep')\">Keep</button>"
+            f"<td class=act><button class=keep data-d=keep aria-pressed={'true' if d == 'keep' else 'false'} "
+            f"onclick=\"mine1(this,'keep')\">Keep</button>"
             f"<button class=strike data-d=strike aria-pressed={'true' if d == 'strike' else 'false'} "
-            f"onclick=\"mark(this,this.closest('tr').dataset.term,'strike')\">Strike</button></td></tr>")
-    left = sum(1 for c in cands if c["term"] not in dec)
-    unsure = sum(1 for c in cands if not c.get("suggest"))
+            f"onclick=\"mine1(this,'strike')\">Strike</button></td></tr>")
+    tabs = "".join(f"<button class=tab data-tab={k} onclick=\"minetab('{k}')\">{label} "
+                   f"<span class=n data-count={k}></span></button>"
+                   for k, label in MINING_SECTIONS + (("decided", "Decided"),))
     return page("Mining candidates", f"""
-<p>Each term below might name a client's product, store or project.
-Keep a term to add it to the replacement list: it then becomes product-NN everywhere.
-Strike it to leave it as written. <span id=left>{left}</span> undecided. Each click is saved.</p>
-<p>Terms to check by hand come first ({unsure} of them), then the suggested keeps, then the
-suggested strikes. Keep is suggested for a term that is not an ordinary word and either sits
-mostly in one client's conversations, or appears in one client's conversations only and at
-least half its uses are there; strike for a term that starts in lower case, or is made of
-ordinary words (each seen in lower case at least twice, outside URLs) and is not concentrated
-in one client. Terms in three or more clients' conversations are left off.</p>
-<p class=row><button onclick="minesuggested()">Mark every undecided term as suggested</button>
-<button onclick="bulk('strike')">Strike every undecided term</button>
-<button onclick="bulk('keep')">Keep every undecided term</button></p>
-<table><tr><th>Term, where it was found, two examples</th><th></th></tr>{''.join(rows)}</table>""")
+<p>Each term might name a client's product, store or project. <b>Keep</b> replaces it with
+product-NN everywhere at the next <code>anonymise</code>; <b>Strike</b> leaves it as written.
+A decided term leaves its section and moves to Decided, where it can be changed. Each click is
+saved. <b><span id=left></span> undecided.</b></p>
+<details><summary class=meta>How the suggestions are made</summary><p class=meta>Keep is
+suggested for a term that is not an ordinary word and either sits mostly in one client's
+conversations, or appears in one client's conversations only with at least half its uses
+there. Strike is suggested for a term that starts in lower case, or is made of ordinary words
+(each seen in lower case at least twice, outside URLs) and is not concentrated in one client.
+The rest are left to check by hand. Terms in three or more clients' conversations, and
+fragments that can't be a name, are left off.</p></details>
+<nav class=tabs>{tabs}</nav>
+<div class=sechead><h2 id=sectitle></h2><span class=row id=secbulk>
+<button class=keep onclick="minebulk('keep')">Keep all <span class=vis></span> in this section</button>
+<button class=strike onclick="minebulk('strike')">Strike all <span class=vis></span> in this section</button>
+</span></div>
+<p id=empty class=meta hidden>Nothing left in this section.</p>
+<table id=mining>{''.join(rows)}</table>""")
 
 
 def mapping_rows():
