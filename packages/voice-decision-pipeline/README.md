@@ -199,8 +199,10 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   a name and terms found in three or more clients' conversations. Each
   term is suggested keep (not an ordinary word, and mostly or only in one
   client's conversations), strike (starts in lower case, or ordinary words
-  not concentrated in one client), or left to check by hand; those come
-  first on the page, and one button marks the rest as suggested.
+  not concentrated in one client), or left to check by hand. The page
+  shows one section at a time (check by hand, suggested keep, suggested
+  strike, decided), each with its own keep-all and strike-all; a decided
+  term leaves its section.
 - **Gates:** no batch is drawn while a mining candidate or a word on Names is
   undecided, or after a decision until `anonymise` has run again; nor after an audience is set on
   the review page until `extract slack` and then `anonymise` have run again.

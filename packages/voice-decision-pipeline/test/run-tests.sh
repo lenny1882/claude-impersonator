@@ -395,6 +395,10 @@ check "review page refuses a cross-origin POST" \
   test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Origin: http://evil.example' -d '{}' "${URL}api/mining")" = 403
 check "keeping a mining term is saved" test "$(post api/mining '{"Zephyrline":"keep"}')" = 200
 check "the keep is in mining-decisions.json" q '.Zephyrline.decision=="keep"' "$ST/mining-decisions.json"
+check "the mining page has its three sections and Decided as tabs" \
+  bash -c "curl -sf '${URL}mining' | grep -q 'data-tab=hand' && curl -sf '${URL}mining' | grep -q 'data-tab=keep' && curl -sf '${URL}mining' | grep -q 'data-tab=strike' && curl -sf '${URL}mining' | grep -q 'data-tab=decided'"
+check "the mining page marks a kept term as decided, so it leaves its section" \
+  bash -c "curl -sf '${URL}mining' | grep -q \"data-term='Zephyrline' data-section='[a-z]*' data-decision='keep'\""
 check "a batch can't be drawn until anonymise reruns after the decision" \
   test "$(post api/draw '{"source":"slack"}')" = 409
 vdp anonymise >/dev/null 2>&1
