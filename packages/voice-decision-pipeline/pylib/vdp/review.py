@@ -63,6 +63,10 @@ function bulk(d){const body={};for(const tr of document.querySelectorAll('tr[dat
 if(!tr.querySelector('button[aria-pressed=true]'))body[tr.dataset.term]=d}
 if(!Object.keys(body).length)return;if(!confirm(Object.keys(body).length+' undecided terms will be marked '+d))return;
 post('/api/mining',body).then(()=>location.reload())}
+function minesuggested(){const body={};for(const tr of document.querySelectorAll('tr[data-term]')){
+if(!tr.querySelector('button[aria-pressed=true]')&&tr.dataset.suggest)body[tr.dataset.term]=tr.dataset.suggest}
+if(!Object.keys(body).length)return;if(!confirm(Object.keys(body).length+' undecided terms will be marked as suggested; the rest stay for you to check'))return;
+post('/api/mining',body).then(()=>location.reload())}
 function setname(btn,key,d){post('/api/names',{[key]:d}).then(()=>{
 for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria-pressed',
 b.dataset.d===d?'true':'false');const left=document.getElementById('left');
@@ -231,19 +235,31 @@ def mining():
             ex.append(html.escape(snip).replace(html.escape(c["term"]),
                                                 f"<mark>{html.escape(c['term'])}</mark>"))
         t = html.escape(c["term"])
+        sug = c.get("suggest")
         rows.append(
-            f"<tr data-term='{t}'><td><b>{t}</b><div class=meta>{', '.join(c.get('kinds', []))}"
+            f"<tr data-term='{t}' data-suggest='{sug or ''}'><td><b>{t}</b><div class=meta>"
+            f"suggested: {sug or 'check by hand'} · {', '.join(c.get('kinds', []))}"
             f"{' · ' + html.escape(c['client']) + ' ' + str(int(c.get('share', 0) * 100)) + '%' if c.get('client') else ''}"
-            f" · {c['count']}×</div>{''.join(f'<pre>{x}</pre>' for x in ex)}</td>"
+            f" · {c['count']}× · in {c.get('clients', 0)} clients' conversations</div>"
+            f"{''.join(f'<pre>{x}</pre>' for x in ex)}</td>"
             f"<td class=row><button class=keep data-d=keep aria-pressed={'true' if d == 'keep' else 'false'} "
             f"onclick=\"mark(this,this.closest('tr').dataset.term,'keep')\">Keep</button>"
             f"<button class=strike data-d=strike aria-pressed={'true' if d == 'strike' else 'false'} "
             f"onclick=\"mark(this,this.closest('tr').dataset.term,'strike')\">Strike</button></td></tr>")
     left = sum(1 for c in cands if c["term"] not in dec)
+    unsure = sum(1 for c in cands if not c.get("suggest"))
     return page("Mining candidates", f"""
-<p>Keep a term to add it to the replacement list: it then becomes product-NN everywhere.
+<p>Each term below might name a client's product, store or project.
+Keep a term to add it to the replacement list: it then becomes product-NN everywhere.
 Strike it to leave it as written. <span id=left>{left}</span> undecided. Each click is saved.</p>
-<p class=row><button onclick="bulk('strike')">Strike every undecided term</button>
+<p>Terms to check by hand come first ({unsure} of them), then the suggested keeps, then the
+suggested strikes. Keep is suggested for a term that is not an ordinary word and either sits
+mostly in one client's conversations, or appears in one client's conversations only and at
+least half its uses are there; strike for a term that starts in lower case, or is made of
+ordinary words (each seen in lower case at least twice, outside URLs) and is not concentrated
+in one client. Terms in three or more clients' conversations are left off.</p>
+<p class=row><button onclick="minesuggested()">Mark every undecided term as suggested</button>
+<button onclick="bulk('strike')">Strike every undecided term</button>
 <button onclick="bulk('keep')">Keep every undecided term</button></p>
 <table><tr><th>Term, where it was found, two examples</th><th></th></tr>{''.join(rows)}</table>""")
 

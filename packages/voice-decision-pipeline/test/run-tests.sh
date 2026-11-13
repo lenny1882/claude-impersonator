@@ -224,6 +224,41 @@ check "show: other people's PRs without an item of yours are left out" bash -c "
 check "show --repo writes that repo's view" \
   bash -c "\"$PY\" -m vdp show bitbucket --repo ws/new-repo >/dev/null && test -s '$ST/views/bitbucket-ws__new-repo.txt'"
 
+# Mining (1.0.6): junk fragments and terms across three clients are left
+# off; each other term carries a suggestion, and those to check come first.
+check "mining: junk dropped, spread terms dropped, suggestions and order" "$PY" - <<'EOF'
+from vdp.anonymise import mine, junk_term
+class Rep:
+    class amap: entries = []
+    norm = staticmethod(lambda s: s.lower())
+TAGS = {"-": "ORG", "Qx": "ORG", "Delivery": "ORG", "eShop": "PRODUCT"}
+class Ner:
+    def ents(self, t):
+        return [(i, i + len(w), l) for w, l in TAGS.items() for i in [t.find(w)] if i >= 0]
+recs, n = [], 0
+def add(text, conv):
+    global n; n += 1; recs.append({"id": f"r{n}", "conversation": conv, "text": text})
+for _ in range(2): add("ping - Qx about eShop", "general")
+for _ in range(3): add("the Delivery team", "general")
+for _ in range(2): add("delivery is late", "general")
+for _ in range(4): add("Wombatron build is red", "c-a")
+for _ in range(3): add("Lighthouse scores dropped", "c-a")
+for _ in range(2): add("run lighthouse again", "general")
+for c in ("c-a", "c-b", "c-c"): add("Globalthing again", c); add("Globalthing again", c)
+add("Pebblestack is down", "c-b"); add("Pebblestack again", "general")
+add("Cloudmuddle is down", "c-b"); add("Cloudmuddle", "general"); add("Cloudmuddle", "general")
+TAGS.update({"Pebblestack": "PRODUCT", "Cloudmuddle": "PRODUCT"})
+out = mine(recs, Rep(), Ner(), {"c-a": "client-01", "c-b": "client-02", "c-c": "client-03"})
+got = {c["term"]: c.get("suggest") for c in out}
+want = {"Lighthouse": None, "Wombatron": "keep", "Delivery": "strike", "eShop": "strike",
+        "Pebblestack": "keep", "Cloudmuddle": None}
+assert got == want, got
+assert [c.get("suggest") for c in out] == [None, None, "keep", "keep", "strike", "strike"], out
+assert next(c for c in out if c["term"] == "Wombatron")["client"] == "client-01"
+assert all(junk_term(t) for t in ("--", "x", "Qx", "*Foo*", "(Bar", "Foo\nBar", "12"))
+assert not any(junk_term(t) for t in ("Foo Ltd.", "Bar (UK)", "Foo-Bar", "X10"))
+EOF
+
 # A single word only spaCy finds is a Names candidate (James, 13 Nov 2026).
 # The spaCy cache is seeded with one tag, so this runs without the model.
 F7=$(fresh spacyname)

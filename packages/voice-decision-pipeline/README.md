@@ -194,6 +194,13 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   single word only spaCy found counts once marked a name; undecided ones
   are counted apart. Anything found is listed on the review page with where
   it was.
+- **Mining:** spaCy's organisation and product tags and capitalised terms
+  concentrated in one client's conversations, less fragments that can't be
+  a name and terms found in three or more clients' conversations. Each
+  term is suggested keep (not an ordinary word, and mostly or only in one
+  client's conversations), strike (starts in lower case, or ordinary words
+  not concentrated in one client), or left to check by hand; those come
+  first on the page, and one button marks the rest as suggested.
 - **Gates:** no batch is drawn while a mining candidate or a word on Names is
   undecided, or after a decision until `anonymise` has run again; nor after an audience is set on
   the review page until `extract slack` and then `anonymise` have run again.
