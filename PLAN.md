@@ -175,7 +175,7 @@ Left out:
   (about 1.2 GB in all) and makes a corpus pass slower: the first full
   `anonymise` is about 2 to 2¼ hours on this machine's 8 CPUs, timed on a
   random sample of the corpus (12 Nov 2026; the earlier "under an hour" was
-  never measured). spaCy's tags are cached by text, so a rerun tags only
+  never measured). The first run took about 2 hours (13 Nov 2026). spaCy's tags are cached by text, so a rerun tags only
   new text. The run asks nothing; James's part comes after it (the leak
   check, mining decisions, then the first batches).
   spaCy also tags some ordinary words as names and blanks them. Product,
@@ -888,6 +888,18 @@ fire on several events.
     extracts.
   - `show bitbucket`, James's Bitbucket items as text, kept in the state.
   - A `~/.netrc` that Python refuses is reported as that.
+- **First full `anonymise`** (12–13 Nov 2026): about 2 hours. Its leak
+  check failed, for three reasons:
+  - Most hits are ordinary words that spaCy once tagged as a person. The
+    1.0.3 rule replaces such a single word only as written, and the leak
+    check matches any case, so it counts the word in lower case.
+  - Some names only spaCy found were left even as written, and a few
+    client names and first names were missed.
+  - Ordinary words tagged once are replaced wherever they appear
+    capitalised, which damages the voice text.
+  The rule and the leak check are revisited before any batch is reviewed.
+  The run's progress lines appear only at its end: `log` doesn't flush
+  and stdout goes through `tee`, so Python buffers it.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask James without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
