@@ -172,7 +172,9 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   product names kept on the review page, inside URLs and channel names too;
   each handle in a group DM's name (`mpdm-a--b-1`), however short; then names
   spaCy (`en_core_web_trf`) tags as people, unless a client or kept product
-  has the same name. A name of two or more words is replaced wherever it
+  has the same name once spaces, hyphens, dots and underscores are dropped;
+  then that form is replaced as the client or product ("Acme Corp" for a
+  client listed as "AcmeCorp"). A name of two or more words is replaced wherever it
   appears, in any case. A single word is listed on the review page's Names
   with how often spaCy tagged it and how often it appears capitalised and
   in lower case (outside URLs and paths), and a suggestion: not a name when

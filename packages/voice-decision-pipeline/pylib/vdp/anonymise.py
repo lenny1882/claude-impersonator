@@ -304,6 +304,13 @@ class Replacer:
                     single.setdefault(fn.lower(), []).append(e)
         orgs = [(a, e) for e in self.amap.entries if e["kind"] in ("client", "product")
                 for a in e["aliases"]]
+        # A form spaCy took for a person that is a client or kept product's
+        # name once spaces, hyphens, dots and underscores are dropped ("Acme
+        # Corp" for "AcmeCorp") is another spelling of that client or
+        # product: a one-word name's pattern allows no gap inside it.
+        org_by_norm = {self.norm(a): e for a, e in orgs}
+        orgs += [(a, org_by_norm[self.norm(a)]) for a, _ in spacy
+                 if self.norm(a) in org_by_norm]
         # Longest first, so "Jane Smith" wins over "Jane".
         def build(pairs, flags):
             pairs = sorted({(a, id(e)): (a, e) for a, e in pairs}.values(),
@@ -325,8 +332,7 @@ class Replacer:
         # a name (James, 13 Nov 2026). An undecided single word is replaced
         # only where spaCy tagged it; one marked not a name, nowhere. A
         # client or kept product of the same name stays that, not a person.
-        org_norms = {self.norm(a) for a, _ in orgs}
-        spacy = [(a, e) for a, e in spacy if self.norm(a) not in org_norms]
+        spacy = [(a, e) for a, e in spacy if self.norm(a) not in org_by_norm]
         dec = name_decisions()
         self.name_dec = {k: v.get("decision") for k, v in dec.items()}
         self.spacy_rx, self.spacy_lookup = build(

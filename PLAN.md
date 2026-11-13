@@ -923,6 +923,11 @@ fire on several events.
     the source name and tag types; counts a single spaCy word only once it
     is marked a name; and searches for shared first names.
   - Python runs unbuffered, so progress lines reach the log as they happen.
+- **`voice-decision-pipeline-v1.0.5`** (13 Nov 2026): a form spaCy took for
+  a person that is a client or kept product's name once spaces, hyphens,
+  dots and underscores are dropped is replaced as that client or product.
+  Before, it was dropped as a person and the one-word client pattern, which
+  allows no gap inside the name, missed it.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask James without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
