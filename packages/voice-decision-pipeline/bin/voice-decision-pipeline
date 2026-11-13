@@ -123,7 +123,9 @@ need_env() {
   fi
 }
 
-run_py() { PYTHONPATH="$PYLIB" exec "$VPY" -m vdp "$@"; }
+# Unbuffered: stdout goes through tee (log_to), so Python would otherwise
+# hold every progress line until the command ends.
+run_py() { PYTHONPATH="$PYLIB" PYTHONUNBUFFERED=1 exec "$VPY" -m vdp "$@"; }
 
 cmd_setup() {
   local yes=0

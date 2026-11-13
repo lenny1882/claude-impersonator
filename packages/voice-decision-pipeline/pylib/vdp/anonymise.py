@@ -10,13 +10,21 @@ What is replaced, in order:
   1. Slack mentions <@U…> and channel links <#C…|name>
   2. email addresses ([email]) and phone numbers ([phone])
   3. every name users.json gives each person: full name, display name,
-     handle, and first name where no other person shares it and it isn't
-     an ordinary word
+     handle, and first name, in any case, unless it is an ordinary word; a
+     first name two people share becomes their role (colleague, or person
+     when their roles differ), since it can't say which of them it is
   4. client names (the candidate list in the inputs) and the client product,
      store and project names James kept on the mining page (PLAN §2.3),
      also inside channel names, repo names and URLs
   5. names spaCy (en_core_web_trf) tags as a person that no list knew; each
-     becomes person-NN in the map, so it is replaced the same way everywhere
+     becomes person-NN in the map. A name of two or more words is replaced
+     everywhere, in any case. A single word is a candidate on the review
+     page (James, 13 Nov 2026): until James decides it, it is replaced only
+     where spaCy tagged it, and batches wait; marked a name, it is replaced
+     everywhere in any case; marked not a name, it is never replaced
+
+Dictionary keys inside source fields (a question's text, for one) and
+reaction names (custom emoji can be named after people) are replaced too.
 
 spaCy's organisation and product tags are not replaced: they become mining
 candidates, alongside capitalised terms concentrated in one client's
@@ -148,6 +156,39 @@ class Ner:
 
 # --- building the replacement lists ----------------------------------------
 
+def one_word(a):
+    return len([w for w in re.split(r"[\s\-_.]+", a.strip()) if w]) == 1
+
+
+def name_decisions():
+    """{normalised word: {"decision": "name" | "not"}}: James's decisions on
+    single words only spaCy tagged as a person (review page, Names)."""
+    return state.read_json(state.path("name-decisions.json"), {}) or {}
+
+
+def decisions_hash(dec):
+    return hashlib.sha1(json.dumps(dec, sort_keys=True).encode()).hexdigest()
+
+
+def first_name_roles(users, role_of):
+    """(unique, shared): unique maps a lower-case first name only one person
+    has to that person's id; shared maps a first name two or more people
+    have to the role that stands in for it. Ordinary words and names under
+    3 letters are in neither."""
+    ids, roles = defaultdict(list), defaultdict(set)
+    for u in users:
+        if u.get("is_bot") or u.get("name") == "slackbot":
+            continue
+        fn = ((u.get("profile") or {}).get("first_name") or "").strip().lower()
+        if len(fn) >= 3 and fn not in ORDINARY_FIRST_NAMES:
+            ids[fn].append(u["id"])
+            roles[fn].add(role_of(u))
+    unique = {fn: v[0] for fn, v in ids.items() if len(v) == 1}
+    shared = {fn: (next(iter(roles[fn])) if len(roles[fn]) == 1 else "person")
+              for fn, v in ids.items() if len(v) > 1}
+    return unique, shared
+
+
 def slack_users(d):
     p = os.path.join(d.get("slack_export") or "", "users.json")
     if not os.path.exists(p):
@@ -186,21 +227,19 @@ class Replacer:
             if inputs.audience(c.get("audience")) not in (None, "clients"):
                 internal.update((meta.get(c["id"]) or {}).get("members") or [])
         my_team = next((u.get("team_id") for u in users if u.get("id") == self.me), None)
-        firsts = Counter()
-        for u in users:
-            fn = ((u.get("profile") or {}).get("first_name") or "").strip()
-            if fn:
-                firsts[fn.lower()] += 1
+
+        def role_of(u):
+            if u["id"] == self.me:
+                return "self"
+            if u.get("team_id") == my_team or u["id"] in internal:
+                return "colleague"
+            return "client-contact"
+        unique, self.shared_first = first_name_roles(users, role_of)
         for u in users:
             if u.get("is_bot") or u.get("name") == "slackbot":
                 continue
             p = u.get("profile") or {}
-            if u["id"] == self.me:
-                role = "self"
-            elif u.get("team_id") == my_team or u["id"] in internal:
-                role = "colleague"
-            else:
-                role = "client-contact"
+            role = role_of(u)
             aliases = [u.get("real_name"), p.get("real_name"), p.get("display_name")]
             fn, ln = (p.get("first_name") or "").strip(), (p.get("last_name") or "").strip()
             if fn and ln:
@@ -211,8 +250,7 @@ class Replacer:
             e = self.amap.ensure(u["id"], kind="person", role=role, origin="users.json",
                                  aliases=[a for a in aliases if a and len(a) >= 3])
             e.setdefault("first_names", [])
-            if fn and firsts[fn.lower()] == 1 and fn.lower() not in ORDINARY_FIRST_NAMES \
-                    and len(fn) >= 3 and fn not in e["first_names"]:
+            if fn and unique.get(fn.lower()) == u["id"] and fn not in e["first_names"]:
                 e["first_names"].append(fn)
                 self.amap.dirty = True
             self.people[u["id"]] = e
@@ -263,7 +301,7 @@ class Replacer:
                 for a in e["aliases"]:
                     (spacy if e.get("origin") == "spacy" else multi).append((a, e))
                 for fn in e.get("first_names", []):
-                    single.setdefault(fn, []).append(e)
+                    single.setdefault(fn.lower(), []).append(e)
         orgs = [(a, e) for e in self.amap.entries if e["kind"] in ("client", "product")
                 for a in e["aliases"]]
         # Longest first, so "Jane Smith" wins over "Jane".
@@ -281,25 +319,24 @@ class Replacer:
             return re.compile("|".join(f"(?:{p})" for p in pats), flags), lookup
         self.person_rx, self.person_lookup = build(multi, re.I)
         self.org_rx, self.org_lookup = build(orgs, re.I)
-        # Names only spaCy found, replaced wherever they appear, not only where
-        # spaCy tagged them (James, 12 Nov 2026). Matched as written, case
-        # included, so a common word spaCy once took for a name isn't replaced
-        # in every sentence; a client or kept product of the same name stays
-        # that, not a person.
+        # Names only spaCy found, replaced wherever they appear in any case,
+        # not only where spaCy tagged them (James, 12 Nov 2026): every name of
+        # two or more words, and a single word only once James has marked it
+        # a name (James, 13 Nov 2026). An undecided single word is replaced
+        # only where spaCy tagged it; one marked not a name, nowhere. A
+        # client or kept product of the same name stays that, not a person.
         org_norms = {self.norm(a) for a, _ in orgs}
         spacy = [(a, e) for a, e in spacy if self.norm(a) not in org_norms]
-        # A name of two or more words is matched in any case; a single word
-        # only as written, except inside a URL or path, where text is lower
-        # case anyway.
-        self.spacy_rx, _ = build(
-            [(a, e) for a, e in spacy if len(re.split(r"[\s\-_.]+", a.strip())) == 1], 0)
-        self.spacy_multi_rx, _ = build(
-            [(a, e) for a, e in spacy if len(re.split(r"[\s\-_.]+", a.strip())) > 1], re.I)
-        self.spacy_any_rx, self.spacy_lookup = build(spacy, re.I)
+        dec = name_decisions()
+        self.name_dec = {k: v.get("decision") for k, v in dec.items()}
+        self.spacy_rx, self.spacy_lookup = build(
+            [(a, e) for a, e in spacy
+             if not one_word(a) or self.name_dec.get(self.norm(a)) == "name"], re.I)
         self.first_names = single
+        firsts = set(single) | set(self.shared_first)
         self.first_rx = (re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
-            re.escape(f) for f in sorted(single, key=len, reverse=True)) + r")(?![A-Za-z0-9])")
-            if single else None)
+            re.escape(f) for f in sorted(firsts, key=len, reverse=True)) + r")(?![A-Za-z0-9])",
+            re.I) if firsts else None)
 
     @staticmethod
     def norm(s):
@@ -336,24 +373,24 @@ class Replacer:
                     add(m.start(), m.end(), e["pseudonym"], e["kind"])
         if self.first_rx:
             for m in self.first_rx.finditer(text):
-                es = self.first_names.get(m.group(1))
+                fn = m.group(1).lower()
+                es = self.first_names.get(fn)
                 if es and len(es) == 1:
                     add(m.start(), m.end(), es[0]["pseudonym"], "person")
-        for rx, where in ((self.spacy_rx, [(0, len(text))]),
-                          (self.spacy_multi_rx, [(0, len(text))]),
-                          (self.spacy_any_rx, [u.span() for u in URLISH.finditer(text)])):
-            if not rx:
-                continue
-            for a0, b0 in where:
-                for m in rx.finditer(text, a0, b0):
-                    e = self.spacy_lookup.get(self.norm(m.group(0)))
-                    if e:
-                        add(m.start(), m.end(), e["pseudonym"], "person")
+                elif fn in self.shared_first:
+                    add(m.start(), m.end(), self.shared_first[fn], "person")
+        if self.spacy_rx:
+            for m in self.spacy_rx.finditer(text):
+                e = self.spacy_lookup.get(self.norm(m.group(0)))
+                if e:
+                    add(m.start(), m.end(), e["pseudonym"], "person")
         listed = list(found)
         if use_ner:
             for a, b, label in self.ner.ents(text):
                 if label in SPACY_LABELS_PERSON:
                     name = text[a:b].strip()
+                    if one_word(name) and self.name_dec.get(self.norm(name)) == "not":
+                        continue
                     if name and any(c.isalpha() for c in name):
                         # The pseudonym is filled in below, only if no list
                         # span already covers this one, so a name a list
@@ -426,7 +463,9 @@ class Replacer:
         if isinstance(v, list):
             return [self.deep(x) for x in v]
         if isinstance(v, dict):
-            return {k: self.deep(x) for k, x in v.items()}
+            # Keys too: a question's text is a key in a transcript's answers.
+            return {self.replace_plain(k) if isinstance(k, str) else k: self.deep(x)
+                    for k, x in v.items()}
         return v
 
     def author(self, a):
@@ -494,6 +533,55 @@ def mine(recs, rep, ner, convs_by_client):
     return sorted(cands.values(), key=lambda c: (-c["count"], c["term"]))
 
 
+def name_candidates(texts, tagged_in, amap, ner):
+    """The single words only spaCy tagged as a person, for James to mark a
+    name or not a name (review page, Names). Each carries how often spaCy
+    tagged it, how often it appears capitalised and in lower case anywhere,
+    and a suggestion: not a name when it appears in lower case, outside URLs
+    and paths (where names are lower case too), at least as often as spaCy
+    tagged it, as an ordinary word does."""
+    words = {}
+    for e in amap.entries:
+        if e["kind"] == "person" and e.get("origin") == "spacy":
+            for a in e["aliases"]:
+                if one_word(a):
+                    words.setdefault(Replacer.norm(a), a)
+    if not words:
+        return []
+    tagged, forms = Counter(), defaultdict(Counter)
+    for t in texts:
+        for a, b, label in ner.ents(t):
+            if label in SPACY_LABELS_PERSON:
+                name = t[a:b].strip()
+                k = Replacer.norm(name)
+                if k in words and one_word(name):
+                    tagged[k] += 1
+                    forms[k][name] += 1
+    rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
+        re.escape(w) for w in sorted(words.values(), key=len, reverse=True)) + r")(?![A-Za-z0-9])",
+        re.I)
+    cap, low = Counter(), Counter()
+    for t in texts:
+        urls = [u.span() for u in URLISH.finditer(t)]
+        for m in rx.finditer(t):
+            w = m.group(1)
+            k = Replacer.norm(w)
+            if not w.islower():
+                cap[k] += 1
+            elif not any(a <= m.start() < b for a, b in urls):
+                low[k] += 1
+    out = []
+    for k, w in words.items():
+        out.append({
+            "key": k,
+            "word": forms[k].most_common(1)[0][0] if forms[k] else w,
+            "tagged": tagged[k], "capitalised": cap[k], "lower": low[k],
+            "suggest": "not" if low[k] >= max(tagged[k], 1) else "name",
+            "examples": tagged_in.get(k, [])[:3],
+        })
+    return sorted(out, key=lambda c: (-c["tagged"], c["key"]))
+
+
 def conversation_clients(d, recs, rep):
     """conversation -> client code, where a conversation's name or repo
     names a client."""
@@ -525,14 +613,22 @@ def run(log=print):
     if not allrecs:
         raise SystemExit("voice-decision-pipeline: the corpus is empty; run extract first")
     log(f"== anonymise: {len(allrecs)} records")
-    texts = []
+    texts, tagged_in = [], defaultdict(list)
     for r in allrecs:
-        texts.append(r.get("text") or "")
+        rt = [r.get("text") or ""]
         for k in SENT_FIELDS_NER:
             v = (r.get("source_fields") or {}).get(k)
             if isinstance(v, str):
-                texts.append(v)
+                rt.append(v)
+        texts.extend(rt)
     ner.tag_all(texts, log=log)
+    for r in allrecs:
+        t = r.get("text") or ""
+        for a, b, label in ner.ents(t):
+            if label in SPACY_LABELS_PERSON:
+                k = Replacer.norm(t[a:b].strip())
+                if len(tagged_in[k]) < 3 and r["id"] not in tagged_in[k]:
+                    tagged_in[k].append(r["id"])
     # A first pass gives every name only spaCy finds its map entry, so the
     # second, which writes the copies, replaces it in every text, not only in
     # the ones after spaCy first tagged it.
@@ -574,7 +670,7 @@ def run(log=print):
                 "text": text,
                 "tags": [t for t in r["tags"] if "start" not in t] + textutil.tag(text),
                 "context_ids": [anon_id(x) for x in r.get("context_ids") or []],
-                "reactions": [{"name": x["name"], "count": x.get("count", 0),
+                "reactions": [{"name": rep.replace_plain(x["name"]), "count": x.get("count", 0),
                                "users": [rep.author(u) for u in x.get("users", [])]}
                               for x in r.get("reactions") or []],
                 "source_fields": sf,
@@ -590,17 +686,24 @@ def run(log=print):
     state.write_json(state.path("mining-candidates.json"),
                      sorted(old.values(), key=lambda c: (-c["count"], c["term"])))
     amap.save()
+    names = name_candidates(texts, tagged_in, amap, ner)
+    state.write_json(state.path("name-candidates.json"), names)
+    ndec = name_decisions()
     decisions = state.read_json(state.path("mining-decisions.json"), {}) or {}
     state.write_json(state.path("anon-meta.json"), {
         "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "decisions_hash": hashlib.sha1(json.dumps(decisions, sort_keys=True).encode()).hexdigest(),
         "audiences_hash": inputs.audiences_hash(d),
+        "names_hash": decisions_hash(ndec),
         "map_entries": len(amap.entries),
         "replacements": dict(counts),
     })
     undecided = sum(1 for c in old.values() if c["term"] not in decisions)
     log(f"  ok    {sum(counts.values())} replacements {dict(counts)}; "
         f"{len(amap.entries)} map entries; {undecided} mining candidates undecided")
+    nleft = sum(1 for c in names if c["key"] not in ndec)
+    log(f"  ok    {len(names)} single words only spaCy took for a name, {nleft} undecided: "
+        "mark each on the review page's Names")
     from . import leaks
     lr = leaks.scan(d, amap)
     if lr["hits"]:

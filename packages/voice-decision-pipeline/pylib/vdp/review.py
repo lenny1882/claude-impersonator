@@ -1,9 +1,12 @@
 """The local review page: `voice-decision-pipeline review` (PLAN §2.3).
 
-Three jobs, all James's, all before anything is sent:
+Four jobs, all James's, all before anything is sent:
   - audiences: pick the audience of each Slack conversation the hand-written
     list leaves open (PLAN §3.2: group DMs outside the senior set). Saved to
     the inputs; the Slack extract and anonymise then run again.
+  - names: mark each single word only spaCy took for a person a name or not
+    a name (James, 13 Nov 2026). A name is replaced everywhere at the next
+    `anonymise`; not a name is never replaced.
   - mining: keep or strike each candidate client product, store or project
     name. Kept terms join the replacement list at the next `anonymise`.
   - batches: read 50 anonymised items from one source, every replacement
@@ -60,6 +63,15 @@ function bulk(d){const body={};for(const tr of document.querySelectorAll('tr[dat
 if(!tr.querySelector('button[aria-pressed=true]'))body[tr.dataset.term]=d}
 if(!Object.keys(body).length)return;if(!confirm(Object.keys(body).length+' undecided terms will be marked '+d))return;
 post('/api/mining',body).then(()=>location.reload())}
+function setname(btn,key,d){post('/api/names',{[key]:d}).then(()=>{
+for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria-pressed',
+b.dataset.d===d?'true':'false');const left=document.getElementById('left');
+if(left)left.textContent=document.querySelectorAll('tr[data-key]').length-
+document.querySelectorAll('tr[data-key] button[aria-pressed=true]').length})}
+function suggested(){const body={};for(const tr of document.querySelectorAll('tr[data-key]')){
+if(!tr.querySelector('button[aria-pressed=true]'))body[tr.dataset.key]=tr.dataset.suggest}
+if(!Object.keys(body).length)return;if(!confirm(Object.keys(body).length+' undecided words will be marked as suggested'))return;
+post('/api/names',body).then(()=>location.reload())}
 function setaud(btn,id,a){post('/api/audience',{[id]:a}).then(()=>{
 for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria-pressed',
 b.dataset.a===a?'true':'false');const left=document.getElementById('left');
@@ -102,6 +114,10 @@ def home():
     cands = state.read_json(state.path("mining-candidates.json"), []) or []
     dec = state.read_json(state.path("mining-decisions.json"), {}) or {}
     left = sum(1 for c in cands if c["term"] not in dec)
+    from .anonymise import name_decisions
+    names = state.read_json(state.path("name-candidates.json"), []) or []
+    nd = name_decisions()
+    nleft = sum(1 for c in names if c["key"] not in nd)
     gates = batches.gates()
     g = ("".join(f"<li class=err>{html.escape(x)}</li>" for x in gates)
          if gates else "<li>none: batches can be drawn</li>")
@@ -113,6 +129,8 @@ def home():
     return page("Corpus review", f"""
 <h2>Audiences: conversations the hand-written list leaves open</h2>
 <p><a href='/audiences'>{len(arows)} conversations</a>, {aleft} without an audience.</p>
+<h2>Names: single words spaCy took for a person</h2>
+<p><a href='/names'>{len(names)} words</a>, {nleft} undecided.</p>
 <h2>Leak check: real names left in the anonymised copies</h2>
 <p>{leak_line()}</p>
 <h2>Mining: client product, store and project names</h2>
@@ -128,7 +146,9 @@ def leak_line():
     if lr is None:
         return "Not run yet: it runs at the end of <code>anonymise</code>."
     if not lr["hits"]:
-        return f"None of {lr['terms_checked']} names, handles, emails and client names is left."
+        und = lr.get("undecided_names") or 0
+        return (f"None of {lr['terms_checked']} names, handles, emails and client names is left."
+                + (f" {und} words on Names are undecided and not counted." if und else ""))
     return (f"<span class=err><a href='/leaks'>{len(lr['terms'])} terms left "
             f"{lr['hits']} times</a></span>, of {lr['terms_checked']} checked.")
 
@@ -145,10 +165,52 @@ def leaks_page():
                     f" · {t['count']}×</div>{ex}</td></tr>")
     return page("Leak check", f"""
 <p>Each term below is a real name, handle, email or client name the pipeline knows,
-found in the anonymised copies after <code>anonymise</code>. Each is a place the
+found in what is sent of the anonymised copies after <code>anonymise</code>. Each is a place the
 replacement missed. Fix the cause, or strike the person with <code>forget</code>,
 then run <code>anonymise</code> again.</p>
 <table><tr><th>Term, kind, where it was found</th></tr>{''.join(rows)}</table>""")
+
+
+def names_page():
+    from .anonymise import name_decisions
+    cands = state.read_json(state.path("name-candidates.json"), []) or []
+    dec = name_decisions()
+    real = {}
+    want = {i for c in cands for i in c.get("examples", [])[:2]}
+    for s in SOURCES:
+        for r in state.read_jsonl(state.corpus_file(s)):
+            if r["id"] in want:
+                real[r["id"]] = r.get("text") or ""
+    rows = []
+    for c in cands:
+        d = (dec.get(c["key"]) or {}).get("decision")
+        ex = []
+        for i in c.get("examples", [])[:2]:
+            t = real.get(i, "")
+            k = t.find(c["word"])
+            snip = t[max(0, k - 80):k + len(c["word"]) + 80] if k >= 0 else t[:160]
+            ex.append(html.escape(snip).replace(html.escape(c["word"]),
+                                                f"<mark>{html.escape(c['word'])}</mark>"))
+        key, w = html.escape(c["key"]), html.escape(c["word"])
+        sug = "a name" if c["suggest"] == "name" else "not a name"
+        rows.append(
+            f"<tr data-key='{key}' data-suggest='{c['suggest']}'><td><b>{w}</b><div class=meta>"
+            f"tagged {c['tagged']}× · capitalised {c['capitalised']}× · lower case {c['lower']}× · "
+            f"suggested: {sug}</div>{''.join(f'<pre>{x}</pre>' for x in ex)}</td>"
+            f"<td class=row><button class=keep data-d=name aria-pressed={'true' if d == 'name' else 'false'} "
+            f"onclick=\"setname(this,this.closest('tr').dataset.key,'name')\">Name</button>"
+            f"<button class=strike data-d=not aria-pressed={'true' if d == 'not' else 'false'} "
+            f"onclick=\"setname(this,this.closest('tr').dataset.key,'not')\">Not a name</button></td></tr>")
+    left = sum(1 for c in cands if c["key"] not in dec)
+    return page("Names spaCy found", f"""
+<p>Each word below is one spaCy tagged as a person somewhere, and no list knows.
+Mark it a name to replace it everywhere, in any case, at the next <code>anonymise</code>.
+Mark it not a name to leave it as written everywhere, where spaCy tagged it too.
+Until marked, it is replaced only where spaCy tagged it, and no batch is drawn.
+The suggestion is "not a name" when the word appears in lower case at least as often
+as spaCy tagged it. <span id=left>{left}</span> undecided. Each click is saved.</p>
+<p class=row><button onclick="suggested()">Mark every undecided word as suggested</button></p>
+<table><tr><th>Word, counts, two places spaCy tagged it</th><th></th></tr>{''.join(rows)}</table>""")
 
 
 def mining():
@@ -311,6 +373,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, home())
             if u.path == "/mining":
                 return self._send(200, mining())
+            if u.path == "/names":
+                return self._send(200, names_page())
             if u.path == "/leaks":
                 return self._send(200, leaks_page())
             if u.path == "/audiences":
@@ -335,6 +399,14 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError(d)
                     dec[term] = {"decision": d}
                 state.write_json(state.path("mining-decisions.json"), dec)
+            elif p == "/api/names":
+                from .anonymise import name_decisions
+                dec = name_decisions()
+                for key, d in body.items():
+                    if d not in ("name", "not"):
+                        raise ValueError(d)
+                    dec[key] = {"decision": d}
+                state.write_json(state.path("name-decisions.json"), dec)
             elif p == "/api/audience":
                 for conv_id, a in body.items():
                     inputs.set_audience(conv_id, a)

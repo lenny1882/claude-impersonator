@@ -26,11 +26,13 @@ that are each versioned, released and installed on their own.
     $ voice-decision-pipeline anonymise
       ner   500/9000 texts, 3.1 min, about 52 min left
       ok    … replacements {'person': …, 'client': …}; … mining candidates undecided
+      ok    … single words only spaCy took for a name, … undecided: mark each on the review page's Names
     $ voice-decision-pipeline review
       ok    review page at http://127.0.0.1:8765/
 
 The review page lists the Slack conversations the inputs leave without an
-audience (group DMs outside the senior set) for you to assign, the candidate
+audience (group DMs outside the senior set) for you to assign, the single
+words only spaCy took for a name to mark a name or not a name, the candidate
 client product, store and project names to keep or strike, then each source's batches of 50 anonymised items
 with every replacement highlighted. Approving a source's first batch is what
 lets later passes send it (`voice-decision-pipeline sendable <source>`).
@@ -123,6 +125,7 @@ files 600), never backed up:
 | `anon/<source>.jsonl` | the anonymised copy, replacements marked, ids hashed |
 | `anonymising-map.json` | append-only: real id, aliases, role, pseudonym, origin |
 | `mining-candidates.json`, `mining-decisions.json` | candidate names and James's keep or strike |
+| `name-candidates.json`, `name-decisions.json` | single words only spaCy took for a name, with counts; James's name or not a name |
 | `batches/`, `review-state.json` | drawn batches; per-source approvals and stops |
 | `index/` | `vectors.npy`, `ids.json`, `identity.json` |
 | `leak-report.json` | real names the leak check found in the anonymised copies, with where |
@@ -162,22 +165,35 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   unfinished repo; the saved repos are cleared once `corpus/bitbucket.jsonl`
   is written.
 - **Anonymising:** Slack mentions, emails and phone numbers; every name
-  `users.json` gives each person; the client names in the inputs and the
+  `users.json` gives each person, a first name in any case unless it is an
+  ordinary word, and a first name two people share as their role
+  (`colleague`, or `person` when their roles differ); the client names in
+  the inputs and the
   product names kept on the review page, inside URLs and channel names too;
-  each handle in a group DM's name (`mpdm-a--b-1`), however short; then names spaCy (`en_core_web_trf`) tags as people, replaced wherever
-  they appear once spaCy has tagged them anywhere (a single word as written,
-  or in any case inside a URL or path; a name of two or more words in any
-  case), unless a client or kept product has the same name. Pseudonyms are
+  each handle in a group DM's name (`mpdm-a--b-1`), however short; then names
+  spaCy (`en_core_web_trf`) tags as people, unless a client or kept product
+  has the same name. A name of two or more words is replaced wherever it
+  appears, in any case. A single word is listed on the review page's Names
+  with how often spaCy tagged it and how often it appears capitalised and
+  in lower case (outside URLs and paths), and a suggestion: not a name when
+  the lower-case count is at least the tagged count. Until you mark it, it
+  is replaced only where spaCy tagged it; marked a name, everywhere in any
+  case; marked not a name, nowhere. Dictionary keys inside source fields
+  and reaction names are replaced too. Pseudonyms are
   role-tagged (`self-01`, `colleague-07`, `client-contact-02`, `client-03`,
   `product-04`, `person-05`) and one person keeps one across every source; a
   Bitbucket account is matched to its Slack person by name.
-- **Leak check:** the last step of `anonymise` searches every anonymised
-  record, source fields too, for every full name, handle of 3 characters or
-  more and email in `users.json`, the Bitbucket accounts' names, the map's
-  aliases and unique first names, and the client and kept product names.
-  Anything found is listed on the review page with where it was.
-- **Gates:** no batch is drawn while a mining candidate is undecided, or after
-  a decision until `anonymise` has run again; nor after an audience is set on
+- **Leak check:** the last step of `anonymise` searches what is sent of
+  every anonymised record (text, source fields with their keys, reactions,
+  author; not the source name, tag types, ids or timestamps) for every full
+  name, handle of 3 characters or more and email in `users.json`, the
+  Bitbucket accounts' names, the map's aliases and unique first names,
+  first names two people share, and the client and kept product names. A
+  single word only spaCy found counts once marked a name; undecided ones
+  are counted apart. Anything found is listed on the review page with where
+  it was.
+- **Gates:** no batch is drawn while a mining candidate or a word on Names is
+  undecided, or after a decision until `anonymise` has run again; nor after an audience is set on
   the review page until `extract slack` and then `anonymise` have run again.
 - **Index:** James's Slack and Bitbucket voice items, each embedded with the
   message it answers, trimmed from the start of that message to fit 512

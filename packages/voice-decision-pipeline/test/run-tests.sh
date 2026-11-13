@@ -179,6 +179,8 @@ check "Bitbucket: the saved repo is cleared after the rerun" \
 
 # forget before anonymise has built the map, each on its own copy of the state
 fresh(){ rm -rf "$TMP/st-$1"; cp -a "$ST" "$TMP/st-$1"; echo "$TMP/st-$1"; }
+gates(){ "$PY" -m vdp status | jq -r '.blocks_next_batch|join("\n")'; }
+export -f gates; export PY
 check "forget before anonymise: there is no map yet" test ! -e "$ST/anonymising-map.json"
 F1=$(fresh person)
 check "forget before anonymise: a Slack person by name" env VDP_STATE="$F1" "$PY" -m vdp forget "Tom Baker"
@@ -222,8 +224,8 @@ check "show: other people's PRs without an item of yours are left out" bash -c "
 check "show --repo writes that repo's view" \
   bash -c "\"$PY\" -m vdp show bitbucket --repo ws/new-repo >/dev/null && test -s '$ST/views/bitbucket-ws__new-repo.txt'"
 
-# A name only spaCy finds, tagged in one text, is replaced in every text. The
-# spaCy cache is seeded with that one tag, so this runs without the model.
+# A single word only spaCy finds is a Names candidate (James, 13 Nov 2026).
+# The spaCy cache is seeded with one tag, so this runs without the model.
 F7=$(fresh spacyname)
 "$PY" - "$F7" <<'EOF'
 import hashlib, json, sys
@@ -232,16 +234,85 @@ with open(sys.argv[1] + "/spacy-cache.jsonl", "a") as f:
     f.write(json.dumps({"h": hashlib.sha1(t.encode()).hexdigest(), "e": [[20, 30, "PERSON"]]}) + "\n")
 EOF
 check "spaCy name: anonymise with one seeded tag" env VDP_STATE="$F7" "$PY" -m vdp anonymise
-check "spaCy name: replaced in every text, not only the tagged one, URLs too" \
+check "spaCy name: undecided, it is replaced only where spaCy tagged it" \
+  bash -c "grep -q 'check person-01 caching' '$F7/anon/slack.jsonl' && grep -q 'The Zephyrline launch' '$F7/anon/slack.jsonl'"
+check "spaCy name: it is a Names candidate, with its counts; a URL's lower case doesn't count" \
+  q 'map(select(.key=="zephyrline"))|length==1 and .[0].tagged==1 and .[0].capitalised==5 and .[0].lower==0 and .[0].suggest=="name"' "$F7/name-candidates.json"
+check "spaCy name: an undecided word holds batches" \
+  env VDP_STATE="$F7" bash -c "gates | grep -q '1 single words spaCy took for a name are not marked'"
+check "spaCy name: the leak check counts it as undecided, not as a leak" \
+  q '.hits==0 and .undecided_names==1' "$F7/leak-report.json"
+echo '{"zephyrline": {"decision": "name"}}' > "$F7/name-decisions.json"
+check "spaCy name: a mark holds batches until anonymise runs again" \
+  env VDP_STATE="$F7" bash -c "gates | grep -q 'names marked since the anonymised copies were built'"
+env VDP_STATE="$F7" "$PY" -m vdp anonymise >/dev/null 2>&1
+check "spaCy name: marked a name, it is replaced in every text, in any case, URLs too" \
   bash -c "! grep -q -i zephyrline '$F7/anon/slack.jsonl' && grep -q 'The person-01 launch needs the person-01 banner' '$F7/anon/slack.jsonl' && grep -q 'staging.client-01.com/person-01' '$F7/anon/slack.jsonl'"
-check "spaCy name: the leak check is clean" q '.hits==0' "$F7/leak-report.json"
+check "spaCy name: marked a name, the leak check is clean and no gate is left for it" \
+  bash -c "jq -e '.hits==0 and .undecided_names==0' '$F7/leak-report.json' >/dev/null && ! VDP_STATE='$F7' gates | grep -q -e 'single words' -e 'names marked'"
+echo '{"zephyrline": {"decision": "not"}}' > "$F7/name-decisions.json"
+env VDP_STATE="$F7" "$PY" -m vdp anonymise >/dev/null 2>&1
+check "spaCy name: marked not a name, it is left everywhere, where spaCy tagged it too" \
+  bash -c "grep -q 'check Zephyrline caching' '$F7/anon/slack.jsonl' && grep -q 'The Zephyrline launch' '$F7/anon/slack.jsonl' && ! grep -q 'person-01' '$F7/anon/slack.jsonl'"
+check "spaCy name: marked not a name, the leak check doesn't search for it" \
+  bash -c "jq -e '.hits==0' '$F7/leak-report.json' >/dev/null && ! grep -q -i zephyrline '$F7/leak-report.json'"
 echo '{"Zephyrline": {"decision": "keep"}}' > "$F7/mining-decisions.json"
+echo '{"zephyrline": {"decision": "name"}}' > "$F7/name-decisions.json"
 env VDP_STATE="$F7" "$PY" -m vdp anonymise >/dev/null 2>&1
 check "spaCy name: once kept on the mining page it is a product, not a person" \
   bash -c "grep -q 'The product-01 launch' '$F7/anon/slack.jsonl' && ! grep -q 'person-01' '$F7/anon/slack.jsonl'"
 
 check "anonymise" vdp anonymise
 check "leak check: the fixtures' anonymised copies are clean" q '.hits==0 and .terms_checked>10' "$ST/leak-report.json"
+check "anon: a first name in lower case, a dictionary key and a reaction name are replaced" "$PY" - <<'EOF'
+from vdp import inputs
+from vdp.anonmap import Map
+from vdp.anonymise import Ner, Replacer
+rep = Replacer(inputs.load(), Map.load(), Ner())
+assert rep.apply("thanks priya")[0] == "thanks colleague-01", rep.apply("thanks priya")
+assert rep.deep({"Ask Priya Raman?": "yes"}) == {"Ask colleague-01?": "yes"}, rep.deep({"Ask Priya Raman?": "yes"})
+assert rep.replace_plain("priya-wave") == "colleague-01-wave", rep.replace_plain("priya-wave")
+EOF
+check "anon: a first name two people share becomes their role, and the leak check searches for it" "$PY" - <<'EOF'
+import json, os, shutil
+from vdp import inputs, leaks
+from vdp.anonmap import Map
+from vdp.anonymise import Ner, Replacer
+d = inputs.load()
+exp = os.path.join(os.environ["VDP_STATE"], "..", "shared-export")
+shutil.rmtree(exp, ignore_errors=True)
+shutil.copytree(d["slack_export"], exp)
+users = json.load(open(os.path.join(exp, "users.json")))
+users.append({"id": "UCOLPRIYK", "team_id": "T0HOME", "name": "priya.kapoor", "real_name": "Priya Kapoor",
+              "profile": {"real_name": "Priya Kapoor", "first_name": "Priya", "last_name": "Kapoor"}})
+json.dump(users, open(os.path.join(exp, "users.json"), "w"))
+d["slack_export"] = exp
+rep = Replacer(d, Map(), Ner())
+got = rep.apply("Priya, ask Priya Kapoor")[0]
+assert got.startswith("colleague, ask colleague-"), got
+assert leaks.terms(d, Map()).get("priya") == "shared first name", leaks.terms(d, Map()).get("priya")
+EOF
+check "leak check: only what is sent is searched, dictionary keys included" "$PY" - <<'EOF'
+import json
+from vdp import leaks, inputs, state
+from vdp.anonmap import Map
+with open(state.anon_file("gsd")) as f:
+    keep = f.read()
+with open(state.anon_file("gsd"), "a") as f:
+    f.write(json.dumps({"id": "x2", "source": "priya", "tags": [{"type": "priya"}], "text": "clean",
+                        "source_fields": {}}) + "\n")
+r = leaks.scan(inputs.load(), Map.load())
+assert r["hits"] == 0, r
+with open(state.anon_file("gsd"), "a") as f:
+    f.write(json.dumps({"id": "x3", "text": "clean", "source_fields": {"answers": {"Ask Priya Raman?": "yes"}}}) + "\n")
+r = leaks.scan(inputs.load(), Map.load())
+assert [t["term"] for t in r["terms"]] == ["priya raman"], r
+with open(state.anon_file("gsd"), "w") as f:
+    f.write(keep)
+leaks.scan(inputs.load(), Map.load())
+EOF
+check "the command runs Python unbuffered, so progress lines reach the log as they happen" \
+  grep -q 'PYTHONUNBUFFERED=1 exec "$VPY" -m vdp' "$REPO/bin/voice-decision-pipeline"
 A="$ST/anon/slack.jsonl"
 check "anon: no real name, handle, email, phone or client name is left" \
   bash -c "! grep -q -i -e 'Priya' -e 'Raman' -e 'Gregor' -e 'Whitfield' -e 'Jamie' -e 'acme' -e '7700 900123' -e 'gregor@' '$ST'/anon/*.jsonl"
@@ -295,8 +366,6 @@ vdp sendable bitbucket; [ $? = 5 ] && ok "approval is per source: bitbucket stil
 check "stopping a source after an approval" test "$(post api/stop '{"source":"slack"}')" = 200
 check "a stopped source draws no more batches" test "$(post api/draw '{"source":"slack"}')" = 409
 
-gates(){ "$PY" -m vdp status | jq -r '.blocks_next_batch|join("\n")'; }
-export -f gates; export PY
 check "audiences: the page lists the group DM with no audience, not the self-DM" \
   bash -c "p=\$(curl -sf '${URL}audiences'); grep -q 'mpdm-jamie.testperson--priya.raman--tom-1' <<< \"\$p\" && ! grep -q DSELFNOTE <<< \"\$p\""
 check "audiences: the home page counts it" bash -c "curl -sf '$URL' | grep -q '1 without an audience'"

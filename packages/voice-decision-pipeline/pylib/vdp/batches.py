@@ -12,7 +12,9 @@ or struck (PLAN §2.3: "before the first review batch is sent"), and the
 anonymised copies were rebuilt after the last mining decision, so kept terms
 are already replaced in what James reviews. A third: the Slack extract and
 the anonymised copies were built with the audiences now in the inputs, so
-an audience set on the mapping page reaches the records before review.
+an audience set on the mapping page reaches the records before review. A
+fourth: every single word only spaCy took for a name is marked a name or not
+a name, and the copies were rebuilt after the last such mark.
 
 `sendable(source)` is the check every later pass that sends text must make.
 """
@@ -66,6 +68,16 @@ def gates():
     h = hashlib.sha1(json.dumps(decisions, sort_keys=True).encode()).hexdigest()
     if meta.get("decisions_hash") != h:
         reasons.append("mining decisions changed since the anonymised copies were built: "
+                       "run 'voice-decision-pipeline anonymise' again")
+    from .anonymise import decisions_hash, name_decisions
+    names = state.read_json(state.path("name-candidates.json"), []) or []
+    nd = name_decisions()
+    nleft = sum(1 for c in names if c["key"] not in nd)
+    if nleft:
+        reasons.append(f"{nleft} single words spaCy took for a name are not marked a name or "
+                       "not a name: mark them on the review page's Names")
+    if meta.get("names_hash", decisions_hash({})) != decisions_hash(nd):
+        reasons.append("names marked since the anonymised copies were built: "
                        "run 'voice-decision-pipeline anonymise' again")
     return reasons
 
