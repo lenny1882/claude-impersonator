@@ -1217,6 +1217,20 @@ stage lists only what blocks that stage.
 16. All of the corpus may be sent, anonymised.
     (§2.3).
 
+**Next – before anything else is built, released or anonymised**
+37. Builds on every machine (§5).
+    Building once and installing the same build on every
+    machine from a version-controlled repo changes what anonymising has to
+    protect: what matters is what lands in the committed build, not only
+    what is sent. It may change items 6, 7, 13 and 16 above, and settles
+    how code is handled in Mining and in what is sent. Where the
+    builds repo is hosted and whether it is encrypted; whether code is kept
+    out of exemplars and quotes or only caught by the build leak check; how
+    machine-local files (decision log, question delivery state, drafts)
+    stay per machine and reach the next build. Blocks the next
+    `voice-decision-pipeline` release, the next `anonymise`, the review
+    batches and Stage 2.
+
 **Stage 2 – voice model and `voice-runtime`**
 17. Which models draft, label and judge, and whether the blind-labelling
     "second model" is a different model or a different prompt (§8.2).
@@ -1253,11 +1267,6 @@ stage lists only what blocks that stage.
     agents, `autonomous` and its UI phases, OpenSpec, non-git folders
     (§8.3). Other machines: §5, Builds on
     every machine.
-37. Builds on every machine (§5): where the builds repo is hosted and
-    whether it is encrypted; whether code is kept out of exemplars and
-    quotes or only caught by the build leak check; which machine-local
-    files (decision log, question delivery state, drafts) stay per machine
-    and how they reach the next build.
 32. Behaviour before the model passes validation (§8.3).
 33. Build task, not a question: search every available transcript for a
     dependable marker of Claude's recommendations (§4.5).
