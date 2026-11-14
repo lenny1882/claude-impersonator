@@ -937,6 +937,20 @@ fire on several events.
   in `~/.claude/skills/voice-runtime/state/`; `decision-runtime`,
   `question-store` and `voice-decision-pipeline` (commands) in
   `~/.claude/<name>/`. No path or setting is configured or shared.
+  - **Builds on every machine**: the corpus is
+    extracted, anonymised and built once, on this machine. Each build is
+    committed to a version-controlled builds repo, and every machine the owner
+    uses installs `voice-runtime` and
+    `decision-runtime` from it, so all of them run the same build; no other
+    machine extracts or builds. Because the builds repo is cloned to each
+    machine and keeps its history, nothing real may be in a build: the leak
+    check runs on the built files (voice guide, exemplars, principles and
+    their evidence quotes, tech positions, client constraints, cases, the
+    agent block) before every commit, and a failure stops the commit. Open:
+    where the repo is hosted and whether it is encrypted;
+    whether code is kept out of exemplars and quotes or only caught by the
+    build leak check; how machine-local files (decision log, question
+    delivery state, drafts) stay per machine and reach the next build.
   - The pipeline writes each build into the runtimes' state and, at the
     start of each build, reads their live files and `question-store`'s
     questions into the corpus. The runtimes never read the pipeline's
@@ -1236,8 +1250,14 @@ stage lists only what blocks that stage.
     repeated blocks, the pre-filter, `asyncRewake`, plan files as
     decisions, un-anonymised diffs (§8.3).
 31. Coverage: `SubagentStart` skip list and a delivery test, advisor
-    agents, `autonomous` and its UI phases, OpenSpec, non-git folders,
-    other machines (§8.3).
+    agents, `autonomous` and its UI phases, OpenSpec, non-git folders
+    (§8.3). Other machines: §5, Builds on
+    every machine.
+37. Builds on every machine (§5): where the builds repo is hosted and
+    whether it is encrypted; whether code is kept out of exemplars and
+    quotes or only caught by the build leak check; which machine-local
+    files (decision log, question delivery state, drafts) stay per machine
+    and how they reach the next build.
 32. Behaviour before the model passes validation (§8.3).
 33. Build task, not a question: search every available transcript for a
     dependable marker of Claude's recommendations (§4.5).
@@ -1387,8 +1407,10 @@ stage lists only what blocks that stage.
   `~/.claude` files) aren't seen unless the hook is told where to look.
   Whether those are covered is not decided.
 - Sessions this machine's hooks don't reach: claude.ai cloud sessions and
-  any other machine. Whether the runtime is installed
-  anywhere else is not decided.
+  any other machine.
+  Per §5 (Builds on every machine), the runtimes are installed on
+  each of the owner's machines and use the one build made here. claude.ai cloud
+  sessions are still not decided.
 - Buildomator's `.agents/workspace.json` reader (§7) as another delivery
   route: `decision-runtime` could emit a conformant file.
 - `bm-executor` treats a project `./CLAUDE.md` as hard constraints — a
