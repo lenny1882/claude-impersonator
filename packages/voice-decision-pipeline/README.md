@@ -168,7 +168,9 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   ordinary word, and a first name two people share as their role
   (`colleague`, or `person` when their roles differ); the client names in
   the inputs and the
-  product names kept on the review page, inside URLs and channel names too;
+  product names kept on the review page, inside URLs and channel names too,
+  with up to three spaces, hyphens, dots or underscores between their words
+  (`Acme - Store`, `acme-store`, `AcmeStore`);
   each handle in a group DM's name (`mpdm-a--b-1`), however short; then names
   spaCy (`en_core_web_trf`) tags as people, unless a client or kept product
   has the same name once spaces, hyphens, dots and underscores are dropped;
@@ -191,8 +193,9 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   Bitbucket accounts' names, the map's aliases and unique first names,
   first names two people share, and the client and kept product names. A
   single word only spaCy found counts once marked a name; undecided ones
-  are counted apart. Anything found is listed on the review page with where
-  it was.
+  are counted apart. The pipeline's own pseudonyms are skipped, so a word
+  before one (`acme product-07`) doesn't spell a kept product's name with
+  it. Anything found is listed on the review page with where it was.
 - **Mining:** spaCy's organisation and product tags and capitalised terms
   concentrated in one client's conversations, less fragments that can't be
   a name and terms found in three or more clients' conversations. Each

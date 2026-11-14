@@ -81,7 +81,9 @@ def alias_pattern(alias):
     words = [re.escape(w) for w in words if w]
     if not words:
         return None
-    body = r"[\s\-_.]?".join(words)
+    # Up to three separators between words, so "Acme - Store" (a spaced
+    # hyphen) matches as well as "AcmeStore", "Acme Store" and "acme-store".
+    body = r"[\s\-_.]{0,3}".join(words)
     return rf"(?<![A-Za-z0-9]){body}(?![A-Za-z0-9])"
 
 

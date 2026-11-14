@@ -340,6 +340,19 @@ client = amap.get("client:globexco")["pseudonym"]
 assert rep.apply("ship it to Globex Co today")[0] == f"ship it to {client} today", rep.apply("ship it to Globex Co today")
 assert rep.apply("globex-co and GLOBEX CO")[0] == f"{client} and {client}", rep.apply("globex-co and GLOBEX CO")
 EOF
+check "anon: a kept product written with a spaced hyphen is replaced in each spelling" "$PY" - <<'EOF'
+from vdp import inputs
+from vdp.anonmap import Map
+from vdp.anonymise import Ner, Replacer
+amap = Map()
+amap.ensure("product:quillford - depot", kind="product", role="product", origin="mining",
+            aliases=["Quillford - Depot"])
+rep = Replacer(inputs.load(), amap, Ner())
+p = amap.get("product:quillford - depot")["pseudonym"]
+for text in ("see Quillford - Depot now", "see quillford-depot now", "see QuillfordDepot now",
+             "see Quillford Depot now"):
+    assert rep.apply(text)[0] == f"see {p} now", (text, rep.apply(text))
+EOF
 check "leak check: only what is sent is searched, dictionary keys included" "$PY" - <<'EOF'
 import json
 from vdp import leaks, inputs, state
@@ -467,6 +480,27 @@ assert "tom" in got and got["tom"]["kind"] == "slack handle", r
 EOF
 check "leak check: the review page lists the term" \
   "$PY" -c "from vdp import review; p = review.leaks_page(); assert 'priya raman' in p and 'x1' in p, p"
+check "leak check: a word before a pseudonym that spells a product's name with it is no leak" "$PY" - <<'EOF'
+import json
+from vdp import leaks, inputs, state
+from vdp.anonmap import Map
+amap = Map.load()
+amap.ensure("product:other", kind="product", role="product", origin="mining", aliases=["Otherthing"])
+amap.ensure("product:brindle product", kind="product", role="product", origin="mining",
+            aliases=["Brindle Product"])
+p = amap.get("product:other")["pseudonym"]
+assert p.startswith("product-"), p
+with open(state.anon_file("gsd"), "a") as f:
+    f.write(json.dumps({"id": "x2", "text": f"the brindle {p} build"}) + "\n")
+r = leaks.scan(inputs.load(), amap)
+assert "brindle product" not in {t["term"] for t in r["terms"]}, r
+with open(state.anon_file("gsd"), "a") as f:
+    f.write(json.dumps({"id": "x3", "text": "the Brindle Product build"}) + "\n")
+r = leaks.scan(inputs.load(), amap)
+got = {t["term"]: t for t in r["terms"]}
+assert [e["id"] for e in got["brindle product"]["examples"]] == ["x3"], r
+assert "Brindle Product" in got["brindle product"]["examples"][0]["text"], r
+EOF
 check "state is owner-only" bash -c "[ -z \"\$(find '$ST' -perm /077 -print -quit)\" ]"
 check "status reports owner-only state and per-source review" \
   bash -c "\"$PY\" -m vdp status | jq -e '.not_owner_only==[] and .sources.slack.sendable and (.sources.bitbucket.sendable|not)' >/dev/null"

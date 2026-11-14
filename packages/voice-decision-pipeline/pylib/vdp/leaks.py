@@ -12,7 +12,8 @@ is a place the replacement missed.
 
 Only what is sent is searched: each record's text, source fields (keys
 included), reactions and author. The source name, tag types, ids and
-timestamps are the pipeline's own words, not the corpus's.
+timestamps are the pipeline's own words, not the corpus's, and so are the
+pseudonyms, which are blanked before the search.
 
 The report, with the real term and a short piece of the text around it, is
 written to the state as leak-report.json (owner-only, never sent) and shown
@@ -79,11 +80,20 @@ def scan(d, amap):
     rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
         re.escape(t) for t in sorted(found, key=len, reverse=True)) + r")(?![A-Za-z0-9])",
         re.IGNORECASE)
+    # The pipeline's own pseudonyms are blanked before searching (same length,
+    # so snippets still come from the real body): a word before a pseudonym
+    # plus its role ("acme product" in "acme product-07") is not a name left
+    # in the copy.
+    pseud = sorted({e["pseudonym"] for e in amap.entries if e.get("pseudonym")},
+                   key=len, reverse=True)
+    prx = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(map(re.escape, pseud)) + r")(?![A-Za-z0-9])",
+                     re.IGNORECASE) if pseud else None
     hits = defaultdict(lambda: {"count": 0, "examples": []})
     for s in SOURCES:
         for r in state.read_jsonl(state.anon_file(s)):
             body = json.dumps({k: r[k] for k in SENT_KEYS if k in r}, ensure_ascii=False)
-            for m in rx.finditer(body):
+            searched = prx.sub(lambda m: "\0" * len(m.group(0)), body) if prx else body
+            for m in rx.finditer(searched):
                 t = m.group(1).lower()
                 h = hits[t]
                 h["count"] += 1

@@ -893,6 +893,10 @@ fire on several events.
   listed, each with its suggestion as a coloured badge; a term leaves the
   list as soon as it is decided, and each section has its own keep-all and
   strike-all.
+  A client or kept product name's pattern allows up to three separators between its words, so a name written with
+  a spaced hyphen (`X - Y`) matches. The leak check blanks the pipeline's
+  pseudonyms before searching, so a word before one plus its role
+  (`acme product-07`) is not taken for a kept product's name.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
