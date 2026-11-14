@@ -59,8 +59,56 @@ MENTION = re.compile(r"<@([UW][A-Z0-9]+)(?:\|[^>]*)?>")
 CHANNEL = re.compile(r"<#([CGD][A-Z0-9]+)(?:\|([^>]*))?>")
 EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 PHONE = re.compile(r"(?<![\w+])(?:\+\d{1,3}[\s-]?|0)\d{2,4}[\s-]?\d{3,4}[\s-]?\d{3,4}(?!\w)")
-CAPWORD = re.compile(r"(?<![\w@#/.-])[A-Z][A-Za-z0-9]{2,}(?:[ -][A-Z][A-Za-z0-9]{2,})?")
 SENT_FIELDS_NER = ("preceding_reply", "title")
+# Mining reads every text a record sends: its text and every string in its
+# source fields, keys included, but timestamps. spaCy
+# tags them all but tool calls, paths, branch names, links and file names;
+# the dictionary route still reads those.
+MINE_SKIP_KEYS = {"slack_ts", "thread_ts"}
+MINE_NER_SKIP_KEYS = {"tool_calls", "cwd", "project", "repo", "repo_name", "git_branch",
+                      "source_branch", "destination_branch", "attachment_links", "files"}
+# A word for the dictionary route: 3 or more letters or digits, starting with
+# a letter, not inside a handle, channel, path, host or hyphenated word.
+MINE_WORD = re.compile(r"(?<![\w@#/.-])[A-Za-z][A-Za-z0-9]{2,}(?![\w-])")
+_WORDS = None
+
+
+def dictionary():
+    """The English words in data/words.txt (SCOWL, lower-case entries; built by
+    tools/build-wordlist.sh). Mining's only test of an ordinary word: case
+    never decides it."""
+    global _WORDS
+    if _WORDS is None:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "words.txt")
+        if not os.path.exists(p):
+            raise SystemExit("voice-decision-pipeline: the Mining dictionary is missing "
+                             f"({p}); in a checkout, run tools/build-wordlist.sh")
+        with open(p, encoding="utf-8") as f:
+            _WORDS = frozenset(w.strip() for w in f if w.strip())
+    return _WORDS
+
+
+def mined_strings(r, for_ner=False):
+    """Every text of record r that Mining reads: its text, then each string in
+    its source fields, dictionary keys included. for_ner leaves out the fields
+    spaCy doesn't tag."""
+    yield r.get("text") or ""
+
+    def walk(v, top):
+        if isinstance(v, str):
+            yield v
+        elif isinstance(v, list):
+            for x in v:
+                yield from walk(x, top)
+        elif isinstance(v, dict):
+            for k, x in v.items():
+                if isinstance(k, str):
+                    yield k
+                yield from walk(x, top)
+    for k, v in (r.get("source_fields") or {}).items():
+        if k in MINE_SKIP_KEYS or (for_ner and k in MINE_NER_SKIP_KEYS):
+            continue
+        yield from walk(v, k)
 
 
 def anon_id(rid):
@@ -550,83 +598,97 @@ class Replacer:
 
 # --- mining ----------------------------------------------------------------
 
-def mine(recs, rep, ner, convs_by_client):
-    """Candidate client product/store/project names (PLAN §2.3)."""
-    kinds = defaultdict(set)
-    count = Counter()
-    per_client = defaultdict(Counter)
-    lower = Counter()
-    examples = defaultdict(list)
-    # Names spaCy guessed were people stay candidates: a product name tagged
-    # as a person should still reach the owner as a product.
+def mine(recs, rep, ner, convs_by_client, decisions=None):
+    """Candidate client product, store and project names (PLAN §2.3).
+
+    Case decides nothing: spellings that differ only in
+    case are one candidate, shown as its decided spelling or its commonest
+    one, and an ordinary word is one in dictionary(). Every text a record
+    sends is read (mined_strings). Two routes onto the list:
+
+      spaCy       tagged as an organisation or product at least twice
+      dictionary  a word that isn't in the dictionary, used at least 3 times
+                  in conversations mapped to a client, 80% of them one
+                  client's
+
+    then dropped: a fragment (junk_term), a term no record holds any more,
+    or one in three or more clients' conversations. Each is suggested keep
+    (not ordinary, and concentrated in one client or only in one client's
+    conversations with at least half its uses there), strike (ordinary and
+    not concentrated) or left to check by hand. Known names (the map's
+    clients, products and people) are never offered again."""
+    decisions = decisions or {}
+    decided = {t.lower(): t for t in decisions}
+    words = dictionary()
     known = {rep.norm(a) for e in rep.amap.entries if e.get("origin") != "spacy"
              for a in e["aliases"]}
+    tags, kinds = Counter(), defaultdict(set)
+    per_client = defaultdict(Counter)
+    forms, examples = defaultdict(Counter), defaultdict(list)
+
+    def note(term, rid):
+        k = term.lower()
+        forms[k][term] += 1
+        if len(examples[k]) < 3 and rid not in examples[k]:
+            examples[k].append(rid)
     for r in recs:
-        t = r.get("text") or ""
-        if not t:
-            continue
-        for w in re.findall(r"\b[a-z][a-z0-9]{2,}\b", t):
-            lower[w] += 1
         client = convs_by_client.get(r["conversation"])
-        for a, b, label in ner.ents(t):
-            if label in SPACY_LABELS_MINE:
-                term = t[a:b].strip()
-                if term and rep.norm(term) not in known:
-                    kinds[term].add("spacy-" + label.lower())
-                    count[term] += 1
-                    if len(examples[term]) < 3:
-                        examples[term].append(r["id"])
-        if client:
-            for m in CAPWORD.finditer(t):
-                term = m.group(0)
-                if rep.norm(term) in known:
-                    continue
-                per_client[term][client] += 1
-                if len(examples[term]) < 3:
-                    examples[term].append(r["id"])
+        for t in mined_strings(r):
+            if not t:
+                continue
+            # Names spaCy guessed were people stay out of here; a product
+            # name it tagged as a person reaches the owner through Names.
+            for a, b, label in ner.ents(t):
+                if label in SPACY_LABELS_MINE:
+                    term = t[a:b].strip()
+                    if term and rep.norm(term) not in known:
+                        kinds[term.lower()].add("spacy-" + label.lower())
+                        tags[term.lower()] += 1
+                        note(term, r["id"])
+            if client:
+                for m in MINE_WORD.finditer(t):
+                    w = m.group(0)
+                    if w.lower() in words or rep.norm(w) in known:
+                        continue
+                    per_client[w.lower()][client] += 1
+                    note(w, r["id"])
     cands = {}
-    for term, c in count.items():
-        if c >= 2 and lower[term.lower()] < c:
-            cands[term] = {"term": term, "kinds": sorted(kinds[term]), "count": c}
-    for term, pc in per_client.items():
+    for k, n in tags.items():
+        if n >= 2:
+            cands[k] = {"kinds": sorted(kinds[k]), "count": n}
+    for k, pc in per_client.items():
         total = sum(pc.values())
         top, n = pc.most_common(1)[0]
-        if total >= 3 and n / total >= 0.8 and lower[term.lower()] < total:
-            c = cands.setdefault(term, {"term": term, "kinds": [], "count": 0})
+        if total >= 3 and n / total >= 0.8:
+            c = cands.setdefault(k, {"kinds": [], "count": 0})
             c["kinds"] = sorted(set(c["kinds"]) | {"concentrated"})
             c["count"] = max(c["count"], total)
-            c["client"] = top
-            c["share"] = round(n / total, 2)
-    cands = {t: c for t, c in cands.items() if not junk_term(t)}
-    plain = Counter()
-    for r in recs:
-        t = URLISH.sub(" ", r.get("text") or "")
-        for w in re.findall(r"\b[a-z]{3,}\b", t):
-            plain[w] += 1
-    hits, spread = term_spread(recs, cands, convs_by_client)
+            c["client"], c["share"] = top, round(n / total, 2)
+    for k, c in cands.items():
+        c["term"] = decided.get(k) or forms[k].most_common(1)[0][0]
+    cands = {k: c for k, c in cands.items() if not junk_term(c["term"])}
+    hits, spread = term_spread(recs, list(cands), convs_by_client)
     out = []
-    for term, c in cands.items():
-        pc = spread[term]
+    for k, c in cands.items():
+        pc = spread[k]
         # Gone from the corpus, or spread over three clients or more: it
         # can't point at any one client.
-        if not hits[term] or len(pc) >= MINING_MAX_CLIENTS:
+        if not hits[k] or len(pc) >= MINING_MAX_CLIENTS:
             continue
         total = sum(pc.values())
         top, n = pc.most_common(1)[0] if pc else (None, 0)
         concentrated = total >= 3 and n / total >= 0.8
-        ws = re.findall(r"[A-Za-z]{3,}", term)
-        ordinary = bool(ws) and all(plain[w.lower()] >= 2 for w in ws)
-        if term[0].islower() or (ordinary and not concentrated):
+        ws = re.findall(r"[A-Za-z]{3,}", c["term"])
+        ordinary = bool(ws) and all(w.lower() in words for w in ws)
+        if ordinary and not concentrated:
             c["suggest"] = "strike"
-        elif not ordinary and (concentrated or (len(pc) == 1 and total * 2 >= hits[term])):
-            # Concentrated, or seen in one client's conversations only and
-            # used there at least half the time.
+        elif not ordinary and (concentrated or (len(pc) == 1 and total * 2 >= hits[k])):
             c["suggest"] = "keep"
         c["clients"] = len(pc)
         c["ordinary"] = ordinary
         if concentrated:
             c["client"], c["share"] = top, round(n / total, 2)
-        c["examples"] = examples[term]
+        c["examples"] = examples[k]
         out.append(c)
     order = {None: 0, "keep": 1, "strike": 2}
     return sorted(out, key=lambda c: (order[c.get("suggest")], -c["count"], c["term"]))
@@ -646,21 +708,24 @@ def junk_term(t):
     return bool(re.search(r"[`*_<>{}\[\]|\\=\"\n]", s))
 
 
-def term_spread(recs, terms, convs_by_client):
-    """Per term: how many records hold it as a word, and how many of those
-    are in each client's conversations."""
-    rx = {t: re.compile(r"(?<!\w)" + re.escape(t) + r"(?!\w)") for t in terms}
+def term_spread(recs, keys, convs_by_client):
+    """Per lower-case term: how many records hold it as a word in any case,
+    in any text Mining reads, and how many of those are in each client's
+    conversations."""
+    single = {k for k in keys if re.fullmatch(r"\w+", k)}
+    multi = {k: re.compile(r"(?<!\w)" + re.escape(k) + r"(?!\w)") for k in keys if k not in single}
     hits, spread = Counter(), defaultdict(Counter)
     for r in recs:
-        t = r.get("text") or ""
-        if not t:
+        t = "\n".join(mined_strings(r)).lower()
+        if not t.strip():
             continue
         client = convs_by_client.get(r["conversation"])
-        for term, x in rx.items():
-            if term in t and x.search(t):
-                hits[term] += 1
-                if client:
-                    spread[term][client] += 1
+        found = single & set(re.findall(r"\w+", t))
+        found |= {k for k, x in multi.items() if k in t and x.search(t)}
+        for k in found:
+            hits[k] += 1
+            if client:
+                spread[k][client] += 1
     return hits, spread
 
 
@@ -752,7 +817,12 @@ def run(log=print):
             if isinstance(v, str):
                 rt.append(v)
         texts.extend(rt)
-    ner.tag_all(texts, log=log)
+    # Mining also reads source fields; spaCy tags them
+    # for Mining only, so Names and the replacement passes are unchanged.
+    seen = set(texts)
+    mine_texts = [t for r in allrecs for t in mined_strings(r, for_ner=True)
+                  if t not in seen and len(t.strip()) >= 3]
+    ner.tag_all(texts + mine_texts, log=log)
     for r in allrecs:
         t = r.get("text") or ""
         for a, b, label in ner.ents(t):
@@ -810,7 +880,8 @@ def run(log=print):
             })
         state.write_jsonl(state.anon_file(s), out)
         log(f"  ok    anon/{s}.jsonl: {len(out)} records")
-    cands = mine(allrecs, rep, ner, conversation_clients(d, allrecs, rep))
+    cands = mine(allrecs, rep, ner, conversation_clients(d, allrecs, rep),
+                 state.read_json(state.path("mining-decisions.json"), {}) or {})
     state.write_json(state.path("mining-candidates.json"), cands)
     amap.save()
     names = name_candidates(texts, tagged_in, amap, ner)

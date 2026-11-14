@@ -36,6 +36,9 @@ PY="${VDP_TEST_PY:-}"
 [ -n "$PY" ] || PY=python3
 unset VDP_HOME VDP_STATE VDP_NER VDP_BITBUCKET_API VDP_NETRC VDP_LOG_DIR
 
+# Mining's dictionary is built, not committed: build it once in a checkout.
+[ -s "$REPO/pylib/vdp/data/words.txt" ] || VDP_LOG_DIR="${TMPDIR:-/tmp}" "$REPO/tools/build-wordlist.sh" >/dev/null
+
 TMP=$(mktemp -d)
 FAKE_PID=""
 cleanup() { [ -n "$FAKE_PID" ] && kill "$FAKE_PID" 2>/dev/null; rm -rf "$TMP"; }
@@ -224,37 +227,46 @@ check "show: other people's PRs without an item of yours are left out" bash -c "
 check "show --repo writes that repo's view" \
   bash -c "\"$PY\" -m vdp show bitbucket --repo ws/new-repo >/dev/null && test -s '$ST/views/bitbucket-ws__new-repo.txt'"
 
-# Mining: junk fragments and terms across three clients are left
-# off; each other term carries a suggestion, and those to check come first.
-check "mining: junk dropped, spread terms dropped, suggestions and order" "$PY" - <<'EOF'
-from vdp.anonymise import mine, junk_term
+# Mining: case decides nothing; an ordinary word is one in the
+# bundled dictionary; source fields are read; junk and terms across three
+# clients are left off; each other term carries a suggestion.
+check "mining: no case rules, dictionary words, source fields, suggestions and order" "$PY" - <<'EOF'
+from vdp.anonymise import mine, junk_term, dictionary
 class Rep:
     class amap: entries = []
     norm = staticmethod(lambda s: s.lower())
-TAGS = {"-": "ORG", "Zq": "ORG", "Delivery": "ORG", "eShop": "PRODUCT"}
+TAGS = {"-": "ORG", "Zq": "ORG", "Delivery": "ORG", "eShop": "PRODUCT", "kwikpay": "PRODUCT",
+        "Globalthing": "PRODUCT", "Pebblestack": "PRODUCT", "Cloudmuddle": "PRODUCT"}
 class Ner:
     def ents(self, t):
         return [(i, i + len(w), l) for w, l in TAGS.items() for i in [t.find(w)] if i >= 0]
 recs, n = [], 0
-def add(text, conv):
-    global n; n += 1; recs.append({"id": f"r{n}", "conversation": conv, "text": text})
+def add(text, conv, sf=None):
+    global n; n += 1; recs.append({"id": f"r{n}", "conversation": conv, "text": text, "source_fields": sf or {}})
 for _ in range(2): add("ping - Zq about eShop", "general")
 for _ in range(3): add("the Delivery team", "general")
 for _ in range(2): add("delivery is late", "general")
 for _ in range(4): add("Wombatron build is red", "c-a")
 for _ in range(3): add("Lighthouse scores dropped", "c-a")
-for _ in range(2): add("run lighthouse again", "general")
+for _ in range(3): add("pay with kwikpay", "general")
+for _ in range(2): add("zorbix is slow", "c-a")
+add("Zorbix is slow", "c-a")
+for _ in range(3): add("", "c-a", {"questions": {"Ask Fennelworth?": "yes"}, "slack_ts": "Quuxol"})
 for c in ("c-a", "c-b", "c-c"): add("Globalthing again", c); add("Globalthing again", c)
 add("Pebblestack is down", "c-b"); add("Pebblestack again", "general")
 add("Cloudmuddle is down", "c-b"); add("Cloudmuddle", "general"); add("Cloudmuddle", "general")
-TAGS.update({"Pebblestack": "PRODUCT", "Cloudmuddle": "PRODUCT"})
-out = mine(recs, Rep(), Ner(), {"c-a": "client-01", "c-b": "client-02", "c-c": "client-03"})
+convs = {"c-a": "client-01", "c-b": "client-02", "c-c": "client-03"}
+out = mine(recs, Rep(), Ner(), convs, {"ZORBIX": {"decision": "keep"}})
 got = {c["term"]: c.get("suggest") for c in out}
-want = {"Lighthouse": None, "Wombatron": "keep", "Delivery": "strike", "eShop": "strike",
-        "Pebblestack": "keep", "Cloudmuddle": None}
+want = {"Cloudmuddle": None, "kwikpay": None, "eShop": None,
+        "Wombatron": "keep", "Fennelworth": "keep", "ZORBIX": "keep", "Pebblestack": "keep",
+        "Delivery": "strike"}
 assert got == want, got
-assert [c.get("suggest") for c in out] == [None, None, "keep", "keep", "strike", "strike"], out
+assert [c["term"] for c in out] == list(want), [c["term"] for c in out]
 assert next(c for c in out if c["term"] == "Wombatron")["client"] == "client-01"
+assert "lighthouse" in dictionary() and "wombatron" not in dictionary()
+out = mine(recs, Rep(), Ner(), convs)
+assert "zorbix" in {c["term"] for c in out}, "the commonest spelling without a decision"
 assert all(junk_term(t) for t in ("--", "x", "Zq", "*Foo*", "(Bar", "Foo\nBar", "12"))
 assert not any(junk_term(t) for t in ("Foo Ltd.", "Bar (UK)", "Foo-Bar", "X10"))
 EOF
@@ -434,7 +446,7 @@ check "anon: replacements are marked at their place in the new text" \
   q -s 'map(select(.text|startswith("Looking.")))[0] as $r | $r.replacements|map($r.text[.start:.end])|index("@colleague-01")' "$A"
 check "anon: a Bitbucket person is matched to the same Slack person" \
   q -s 'map(select(.source_fields.kind=="comment" and (.text|startswith("Why json"))))[0].author=="colleague-01"' "$ST/anon/bitbucket.jsonl"
-check "mining: a capitalised term concentrated in one client's channel is a candidate" \
+check "mining: a non-dictionary term concentrated in one client's channel is a candidate" \
   q 'map(select(.term=="Zephyrline" and (.kinds|index("concentrated"))))|length==1' "$ST/mining-candidates.json"
 check "map: one pseudonym per role, numbered from 01" \
   q '[.entries[].pseudonym]|sort==["client-01","client-contact-01","colleague-01","colleague-02","self-01"]' "$ST/anonymising-map.json"

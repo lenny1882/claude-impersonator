@@ -905,6 +905,12 @@ fire on several events.
   The leak check fails on a private URL, and
   batches wait for `anonymise` after a client is added or the host list
   changes. A batch drawn before the last `anonymise` can only be rejected.
+  An ordinary word is one in a dictionary built from SCOWL
+  (lower-case entries) at release, never committed. Every text a record
+  sends is mined, source fields included; spaCy tags them all but tool
+  calls, paths, branch names, links and file names, and the dictionary route
+  reads everything, code and logs too. Spellings that differ only in case
+  are one candidate with one decision.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.

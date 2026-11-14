@@ -110,10 +110,18 @@ strip_excluded() {
 # the version, before the tarball is packed. Each path in BUILD_OUTPUTS is then
 # added to the tarball — for files that are generated, not committed. Non-zero
 # stops the release.
-# BUILD_OUTPUTS=(bin/voice-decision-pipeline)
-# build() {
-#   go build -ldflags "-X main.version=$1" -o bin/voice-decision-pipeline ./cmd/voice-decision-pipeline
-# }
+#
+# Mining's dictionary is built here, not committed: SCOWL
+# holds words the repo's sanitise hook
+# refuses in a commit. On the runner it comes from Ubuntu's wbritish
+# and wamerican packages, the same lists tools/build-wordlist.sh reads locally.
+BUILD_OUTPUTS=(pylib/vdp/data/words.txt pylib/vdp/data/WORDS-LICENCE.txt)
+build() {
+  if [ ! -r /usr/share/dict/british-english ] || [ ! -r /usr/share/dict/american-english ]; then
+    sudo apt-get update -q && sudo apt-get install -y -q wbritish wamerican
+  fi
+  VDP_LOG_DIR="${RUNNER_TEMP:-/tmp}" tools/build-wordlist.sh
+}
 
 # Optional, both. Changes outside $HOME around a real install. pre_install
 # runs before any file is placed — stop services running from the package's

@@ -21,5 +21,11 @@ build-inputs.json
 # Docker test runs
 test/docker/results/
 
+# Mining's dictionary and its licence notice: built by the package's tools/build-wordlist.sh, locally
+# and by the release workflow (manifest.sh build()); it is a built file,
+# from a third-party word list, so it is never committed.
+packages/voice-decision-pipeline/pylib/vdp/data/words.txt
+packages/voice-decision-pipeline/pylib/vdp/data/WORDS-LICENCE.txt
+
 # Python bytecode
 __pycache__/

@@ -212,15 +212,26 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   it. A URL on a host that isn't public is a leak too, its host the term;
   an identifier added by hand is searched for from 2 characters. Anything
   found is listed on the review page with where it was.
-- **Mining:** spaCy's organisation and product tags and capitalised terms
-  concentrated in one client's conversations, less fragments that can't be
-  a name and terms found in three or more clients' conversations. Each
-  term is suggested keep (not an ordinary word, and mostly or only in one
-  client's conversations), strike (starts in lower case, or ordinary words
-  not concentrated in one client), or left to check by hand. The page
-  shows one section at a time (check by hand, suggested keep, suggested
-  strike, decided), each with its own keep-all and strike-all; a decided
-  term leaves its section.
+- **Mining:** every text a record sends is read, its text and every string
+  in its source fields (keys included; not timestamps). Two routes onto the
+  list: spaCy tags a term as an organisation or product at least twice
+  (spaCy tags every source field but tool calls, paths, branch names, links
+  and file names), or a word that isn't in the bundled English dictionary is
+  used at least 3 times in conversations mapped to a client, 80% of them one
+  client's. Left off: fragments that can't be a name, terms no record holds
+  any more, and terms in three or more clients' conversations. Case decides
+  nothing: spellings that differ only in case are one term, shown as its
+  decided spelling or its commonest, and one decision covers them all. Each
+  term is suggested keep (not made only of dictionary words, and mostly or
+  only in one client's conversations), strike (only dictionary words, not
+  concentrated in one client), or left to check by hand. The dictionary is
+  `pylib/vdp/data/words.txt`: SCOWL's British and American lists, lower-case
+  entries only, built by `tools/build-wordlist.sh` (licence in
+  `WORDS-LICENCE.txt` beside it). It is built, never committed: the release
+  workflow builds it into the tarball, and in a checkout the tests build it
+  when it is missing. The page shows one section at a time
+  (check by hand, suggested keep, suggested strike, decided), each with its
+  own keep-all and strike-all; a decided term leaves its section.
 - **Gates:** no batch is drawn while a mining candidate or a word on Names is
   undecided, or after a decision until `anonymise` has run again; nor after an audience is set on
   the review page until `extract slack` and then `anonymise` have run again;

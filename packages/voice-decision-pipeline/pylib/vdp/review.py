@@ -332,10 +332,11 @@ saved. <b><span id=left></span> undecided.</b></p>
 <details><summary class=meta>How the suggestions are made</summary><p class=meta>Keep is
 suggested for a term that is not an ordinary word and either sits mostly in one client's
 conversations, or appears in one client's conversations only with at least half its uses
-there. Strike is suggested for a term that starts in lower case, or is made of ordinary words
-(each seen in lower case at least twice, outside URLs) and is not concentrated in one client.
-The rest are left to check by hand. Terms in three or more clients' conversations, and
-fragments that can't be a name, are left off.</p></details>
+there. Strike is suggested for a term made only of ordinary words (each in the bundled
+English dictionary) that is not concentrated in one client. The rest are left to check by
+hand. Case decides nothing: spellings that differ only in case are one term, and one decision
+covers them all. Every text a record sends is read, source fields included. Terms in three or
+more clients' conversations, and fragments that can't be a name, are left off.</p></details>
 <nav class=tabs>{tabs}</nav>
 <div class=sechead><h2 id=sectitle></h2><span class=row id=secbulk>
 <button class=keep onclick="minebulk('keep')">Keep all <span class=vis></span> in this section</button>
