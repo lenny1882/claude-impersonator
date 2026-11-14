@@ -26,6 +26,7 @@ import time
 
 from . import SOURCES, inputs, state
 from .record import flags
+from .urls import VERSION as URLS_VERSION
 
 BATCH_SIZE = 50
 
@@ -79,6 +80,13 @@ def gates():
     if meta.get("names_hash", decisions_hash({})) != decisions_hash(nd):
         reasons.append("names decided after the anonymised copies were made: "
                        "run 'voice-decision-pipeline anonymise' again")
+    from .anonymise import added_clients
+    if meta.get("added_hash", decisions_hash({})) != decisions_hash(added_clients()):
+        reasons.append("clients added or changed since the anonymised copies were built: "
+                       "run 'voice-decision-pipeline anonymise' again")
+    if meta.get("urls") != URLS_VERSION:
+        reasons.append("the anonymised copies were built before URLs were replaced: "
+                       "run 'voice-decision-pipeline anonymise' again")
     return reasons
 
 
@@ -114,9 +122,23 @@ def draw(source, seed=None):
     state.write_json(state.path("batches", f"{name}.json"),
                      {"name": name, "source": source, "items": items,
                       "drawn_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
-    st["batches"].append({"name": name, "items": picked, "status": "open"})
+    meta = state.read_json(state.path("anon-meta.json"), {}) or {}
+    st["batches"].append({"name": name, "items": picked, "status": "open",
+                          "copies_built_at": meta.get("built_at")})
     state.write_json(review_file(), rv)
     return name, len(picked)
+
+
+def stale(b):
+    """True when batch b shows items from copies an `anonymise` has since
+    rebuilt: approving it would approve text that is no longer what is sent."""
+    built = (state.read_json(state.path("anon-meta.json"), {}) or {}).get("built_at")
+    if not built:
+        return False
+    if "copies_built_at" in b:
+        return b["copies_built_at"] != built
+    drawn = (state.read_json(state.path("batches", f"{b['name']}.json"), {}) or {}).get("drawn_at")
+    return bool(drawn) and drawn < built
 
 
 def decide(name, status, note=""):
@@ -128,6 +150,10 @@ def decide(name, status, note=""):
             if b["name"] == name:
                 if b["status"] != "open":
                     raise SystemExit(f"voice-decision-pipeline: {name} is already {b['status']}")
+                if status == "approved" and stale(b):
+                    raise SystemExit(
+                        f"voice-decision-pipeline: {name} was drawn from anonymised copies "
+                        "built before the last 'anonymise'; reject it and draw another")
                 b["status"] = status
                 b["note"] = note
                 b["decided_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

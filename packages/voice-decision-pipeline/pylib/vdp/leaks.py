@@ -8,7 +8,9 @@ aliases and unique first names in the anonymising map, first names two
 people share, and the client and kept product names. A single word only
 spaCy took for a name counts once the owner has marked it a name; until then it
 is counted as undecided, and marked not a name it isn't searched for. A hit
-is a place the replacement missed.
+is a place the replacement missed. So is any URL whose host isn't on the
+public list (urls.py), the host standing as the term. A client identifier
+added by hand on the review page is searched for from 2 characters.
 
 Only what is sent is searched: each record's text, source fields (keys
 included), reactions and author. The source name, tag types, ids and
@@ -24,7 +26,7 @@ import json
 import re
 from collections import defaultdict
 
-from . import SOURCES, state
+from . import SOURCES, state, urls
 
 MAX_EXAMPLES = 3
 SENT_KEYS = ("text", "source_fields", "reactions", "author")
@@ -64,10 +66,12 @@ def terms(d, amap):
         kind = {"person": "person alias", "client": "client", "product": "product"}.get(e["kind"])
         if not kind:
             continue
+        added = set(e.get("added_aliases") or [])
         for a in e.get("aliases", []):
             if e.get("origin") == "spacy" and one_word(a) and dec.get(Replacer.norm(a)) != "name":
                 continue
-            add(a, kind)
+            # A client identifier the owner added can be two letters.
+            add(a, kind, min_len=2 if a in added else 3)
         for fn in e.get("first_names", []):
             add(fn, "unique first name")
     return out
@@ -75,11 +79,10 @@ def terms(d, amap):
 
 def scan(d, amap):
     found = terms(d, amap)
-    if not found:
-        return {"terms_checked": 0, "hits": 0, "terms": []}
     rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
         re.escape(t) for t in sorted(found, key=len, reverse=True)) + r")(?![A-Za-z0-9])",
-        re.IGNORECASE)
+        re.IGNORECASE) if found else None
+    kinds = dict(found)
     # The pipeline's own pseudonyms are blanked before searching (same length,
     # so snippets still come from the real body): a word before a pseudonym
     # plus its role ("acme product" in "acme product-07") is not a name left
@@ -93,12 +96,17 @@ def scan(d, amap):
         for r in state.read_jsonl(state.anon_file(s)):
             body = json.dumps({k: r[k] for k in SENT_KEYS if k in r}, ensure_ascii=False)
             searched = prx.sub(lambda m: "\0" * len(m.group(0)), body) if prx else body
-            for m in rx.finditer(searched):
-                t = m.group(1).lower()
+            spans = [(m.start(), m.end(), m.group(1).lower())
+                     for m in (rx.finditer(searched) if rx else ())]
+            # A URL on a host that isn't public is a leak in itself.
+            for a, b, h in urls.private(searched):
+                spans.append((a, b, h))
+                kinds.setdefault(h, "private URL host")
+            for a0, b0, t in spans:
                 h = hits[t]
                 h["count"] += 1
                 if len(h["examples"]) < MAX_EXAMPLES:
-                    a, b = max(0, m.start() - SNIPPET), m.end() + SNIPPET
+                    a, b = max(0, a0 - SNIPPET), b0 + SNIPPET
                     h["examples"].append({"source": s, "id": r["id"], "text": body[a:b]})
     from .anonymise import name_decisions
     cands = state.read_json(state.path("name-candidates.json"), []) or []
@@ -107,7 +115,7 @@ def scan(d, amap):
         "terms_checked": len(found),
         "undecided_names": sum(1 for c in cands if c["key"] not in nd),
         "hits": sum(h["count"] for h in hits.values()),
-        "terms": sorted(({"term": t, "kind": found[t], **h} for t, h in hits.items()),
+        "terms": sorted(({"term": t, "kind": kinds[t], **h} for t, h in hits.items()),
                         key=lambda x: (-x["count"], x["term"])),
     }
     state.write_json(report_file(), report)

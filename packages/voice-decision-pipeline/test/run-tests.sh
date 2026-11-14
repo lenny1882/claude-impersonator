@@ -281,8 +281,8 @@ echo '{"zephyrline": {"decision": "name"}}' > "$F7/name-decisions.json"
 check "spaCy name: a mark holds batches until anonymise runs again" \
   env VDP_STATE="$F7" bash -c "gates | grep -q 'names decided after the anonymised copies were made'"
 env VDP_STATE="$F7" "$PY" -m vdp anonymise >/dev/null 2>&1
-check "spaCy name: marked a name, it is replaced in every text, in any case, URLs too" \
-  bash -c "! grep -q -i zephyrline '$F7/anon/slack.jsonl' && grep -q 'The person-01 launch needs the person-01 banner' '$F7/anon/slack.jsonl' && grep -q 'staging.client-01.com/person-01' '$F7/anon/slack.jsonl'"
+check "spaCy name: marked a name, it is replaced in every text, in any case; its private URL goes whole" \
+  bash -c "! grep -q -i zephyrline '$F7/anon/slack.jsonl' && grep -q 'The person-01 launch needs the person-01 banner' '$F7/anon/slack.jsonl' && ! grep -q 'staging\\.' '$F7/anon/slack.jsonl' && grep -q '\\[url\\]' '$F7/anon/slack.jsonl'"
 check "spaCy name: marked a name, the leak check is clean and no gate is left for it" \
   bash -c "jq -e '.hits==0 and .undecided_names==0' '$F7/leak-report.json' >/dev/null && ! VDP_STATE='$F7' gates | grep -q -e 'single words' -e 'names marked'"
 echo '{"zephyrline": {"decision": "not"}}' > "$F7/name-decisions.json"
@@ -340,6 +340,50 @@ client = amap.get("client:globexco")["pseudonym"]
 assert rep.apply("ship it to Globex Co today")[0] == f"ship it to {client} today", rep.apply("ship it to Globex Co today")
 assert rep.apply("globex-co and GLOBEX CO")[0] == f"{client} and {client}", rep.apply("globex-co and GLOBEX CO")
 EOF
+check "anon: a URL on a host that isn't public becomes [url]; a public one stays, names in it replaced" "$PY" - <<'EOF'
+from vdp import inputs
+from vdp.anonmap import Map
+from vdp.anonymise import Ner, Replacer
+rep = Replacer(inputs.load(), Map.load(), Ner())
+cases = {
+    "call https://api.quillford.example.com/v1/orders?id=9.": "call [url].",
+    "see <https://int.quillford.co.uk/x|the API>": "see <[url]|the API>",
+    "hit api.quillford.io/v2 and 10.1.2.3:8080/health": "hit [url] and [url]",
+    "read https://docs.flutter.dev/ui and pub.dev/packages/http": "read https://docs.flutter.dev/ui and pub.dev/packages/http",
+    "ask on https://github.com/acme-corp/repo": "ask on https://github.com/client-01/repo",
+    "edit main.dart, settings.local.json and model.pt": "edit main.dart, settings.local.json and model.pt",
+    "done.It works; mail ops" + "@" + "acme.example.com": "done.It works; mail [email]",
+    "local http://localhost:3000/a": "local http://localhost:3000/a",
+}
+for t, want in cases.items():
+    got, marks = rep.apply(t)
+    assert got == want, (t, got)
+got, marks = rep.apply("call https://api.quillford.example.com/v1 now")
+assert [m["kind"] for m in marks] == ["url"], marks
+EOF
+check "anon: a client added by hand, with its identifier, is one pseudonym; removing it takes it off" "$PY" - <<'EOF'
+from vdp import inputs
+from vdp.anonmap import Map
+from vdp.anonymise import Ner, Replacer, add_client, added_clients, remove_client
+d = inputs.load()
+d["anonymiser_additions_candidates"] = {"names": ["Globexco"]}
+add_client("Marrowfield Retail", ["MR", "marrowfield-retail", "x", "Marrowfield Retail"])
+assert added_clients()["marrowfieldretail"]["aliases"] == ["MR", "marrowfield-retail"], added_clients()
+add_client("Globexco", ["GBX"])
+amap = Map()
+rep = Replacer(d, amap, Ner())
+mr = amap.get("client:marrowfield retail")["pseudonym"]
+gb = amap.get("client:globexco")["pseudonym"]
+assert rep.apply("Marrowfield Retail, MR and mr")[0] == f"{mr}, {mr} and {mr}", rep.apply("Marrowfield Retail, MR and mr")
+assert rep.apply("Globexco is GBX")[0] == f"{gb} is {gb}", rep.apply("Globexco is GBX")
+remove_client("marrowfieldretail")
+remove_client("globexco")
+rep = Replacer(d, amap, Ner())
+assert rep.apply("MR and GBX")[0] == "MR and GBX", rep.apply("MR and GBX")
+assert rep.apply("Globexco")[0] == gb, "the list's own name stays"
+assert "added_aliases" not in amap.get("client:globexco"), amap.get("client:globexco")
+assert added_clients() == {}
+EOF
 check "anon: a kept product written with a spaced hyphen is replaced in each spelling" "$PY" - <<'EOF'
 from vdp import inputs
 from vdp.anonmap import Map
@@ -381,7 +425,7 @@ check "anon: mentions become @pseudonyms" grep -q "@colleague-01 can you send me
 check "anon: a unique first name becomes the person's pseudonym" grep -q "colleague-01, also ping client-contact-01" "$A"
 check "anon: an ordinary first name (Tom) is left to spaCy, not the list" \
   bash -c "! grep -q 'colleague-02' <(jq -r .text '$A' | grep -v '^colleague')"
-check "anon: client names inside URLs are replaced" grep -q "staging.client-01.com" "$A"
+check "anon: a URL on a client's host goes whole, client name and all" bash -c "! grep -q 'staging\\.' '$A' && grep -q '\\[url\\]' '$A'"
 check "anon: a group DM's name has every handle replaced, a short one too" \
   q -s 'map(.source_fields.conversation_name|select(.!=null and startswith("mpdm-")))|unique==["mpdm-self-01--colleague-01--colleague-02-1"]' "$A"
 check "anon: authors are pseudonyms" q -s 'map(.author)|unique|sort==["bot","client-contact-01","colleague-01","colleague-02","self-01"]' "$A"
@@ -430,6 +474,26 @@ vdp sendable bitbucket; [ $? = 5 ] && ok "approval is per source: bitbucket stil
   || no "approval is per source: bitbucket still isn't sendable" "it is"
 check "stopping a source after an approval" test "$(post api/stop '{"source":"slack"}')" = 200
 check "a stopped source draws no more batches" test "$(post api/draw '{"source":"slack"}')" = 409
+check "a bitbucket batch is drawn" test "$(post api/draw '{"source":"bitbucket"}')" = 200
+sleep 1; vdp anonymise >/dev/null 2>&1
+check "a batch drawn before the last anonymise can't be approved" \
+  test "$(post api/decide '{"name":"bitbucket-001","status":"approved"}')" = 409
+check "its page says it can only be rejected" \
+  bash -c "curl -sf '${URL}batch?source=bitbucket' | grep -q 'can only be rejected'"
+check "it can be rejected" test "$(post api/decide '{"name":"bitbucket-001","status":"rejected"}')" = 200
+check "clients: the page has the add form" bash -c "curl -sf '${URL}clients' | grep -q 'Add client'"
+check "clients: a name shorter than 2 characters is refused" \
+  test "$(post api/clients '{"add":{"name":"Q","aliases":[]}}')" = 400
+check "clients: adding one is saved, with its identifier" \
+  bash -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{\"add\":{\"name\":\"Marrowfield Retail\",\"aliases\":[\"MR\",\"\"]}}' '${URL}api/clients')\" = 200 ] && jq -e '.marrowfieldretail.aliases==[\"MR\"]' '$ST/added-clients.json' >/dev/null"
+check "clients: the page and home page list it" \
+  bash -c "curl -sf '${URL}clients' | grep -q 'Marrowfield Retail' && curl -sf '$URL' | grep -q '1 added'"
+check "clients: a batch waits for anonymise after an added client" \
+  "$PY" -c "from vdp import batches; g = batches.gates(); assert any('clients added' in x for x in g), g"
+check "clients: removing it is saved" \
+  bash -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{\"remove\":\"marrowfieldretail\"}' '${URL}api/clients')\" = 200 ] && jq -e '.=={}' '$ST/added-clients.json' >/dev/null"
+check "clients: with it removed, that gate is gone" \
+  "$PY" -c "from vdp import batches; g = batches.gates(); assert not any('clients added' in x for x in g), g"
 
 check "audiences: the page lists the group DM with no audience, not the self-DM" \
   bash -c "p=\$(curl -sf '${URL}audiences'); grep -q 'mpdm-alex.testperson--priya.raman--tom-1' <<< \"\$p\" && ! grep -q DSELFNOTE <<< \"\$p\""
@@ -500,6 +564,18 @@ r = leaks.scan(inputs.load(), amap)
 got = {t["term"]: t for t in r["terms"]}
 assert [e["id"] for e in got["brindle product"]["examples"]] == ["x3"], r
 assert "Brindle Product" in got["brindle product"]["examples"][0]["text"], r
+EOF
+check "leak check: a URL on a host that isn't public is a leak; a public one isn't" "$PY" - <<'EOF'
+import json
+from vdp import leaks, inputs, state
+from vdp.anonmap import Map
+with open(state.anon_file("gsd"), "a") as f:
+    f.write(json.dumps({"id": "x4", "text": "GET https://api.quillford.example.com/v1 and https://pub.dev/x"}) + "\n")
+r = leaks.scan(inputs.load(), Map.load())
+got = {t["term"]: t for t in r["terms"]}
+assert got["api.quillford.example.com"]["kind"] == "private URL host", r
+assert got["api.quillford.example.com"]["examples"][0]["id"] == "x4", r
+assert "pub.dev" not in got, r
 EOF
 check "state is owner-only" bash -c "[ -z \"\$(find '$ST' -perm /077 -print -quit)\" ]"
 check "status reports owner-only state and per-source review" \

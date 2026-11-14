@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import SOURCES, batches, inputs, leaks, state
+from .anonymise import added_clients
 from .record import flags
 
 CSS = """
@@ -174,10 +175,33 @@ def home():
 <p>{leak_line()}</p>
 <h2>Mining: client product, store and project names</h2>
 <p><a href='/mining'>{len(cands)} candidates</a>, {left} undecided.</p>
+<h2>Clients added by hand: names the lists and mining missed</h2>
+<p><a href='/clients'>{len(added_clients())} added</a>.</p>
 <h2>What blocks the next batch</h2><ul>{g}</ul>
 <h2>Sources</h2>
 <table><tr><th>Source</th><th>Records</th><th>Items</th><th>Approved batches</th>
 <th>Open batch</th><th>May be sent</th></tr>{''.join(rows)}</table>""")
+
+
+def clients_page():
+    rows = "".join(
+        f"<tr><td class=term>{html.escape(v['name'])}</td>"
+        f"<td>{html.escape(', '.join(v.get('aliases') or [])) or '—'}</td>"
+        f"<td class=act><button class=strike onclick=\"post('/api/clients',{{remove:{html.escape(json.dumps(k))}}})"
+        f".then(()=>location.reload())\">Remove</button></td></tr>"
+        for k, v in sorted(added_clients().items()))
+    return page("Clients added by hand", f"""
+<p>A client name the client list and mining missed, with every other spelling
+and identifier of it, one per line. All of them become one client pseudonym in
+the anonymised copies, and the leak check searches for each. A name already on
+the client list joins that client. Run <code>voice-decision-pipeline
+anonymise</code> again afterwards; no batch is drawn until then.</p>
+<p class=row><label>Client name <input id=cname size=40></label></p>
+<p class=row><label>Other spellings and identifiers, one per line<br>
+<textarea id=caliases rows=5 cols=40></textarea></label></p>
+<p class=row><button class=keep onclick="post('/api/clients',{{add:{{name:document.getElementById('cname').value,
+aliases:document.getElementById('caliases').value.split('\\n')}}}}).then(()=>location.reload())">Add client</button></p>
+<table><tr><th>Client</th><th>Other spellings and identifiers</th><th></th></tr>{rows}</table>""")
 
 
 def leak_line():
@@ -418,8 +442,9 @@ def batch_page(source):
             f"{('<details><summary>Context (' + str(len(it['context'])) + ')</summary>' + ctx + '</details>') if ctx else ''}</div>")
     name = b["name"]
     return page(f"{name}: {len(b['items'])} anonymised items", f"""
-<p>Highlighted text is what replaced a name, email, phone number, client or product.
-Read for anything still identifying. Approving the first batch lets {source} be sent.</p>
+{"<p class=err>This batch was drawn from anonymised copies that have been rebuilt since; it can only be rejected. Reject it and draw another.</p>" if batches.stale(open_[0]) else ""}
+<p>Highlighted text is what replaced a name, email, phone number, client, product or
+private URL. Read for anything still identifying. Approving the first batch lets {source} be sent.</p>
 {''.join(cards)}
 <h2>Decision</h2><textarea id=note rows=3 placeholder='What was wrong, if rejecting'></textarea>
 <p class=row><button onclick="post('/api/decide',{{name:'{name}',status:'approved',note:document.getElementById('note').value}}).then(()=>location.reload())">Approve {name}</button>
@@ -450,6 +475,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, names_page())
             if u.path == "/leaks":
                 return self._send(200, leaks_page())
+            if u.path == "/clients":
+                return self._send(200, clients_page())
             if u.path == "/audiences":
                 return self._send(200, mapping())
             if u.path == "/batch":
@@ -480,6 +507,14 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError(d)
                     dec[key] = {"decision": d}
                 state.write_json(state.path("name-decisions.json"), dec)
+            elif p == "/api/clients":
+                from .anonymise import add_client, remove_client
+                if "add" in body:
+                    add_client(body["add"].get("name"), body["add"].get("aliases") or [])
+                elif "remove" in body:
+                    remove_client(body["remove"])
+                else:
+                    raise ValueError("add or remove")
             elif p == "/api/audience":
                 for conv_id, a in body.items():
                     inputs.set_audience(conv_id, a)

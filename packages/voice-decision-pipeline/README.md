@@ -32,7 +32,9 @@ that are each versioned, released and installed on their own.
 The review page lists the Slack conversations the inputs leave without an
 audience (group DMs outside the senior set) for you to assign, the single
 words only spaCy took for a name to mark a name or not a name, the candidate
-client product, store and project names to keep or strike, then each source's batches of 50 anonymised items
+client product, store and project names to keep or strike, a form to add a
+client name the lists missed, with its other spellings and identifiers, then
+each source's batches of 50 anonymised items
 with every replacement highlighted. Approving a source's first batch is what
 lets later passes send it (`voice-decision-pipeline sendable <source>`).
 
@@ -124,6 +126,7 @@ files 600), never backed up:
 | `anon/<source>.jsonl` | the anonymised copy, replacements marked, ids hashed |
 | `anonymising-map.json` | append-only: real id, aliases, role, pseudonym, origin |
 | `mining-candidates.json`, `mining-decisions.json` | candidate names and your keep or strike |
+| `added-clients.json` | clients added by hand, with their other spellings and identifiers |
 | `name-candidates.json`, `name-decisions.json` | single words only spaCy took for a name, with counts; your name or not a name |
 | `batches/`, `review-state.json` | drawn batches; per-source approvals and stops |
 | `index/` | `vectors.npy`, `ids.json`, `identity.json` |
@@ -163,11 +166,22 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   `bitbucket-progress/`, so a run stopped partway starts again at the first
   unfinished repo; the saved repos are cleared once `corpus/bitbucket.jsonl`
   is written.
+- **URLs:** every URL whose host isn't on the public list in
+  `pylib/vdp/urls.py` (code hosts and package registries, Q&A sites,
+  platform, infrastructure and payment docs, `localhost`) becomes `[url]`,
+  path and all: a URL with a scheme, Slack's `<url|label>` (the label stays),
+  a bare host with a known top-level domain (`api.example.com/v1`) and an
+  IPv4 address. A subdomain counts with its host. A URL on a public host
+  stays, names in its path replaced like any other text. A bare host needs a
+  lower-case top-level domain not followed by `.word`, so file names
+  (`main.dart`, `settings.local.json`) stay.
 - **Anonymising:** Slack mentions, emails and phone numbers; every name
   `users.json` gives each person, a first name in any case unless it is an
   ordinary word, and a first name two people share as their role
   (`colleague`, or `person` when their roles differ); the client names in
-  the inputs and the
+  the inputs, the clients added by hand on the review page (each with its
+  other spellings and identifiers, all one pseudonym; a name on the client
+  list joins that client) and the
   product names kept on the review page, inside URLs and channel names too,
   with up to three spaces, hyphens, dots or underscores between their words
   (`Acme - Store`, `acme-store`, `AcmeStore`);
@@ -195,7 +209,9 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   single word only spaCy found counts once marked a name; undecided ones
   are counted apart. The pipeline's own pseudonyms are skipped, so a word
   before one (`acme product-07`) doesn't spell a kept product's name with
-  it. Anything found is listed on the review page with where it was.
+  it. A URL on a host that isn't public is a leak too, its host the term;
+  an identifier added by hand is searched for from 2 characters. Anything
+  found is listed on the review page with where it was.
 - **Mining:** spaCy's organisation and product tags and capitalised terms
   concentrated in one client's conversations, less fragments that can't be
   a name and terms found in three or more clients' conversations. Each
@@ -207,7 +223,10 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   term leaves its section.
 - **Gates:** no batch is drawn while a mining candidate or a word on Names is
   undecided, or after a decision until `anonymise` has run again; nor after an audience is set on
-  the review page until `extract slack` and then `anonymise` have run again.
+  the review page until `extract slack` and then `anonymise` have run again;
+  nor after a client is added or removed, or the public host list changes,
+  until `anonymise` has run again. A batch drawn before the last `anonymise`
+  can only be rejected: its items are no longer what is sent.
 - **Index:** your Slack and Bitbucket voice items, each embedded with the
   message it answers, trimmed from the start of that message to fit 512
   tokens. Not transcripts, GSD records, reactions, approvals or the self-DM.

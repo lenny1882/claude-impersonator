@@ -42,7 +42,7 @@ import sys
 import time
 from collections import Counter, defaultdict
 
-from . import SCHEMA_VERSION, SOURCES, inputs, state, textutil
+from . import SCHEMA_VERSION, SOURCES, inputs, state, textutil, urls
 from .anonmap import Map
 
 ORDINARY_FIRST_NAMES = {
@@ -172,6 +172,36 @@ def decisions_hash(dec):
     return hashlib.sha1(json.dumps(dec, sort_keys=True).encode()).hexdigest()
 
 
+def added_clients():
+    """{normalised name: {"name", "aliases"}}: clients the owner added by hand on
+    the review page, with their other spellings and identifiers."""
+    return state.read_json(state.path("added-clients.json"), {}) or {}
+
+
+def add_client(name, aliases=()):
+    name = (name or "").strip()
+    if len(name) < 2:
+        raise ValueError("a client name needs at least 2 characters")
+    al = []
+    for a in aliases:
+        a = (a or "").strip()
+        if len(a) < 2:
+            continue
+        if a.lower() != name.lower() and a.lower() not in (x.lower() for x in al):
+            al.append(a)
+    cur = added_clients()
+    cur[Replacer.norm(name)] = {"name": name, "aliases": al}
+    state.write_json(state.path("added-clients.json"), cur)
+
+
+def remove_client(key):
+    cur = added_clients()
+    if key not in cur:
+        raise ValueError(f"no added client {key}")
+    del cur[key]
+    state.write_json(state.path("added-clients.json"), cur)
+
+
 def first_name_roles(users, role_of):
     """(unique, shared): unique maps a lower-case first name only one person
     has to that person's id; shared maps a first name two or more people
@@ -295,6 +325,33 @@ class Replacer:
             if dec.get("decision") == "keep":
                 self.amap.ensure(f"product:{term.lower()}", kind="product", role="product",
                                  origin="mining", aliases=[term])
+        self._added_clients({f"client:{n.lower()}": n for n in names})
+
+    def _added_clients(self, listed):
+        """Clients the owner added on the review page, each with its other
+        spellings and identifiers, all one pseudonym. A name already on the
+        client list joins that client. What a removal or an edit takes away
+        is taken off the entry again, except the list's own name."""
+        want = {}
+        for v in added_clients().values():
+            rid = f"client:{v['name'].lower()}"
+            al = [v["name"]] + list(v.get("aliases") or [])
+            e = self.amap.ensure(rid, kind="client", role="client", origin="added", aliases=al)
+            want[rid] = sorted({a.strip() for a in al if a.strip()})
+        for e in self.amap.entries:
+            old, new = e.get("added_aliases"), want.get(e["real_id"])
+            if old is None and new is None:
+                continue
+            gone = set(old or []) - set(new or [])
+            keep = (listed.get(e["real_id"]) or "").lower()
+            stripped = [a for a in e["aliases"] if a not in gone or a.lower() == keep]
+            if stripped != e["aliases"]:
+                e["aliases"] = stripped
+            if new is None:
+                e.pop("added_aliases", None)
+            else:
+                e["added_aliases"] = new
+            self.amap.dirty = True
 
     def _compile(self):
         multi, single, spacy = [], {}, []
@@ -369,6 +426,10 @@ class Replacer:
         for m in PHONE.finditer(text):
             if 10 <= sum(ch.isdigit() for ch in m.group(0)) <= 13:
                 add(m.start(), m.end(), "[phone]", "phone")
+        # A URL on a host that isn't public goes whole, path and all; a
+        # name inside it starts later, so the URL's span wins the overlap.
+        for a, b, _ in urls.private(text):
+            add(a, b, "[url]", "url")
         if self.person_rx:
             for m in self.person_rx.finditer(text):
                 e = self.person_lookup.get(self.norm(m.group(0)))
@@ -761,6 +822,8 @@ def run(log=print):
         "decisions_hash": hashlib.sha1(json.dumps(decisions, sort_keys=True).encode()).hexdigest(),
         "audiences_hash": inputs.audiences_hash(d),
         "names_hash": decisions_hash(ndec),
+        "added_hash": decisions_hash(added_clients()),
+        "urls": urls.VERSION,
         "map_entries": len(amap.entries),
         "replacements": dict(counts),
     })

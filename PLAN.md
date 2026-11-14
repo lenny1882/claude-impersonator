@@ -897,6 +897,14 @@ fire on several events.
   a spaced hyphen (`X - Y`) matches. The leak check blanks the pipeline's
   pseudonyms before searching, so a word before one plus its role
   (`acme product-07`) is not taken for a kept product's name.
+  A URL whose host isn't on a public list (code hosts, package registries, Q&A sites,
+  platform, infrastructure and payment docs, `localhost`) becomes `[url]`,
+  path and all; a public one stays, names in its path replaced.
+  The review page takes a client name the lists and mining
+  missed, with its other spellings and identifiers, all one pseudonym.
+  The leak check fails on a private URL, and
+  batches wait for `anonymise` after a client is added or the host list
+  changes. A batch drawn before the last `anonymise` can only be rejected.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
