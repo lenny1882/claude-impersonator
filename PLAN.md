@@ -926,6 +926,19 @@ fire on several events.
   skipped; no guess at code-like lines. Code is still sent to the decision
   analysis with known names replaced, so a name that appears only in code
   and is on no list goes out as written.
+  Open in the pipeline:
+  - A public URL whose host label is a kept product or a client spelling
+    gets the pseudonym inside its host, which then isn't on the public
+    list. Undecided: the whole URL becomes `[url]`, the host is left
+    whole, or the leak check ignores a host holding a pseudonym.
+  - Keep on the Mining page means replace. A kept term gets an entry in
+    the append-only map, and every product entry in the map is replaced
+    whatever its decision says now, so striking a term after keeping it
+    has no effect.
+  - A term decided in an earlier run and not listed in the current one
+  - The leak page shows only anonymised snippets, so a pseudonymised host
+    can't be traced to its term there.
+  - Batches are rejected only on the review page; there is no command.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
@@ -1295,7 +1308,6 @@ stage lists only what blocks that stage.
 37. Builds on every machine (§5).
     The builds repo
     and `builds-sync` in §5. Code handling is in Stage 2.
-    follow.
 
 **Stage 2 – voice model and `voice-runtime`**
 17. Which models draft, label and judge, and whether the blind-labelling
