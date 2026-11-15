@@ -213,7 +213,11 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   an identifier added by hand is searched for from 2 characters. Anything
   found is listed on the review page with where it was.
 - **Mining:** every text a record sends is read, its text and every string
-  in its source fields (keys included; not timestamps). Two routes onto the
+  in its source fields (keys included; not timestamps), except code: fenced
+  and inline code and log lines are blanked, and the code under a Bitbucket
+  inline comment (the `inline` field) is skipped. Code is still sent, with
+  known names replaced, so a name that appears only in code and is on no
+  list is sent as written. Two routes onto the
   list: spaCy tags a term as an organisation or product at least twice
   (spaCy tags every source field but tool calls, paths, branch names, links
   and file names), or a word that isn't in the bundled English dictionary is

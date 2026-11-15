@@ -64,7 +64,12 @@ SENT_FIELDS_NER = ("preceding_reply", "title")
 # source fields, keys included, but timestamps. spaCy
 # tags them all but tool calls, paths, branch names, links and file names;
 # the dictionary route still reads those.
-MINE_SKIP_KEYS = {"slack_ts", "thread_ts"}
+# Code is not mined: the code under a Bitbucket inline
+# comment (the inline field) is skipped whole, and fenced code, inline code
+# and log lines are blanked in every other text (mined_prose). Only code its
+# writer marked or the API returned as code; no guessing at code-like lines.
+# Code is still sent, with known names replaced.
+MINE_SKIP_KEYS = {"slack_ts", "thread_ts", "inline"}
 MINE_NER_SKIP_KEYS = {"tool_calls", "cwd", "project", "repo", "repo_name", "git_branch",
                       "source_branch", "destination_branch", "attachment_links", "files"}
 # A word for the dictionary route: 3 or more letters or digits, starting with
@@ -109,6 +114,12 @@ def mined_strings(r, for_ner=False):
         if k in MINE_SKIP_KEYS or (for_ner and k in MINE_NER_SKIP_KEYS):
             continue
         yield from walk(v, k)
+
+
+def mined_prose(t):
+    """t with code and log spans blanked, offsets unchanged: what Mining
+    searches."""
+    return Ner.blank_code(t) if t else t
 
 
 def anon_id(rid):
@@ -604,7 +615,8 @@ def mine(recs, rep, ner, convs_by_client, decisions=None):
     Case decides nothing: spellings that differ only in
     case are one candidate, shown as its decided spelling or its commonest
     one, and an ordinary word is one in dictionary(). Every text a record
-    sends is read (mined_strings). Two routes onto the list:
+    sends is read (mined_strings), its code left out (mined_prose). Two
+    routes onto the list:
 
       spaCy       tagged as an organisation or product at least twice
       dictionary  a word that isn't in the dictionary, used at least 3 times
@@ -637,7 +649,8 @@ def mine(recs, rep, ner, convs_by_client, decisions=None):
             if not t:
                 continue
             # Names spaCy guessed were people stay out of here; a product
-            # name it tagged as a person reaches the owner through Names.
+            # name it tagged as a person reaches the owner through Names. spaCy
+            # tagged t with its code already blanked (Ner.tag_all).
             for a, b, label in ner.ents(t):
                 if label in SPACY_LABELS_MINE:
                     term = t[a:b].strip()
@@ -646,7 +659,7 @@ def mine(recs, rep, ner, convs_by_client, decisions=None):
                         tags[term.lower()] += 1
                         note(term, r["id"])
             if client:
-                for m in MINE_WORD.finditer(t):
+                for m in MINE_WORD.finditer(mined_prose(t)):
                     w = m.group(0)
                     if w.lower() in words or rep.norm(w) in known:
                         continue
@@ -716,7 +729,7 @@ def term_spread(recs, keys, convs_by_client):
     multi = {k: re.compile(r"(?<!\w)" + re.escape(k) + r"(?!\w)") for k in keys if k not in single}
     hits, spread = Counter(), defaultdict(Counter)
     for r in recs:
-        t = "\n".join(mined_strings(r)).lower()
+        t = "\n".join(mined_prose(x) for x in mined_strings(r)).lower()
         if not t.strip():
             continue
         client = convs_by_client.get(r["conversation"])

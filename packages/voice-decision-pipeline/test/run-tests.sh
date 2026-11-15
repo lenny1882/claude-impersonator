@@ -270,6 +270,34 @@ assert "zorbix" in {c["term"] for c in out}, "the commonest spelling without a d
 assert all(junk_term(t) for t in ("--", "x", "Zq", "*Foo*", "(Bar", "Foo\nBar", "12"))
 assert not any(junk_term(t) for t in ("Foo Ltd.", "Bar (UK)", "Foo-Bar", "X10"))
 EOF
+check "mining skips fenced code, inline code, log lines and the inline field, and mines the prose around them" "$PY" - <<'EOF'
+from vdp.anonymise import mine, mined_prose, Ner
+class Rep:
+    class amap: entries = []
+    norm = staticmethod(lambda s: s.lower())
+class NoNer:
+    def ents(self, t): return []
+recs, n = [], 0
+def add(text, conv, sf=None):
+    global n; n += 1; recs.append({"id": f"r{n}", "conversation": conv, "text": text, "source_fields": sf or {}})
+for _ in range(3):
+    add("see this:\n```\nval x = Fenzlotron()\n```", "c-a")
+    add("call `Inkwomble.load()` first", "c-a")
+    add("ERROR 2026-11-15 12:00:01 Traceback in Logrumbly", "c-a")
+    add("fix this", "c-a", {"inline": {"path": "src/Pathnimble.kt", "code": "Codequaff()"}})
+    add("the Proseworthy release", "c-a")
+# A term in one client's prose and in two others' code is still one client's.
+for c in ("c-b", "c-c"):
+    for _ in range(2): add("```\nProseworthy.init()\n```", c)
+convs = {"c-a": "client-01", "c-b": "client-02", "c-c": "client-03"}
+got = {c["term"].lower(): c for c in mine(recs, Rep(), NoNer(), convs)}
+for w in ("fenzlotron", "inkwomble", "logrumbly", "pathnimble", "codequaff"):
+    assert w not in got, (w, sorted(got))
+assert "proseworthy" in got and got["proseworthy"].get("suggest") == "keep", got.get("proseworthy")
+assert got["proseworthy"]["clients"] == 1, got["proseworthy"]
+t = "a `Foo` b"
+assert mined_prose(t) == Ner.blank_code(t) and len(mined_prose(t)) == len(t) and "Foo" not in mined_prose(t)
+EOF
 
 # A single word only spaCy finds is a Names candidate.
 # The spaCy cache is seeded with one tag, so this runs without the model.
