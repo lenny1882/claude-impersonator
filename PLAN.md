@@ -68,7 +68,8 @@ Left out:
   Other reactions are kept as context only.
 - **Pasted code, logs, links and attachments:** kept and tagged. The voice
   analysis skips them; the decision analysis reads them. Links kept as URLs,
-  attachments as file names.
+  attachments as file names. Mining doesn't search code for names; known
+  names are replaced in it as everywhere (§5).
 - **Transcripts:** each typed prompt plus the text of Claude's reply before
   it, a one-line summary per tool call (which file, which command),
   AskUserQuestion questions and answers, project name and date. Claude's
@@ -320,7 +321,9 @@ developer).
   stack-trace lines. Dropped messages still count in
   the measured statistics (never-say list, length per audience). The
   thresholds are config values; changing them re-runs exemplar selection
-  only.
+  only. A kept exemplar is stored with its code blocks replaced by `[code]`:
+  Mining doesn't search code, so code could carry a
+  name nobody found, and the voice model doesn't use it.
 - Exemplar choice uses both: labels narrow the pool to the right audience and
   purposes, then similarity search picks the closest few. How many is set by
   validation: the model judge scores held-back drafts made with 3, 5 and 8
@@ -622,6 +625,9 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 
 ### 4.10 Output
 
+- Cases and evidence quotes keep any code they quote:
+  an agent asking for the evidence behind a rule sees the code it came
+  from. The rules themselves hold no code.
 - Principles, each with dated evidence quotes, what it trades against, and
   when it was last seen — last-seen date because a position from, say, 2021
   may no longer hold.
@@ -911,9 +917,15 @@ fire on several events.
   An ordinary word is one in a dictionary built from SCOWL
   (lower-case entries) at release, never committed. Every text a record
   sends is mined, source fields included; spaCy tags them all but tool
-  calls, paths, branch names, links and file names, and the dictionary route
-  reads everything, code and logs too. Spellings that differ only in case
-  are one candidate with one decision.
+  calls, paths, branch names, links and file names. Spellings that differ
+  only in case are one candidate with one decision.
+- **Mining skips code**: fenced and
+  inline code, log and stack-trace lines, and the code under Bitbucket
+  inline comments (the `inline` field) are not searched by spaCy or the
+  dictionary route. Only code marked by its writer or fetched as code is
+  skipped; no guess at code-like lines. Code is still sent to the decision
+  analysis with known names replaced, so a name that appears only in code
+  and is on no list goes out as written.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
@@ -950,7 +962,7 @@ fire on several events.
     check runs on the built files (voice guide, exemplars, principles and
     their evidence quotes, tech positions, client constraints, cases, the
     agent block) before every commit, and a failure stops the commit.
-    Code handling is open under Stage 2 (§8.0 item 23a).
+    How code is handled: §8.0 item 23a.
   - **Builds repo**:
     - A private GitHub repo, separate from this public one, named in
       `build-inputs.json` (`builds_repo`). Everything in it is encrypted with
@@ -1282,10 +1294,8 @@ stage lists only what blocks that stage.
 **Next – before anything else is built, released or anonymised**
 37. Builds on every machine (§5).
     The builds repo
-    and `builds-sync` are in §5. Code handling is under Stage 2 (item 23a).
-    Whether the next `voice-decision-pipeline` release, the next
-    `anonymise` and the review batches still wait on anything here is
-    open.
+    and `builds-sync` in §5. Code handling is in Stage 2.
+    follow.
 
 **Stage 2 – voice model and `voice-runtime`**
 17. Which models draft, label and judge, and whether the blind-labelling
@@ -1302,8 +1312,10 @@ stage lists only what blocks that stage.
     and `/code-review` formats (§8.2).
 23. The exact CLAUDE.md line that loads the skill (§8.2); last, before voice
     goes live.
-23a. Code in the corpus: whether Mining reads it, whether it is sent, and
-    whether exemplars and evidence quotes keep it
+23a. Code in the corpus.
+    Mining skips code (§5); code is sent with known names
+    replaced; exemplars store `[code]` in its place (§3.5); cases and
+    evidence quotes keep it (§4.10).
 
 **Stage 3 – `question-store`**
 24. All of §8.4.
