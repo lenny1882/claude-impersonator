@@ -124,7 +124,7 @@ Left out:
 - This repo, `claude-impersonator`, holds the planning documents; its
   checkout also holds `build-inputs.json` (gitignored).
   No corpus data is written there.
-- All four packages' state is owner-only: directories
+- Every package's state is owner-only: directories
   700, files 600. Each package's scripts set umask 077 before writing; each
   install creates its state directory as 700 and its verify step checks the
   modes.
@@ -132,6 +132,8 @@ Left out:
   loses the live files (decision log, reviewed-changes record, gate state,
   questions, drafts, validation answers, holdouts) and the anonymising map;
   builds and the corpus can be rebuilt from the sources.
+  The drafts, decision log and questions also reach the builds repo,
+  encrypted (§5), and the `age` key is backed up outside the machines.
 - State is kept until the owner deletes it. The pipeline
   has a `forget <person|conversation>` command: it removes their items from
   the corpus and its index and adds them to the struck list, so later
@@ -757,7 +759,7 @@ people's, are labelled and weighed against the owner's own principles.
 ## 5. Packaging
 
 Five packages, all in one new monorepo, `claude-impersonator`,
-built
+and a sixth, `builds-sync`, built
 with `claude-package-kit` in ordinary sessions, without GSD
 released as tarballs, each unpacked into
 `/mnt/sda/User/Programs/claude-tools/<package>`, whose installer places it per
@@ -771,6 +773,7 @@ under `claude-tools/<package>` must stay after install, because the package's
 |---|---|---|
 | `embedding-lib` | command | nothing |
 | `question-store` | command, with hook registrations | nothing |
+| `builds-sync` | skill plus command; registers hooks (like `rrc`) | nothing; `age` |
 | `voice-decision-pipeline` | command | `embedding-lib`; writes the data format |
 | `voice-runtime` | skill | `embedding-lib`; reads the data format |
 | `decision-runtime` | command, with hook registrations | `embedding-lib` (only if the lookup uses similarity search, §8.3), `question-store`; reads the data format |
@@ -946,14 +949,73 @@ fire on several events.
     machine and keeps its history, nothing real may be in a build: the leak
     check runs on the built files (voice guide, exemplars, principles and
     their evidence quotes, tech positions, client constraints, cases, the
-    agent block) before every commit, and a failure stops the commit. Open:
-    where the repo is hosted and whether it is encrypted;
-    whether code is kept out of exemplars and quotes or only caught by the
-    build leak check; how machine-local files (decision log, question
-    delivery state, drafts) stay per machine and reach the next build.
-  - The pipeline writes each build into the runtimes' state and, at the
-    start of each build, reads their live files and `question-store`'s
-    questions into the corpus. The runtimes never read the pipeline's
+    agent block) before every commit, and a failure stops the commit.
+    Code handling is open under Stage 2 (§8.0 item 23a).
+  - **Builds repo**:
+    - A private GitHub repo, separate from this public one, named in
+      `build-inputs.json` (`builds_repo`). Everything in it is encrypted with
+      `age` under one key, except a plaintext `README.md` that holds no
+      content. The pipeline and every machine refuse a push if any other
+      tracked file doesn't end in `.age`.
+    - Layout: `builds/<build-time>.tar.age`, one per build (the voice and
+      decision files and their manifests), and
+      `live/<hostname>/<package>/<push-time>.jsonl.age`. Only the pipeline
+      writes `builds/`; each machine writes only its own `live/` directory,
+      named by its hostname.
+    - The embedding index is not in the repo. Each machine embeds the
+      exemplars at install with `embedding-lib`, reusing the previous
+      build's rows by a hash of each pair's text, so only new or changed
+      pairs are embedded; a change in `embedding-lib`'s identity throws the
+      rows away and re-embeds them all. The repo then grows by each build's
+      text files only.
+    - Each machine holds the key at `~/.config/age/builds.key`, mode 600,
+      outside every package's directories, copied there by hand, with a
+      backup copy kept off the machines.
+    - Live files that travel: `drafts.jsonl` (`voice-runtime`),
+      `decision-log.jsonl` (`decision-runtime`) and `questions.jsonl`
+      (`question-store`): the evidence the pipeline reads. The
+      reviewed-changes record, gate state and question delivery state stay
+      on their machine. A repo worked on from two machines is reviewed on
+      each.
+    - Segments: each push stores only the records added since the last
+      push. So `questions.jsonl` is append-only: an answer is a new line,
+      and the newest line per question id wins. The pipeline joins every
+      machine's segments by push time (this machine's included), drops
+      repeated records by id (a lost push position re-sends them), and
+      applies the struck list, so a forgotten person's records never
+      re-enter the corpus. Their segments stay in the repo's history,
+      readable only with the key; history is never rewritten for
+      `forget`.
+  - **`builds-sync`** is of the skill kind and
+    installs, as `repo-remote-control-session` does, a skill directory, an
+    executable in `~/.local/bin`, and hooks registered from it. It owns the clone, the key path, `age` and every
+    pull, commit and push; the pipeline and the three runtimes load its
+    library (Coupling, above). Its state records the clone's location,
+    asked once at first install, and where each live file's last push
+    stopped.
+    - Push: a `SessionEnd` hook pushes this machine's new records, and
+      `builds-sync push` does the same on demand. A lock keeps two
+      sessions ending together from colliding. An offline or killed
+      session loses nothing: the next push carries everything since.
+    - Update check: a `SessionStart` hook shows the notice the last check
+      left (a newer build in the repo than the one installed) and starts
+      the next check in the background, at most once a day, by a day stamp
+      written before the `git fetch` (the kit's `update-check.sh` does the same);
+      `builds-sync check --force` checks at once.
+    - Nothing installs it automatically: `builds-sync install`, or the skill, which
+      runs it in the background and watches its log
+      (`/tmp/builds-sync-install.log`). Nothing installs on its own.
+      `install <build-time>` installs an older build; there is no pinning.
+      Nothing records which build each machine runs; `builds-sync status`
+      on a machine says.
+    - Each install writes a new `builds/<build-time>/` beside the current
+      one and writes `manifest.json` last, so the previous build is used
+      until the new one is complete, then deleted. Before a machine's
+      first install finishes there is no build; the runtimes then behave
+      as after any refusal (below).
+  - The pipeline writes each build into the builds repo through
+    `builds-sync` and, at the start of each build, reads every machine's
+    live-file segments from it into the corpus. The runtimes never read the pipeline's
     state, so the pipeline can stay uninstalled; each runtime keeps
     working on the last build delivered to it. `decision-runtime` reaches
     questions only through `question-store`'s park/read interface.
@@ -1019,7 +1081,7 @@ fire on several events.
     it.
   - After a refusal (no build delivered yet, an embedding model mismatch,
     or an unaccepted schema version), the runtimes carry on safely and say
-    so.
+    so (kept for a machine's first install).
     `decision-runtime`'s lookup returns "nothing covers this", so every
     decision goes to the owner and nothing is decided alone; the gates keep
     working from the decision log; the reviewers skip; the `SessionStart`
@@ -1219,17 +1281,11 @@ stage lists only what blocks that stage.
 
 **Next – before anything else is built, released or anonymised**
 37. Builds on every machine (§5).
-    Building once and installing the same build on every
-    machine from a version-controlled repo changes what anonymising has to
-    protect: what matters is what lands in the committed build, not only
-    what is sent. It may change items 6, 7, 13 and 16 above, and settles
-    how code is handled in Mining and in what is sent. Where the
-    builds repo is hosted and whether it is encrypted; whether code is kept
-    out of exemplars and quotes or only caught by the build leak check; how
-    machine-local files (decision log, question delivery state, drafts)
-    stay per machine and reach the next build. Blocks the next
-    `voice-decision-pipeline` release, the next `anonymise`, the review
-    batches and Stage 2.
+    The builds repo
+    and `builds-sync` are in §5. Code handling is under Stage 2 (item 23a).
+    Whether the next `voice-decision-pipeline` release, the next
+    `anonymise` and the review batches still wait on anything here is
+    open.
 
 **Stage 2 – voice model and `voice-runtime`**
 17. Which models draft, label and judge, and whether the blind-labelling
@@ -1246,6 +1302,8 @@ stage lists only what blocks that stage.
     and `/code-review` formats (§8.2).
 23. The exact CLAUDE.md line that loads the skill (§8.2); last, before voice
     goes live.
+23a. Code in the corpus: whether Mining reads it, whether it is sent, and
+    whether exemplars and evidence quotes keep it
 
 **Stage 3 – `question-store`**
 24. All of §8.4.
@@ -1575,3 +1633,6 @@ stage lists only what blocks that stage.
    <name>`, `~/.claude/<name>`, hook registrations in
    `~/.claude/settings.json`) is outside Claude's Bash sandbox.
 9. Move the decision model up trust levels.
+10. Create the private builds repo (`builds_repo` in `build-inputs.json`), give the
+    the other machines push access to it, copy the `age` key to
+    each machine and to a backup kept off the machines (§5).
