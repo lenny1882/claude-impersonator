@@ -589,6 +589,28 @@ assert got["api.quillford.example.com"]["kind"] == "private URL host", r
 assert got["api.quillford.example.com"]["examples"][0]["id"] == "x4", r
 assert "pub.dev" not in got, r
 EOF
+check "leak check: a name after a newline or a tab is found; a public host after a newline isn't a leak" "$PY" - <<'EOF'
+import json
+from vdp import leaks, inputs, state
+from vdp.anonmap import Map
+# The fixtures' own names, taken from the term list rather than spelled here.
+t = leaks.terms(inputs.load(), Map.load())
+name = next(k for k, v in sorted(t.items()) if v == "person name" and " " in k)
+handle = next(k for k, v in sorted(t.items()) if v == "slack handle")
+def counts():
+    r = leaks.scan(inputs.load(), Map.load())
+    return r, {x["term"]: x["count"] for x in r["terms"]}
+_, before = counts()
+with open(state.anon_file("gsd"), "a") as f:
+    f.write(json.dumps({"id": "x5", "text": "first line\n" + name.title() + " said"}) + "\n")
+    f.write(json.dumps({"id": "x6", "text": "see\t" + name, "source_fields": {"t": "a\n" + handle}}) + "\n")
+    f.write(json.dumps({"id": "x7", "text": "docs at\npub.dev/x and\nhttps://pub.dev/y"}) + "\n")
+r, after = counts()
+assert after.get(name, 0) - before.get(name, 0) == 2, (name, before, after)
+assert after.get(handle, 0) - before.get(handle, 0) == 1, (handle, before, after)
+assert not any("pub.dev" in x["term"] for x in r["terms"]), r
+assert leaks.unescape_blank(json.dumps("a\nb\u0001c")) == '"a  b      c"', leaks.unescape_blank(json.dumps("a\nb\u0001c"))
+EOF
 check "state is owner-only" bash -c "[ -z \"\$(find '$ST' -perm /077 -print -quit)\" ]"
 check "status reports owner-only state and per-source review" \
   bash -c "\"$PY\" -m vdp status | jq -e '.not_owner_only==[] and .sources.slack.sendable and (.sources.bitbucket.sendable|not)' >/dev/null"

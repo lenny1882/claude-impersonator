@@ -17,6 +17,12 @@ included), reactions and author. The source name, tag types, ids and
 timestamps are the pipeline's own words, not the corpus's, and so are the
 pseudonyms, which are blanked before the search.
 
+The record is searched as JSON, where a newline is the two characters \\n.
+Left as they are, the n would run into the next word: a name starting a line
+would never match, and a public host after a newline would read as another
+host. So every JSON escape is blanked to spaces of the same length first;
+offsets don't move, and snippets still come from the real body.
+
 The report, with the real term and a short piece of the text around it, is
 written to the state as leak-report.json (owner-only, never sent) and shown
 on the review page.
@@ -31,6 +37,13 @@ from . import SOURCES, state, urls
 MAX_EXAMPLES = 3
 SENT_KEYS = ("text", "source_fields", "reactions", "author")
 SNIPPET = 60
+# A JSON escape: \uXXXX, or a backslash plus one character (\n, \t, \", \\ ...).
+JSON_ESCAPE = re.compile(r"\\(?:u[0-9a-fA-F]{4}|.)")
+
+
+def unescape_blank(body):
+    """body with each JSON escape blanked to as many spaces."""
+    return JSON_ESCAPE.sub(lambda m: " " * len(m.group(0)), body)
 
 
 def terms(d, amap):
@@ -95,7 +108,8 @@ def scan(d, amap):
     for s in SOURCES:
         for r in state.read_jsonl(state.anon_file(s)):
             body = json.dumps({k: r[k] for k in SENT_KEYS if k in r}, ensure_ascii=False)
-            searched = prx.sub(lambda m: "\0" * len(m.group(0)), body) if prx else body
+            searched = unescape_blank(body)
+            searched = prx.sub(lambda m: "\0" * len(m.group(0)), searched) if prx else searched
             spans = [(m.start(), m.end(), m.group(1).lower())
                      for m in (rx.finditer(searched) if rx else ())]
             # A URL on a host that isn't public is a leak in itself.
