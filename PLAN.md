@@ -730,7 +730,12 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   `autonomous`'s `handle_blocker` step stops at them before the next phase.
   That step offers retry, skip or stop rather than waiting for the answer;
   with `--interactive`, discuss for the next phase may already be running.
-  How the park rule maps onto both is open (§8.3). The mirroring lives in
+  When `handle_blocker` meets a mirrored question, `decision-runtime`'s GSD
+  adapter puts the question itself to the owner there, with its options and
+  evidence, in place of the bare choices; the answer is recorded in the
+  question store, the blocker resolved, and the run takes "Fix and retry"
+  Under `--interactive` the same happens when that
+  phase reaches the step. The mirroring lives in
   `decision-runtime`'s GSD adapters, so `question-store` has no GSD
   dependency. Outside GSD repos no stop is added; the
   agent holds the dependent step under §4.2 and `/questions` lists what is
@@ -1609,15 +1614,6 @@ stage lists only what blocks that stage.
   agent, for GSD plugin agents and workflow agents. That the event fires for
   both is shown by the saved hook log (§7); delivery of the context was not
   tested.
-- How the park rule maps onto `autonomous`. `autonomous` doesn't wait for
-  replies (§7), so a parked question pauses a run only through blocker
-  mirroring. A question mirrored to `STATE.md` blockers sends `autonomous`
-  to `handle_blocker`, which asks the owner to choose "Fix and retry", "Skip
-  this phase" (marks the phase skipped and carries on) or "Stop autonomous
-  mode"; it does not wait for the question's answer. Options not decided,
-  e.g. stopping, then resuming with `--from`. In `autonomous --interactive`,
-  plan and execute for phase N run as background agents while discuss for
-  N+1 starts; how a question parked by N's executor interacts with that is open.
 - Origin weighting (§4.9) needs the transcript's AskUserQuestion answers,
   because GSD's `CONTEXT.md` records only the final answer (§7).
 - Which GSD checkpoints auto-approve, beyond `gate="blocking-human"` ones
