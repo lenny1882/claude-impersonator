@@ -606,8 +606,11 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   answer wins and the other channels are told.
   A later, different answer is not applied; the owner is told it was
   already answered.
-- One session command lists every question, open and answered, with the
-  answer and the channel it came from.
+- One session command, `/questions`, lists every question, open and
+  answered, with the answer and the channel it came from, and answers them:
+  an open question picked there is put to the owner as a multiple-choice prompt
+  in whichever session the owner is in, and the answer goes to the question record
+  for the waiting work.
 - The session that parks a question sends its push, with Claude Code's
   push notification tool. No session runs only to
   deliver questions.
@@ -1586,7 +1589,6 @@ stage lists only what blocks that stage.
 
 ### 8.4 Questions to the owner (`question-store`)
 
-- The session command's name, and whether it can also be used to answer.
 - What a question shows beyond the fields in §4.7 (decision, options,
   principles that came close, waiting work), e.g. a deadline or which run is
   waiting.
