@@ -475,7 +475,8 @@ A short block (about 300–600 tokens): the three kinds that may be decided
 alone, the park rule, the priority order, and how to call the lookup script.
 At each decision the agent calls the lookup, which returns the matching
 principles, tech positions and client constraints, each with its status
-(usable, below the evidence bar, unresolved).
+(usable, below the evidence bar, unresolved). The lookup uses similarity
+search through `embedding-lib`, filtering locally first.
 
 ### 4.4 Delivery and enforcement layers
 
@@ -845,7 +846,7 @@ under `claude-tools/<package>` must stay after install, because the package's
 | `builds-sync` | skill plus command; registers hooks (like `rrc`) | nothing; `age` |
 | `voice-decision-pipeline` | command | `embedding-lib`; writes the data format |
 | `voice-runtime` | skill | `embedding-lib`; reads the data format |
-| `decision-runtime` | command, with hook registrations | `embedding-lib` (only if the lookup uses similarity search, §8.3), `question-store`; reads the data format |
+| `decision-runtime` | command, with hook registrations | `embedding-lib` (the lookup's similarity search), `question-store`; reads the data format |
 
 Kinds: the kit has three kinds — `hook`, `skill`,
 `command` — and a package is one of them. The `command` kind can register
@@ -1403,8 +1404,7 @@ stage lists only what blocks that stage.
 25. Hooks: see §4.7.
 
 **Stage 4 – decision model and `decision-runtime`**
-26. Similarity search or keyword lookup (§8.3); decides whether
-    `decision-runtime` depends on `embedding-lib`.
+26. Lookup: see §4.3.
 27. Extraction weighting: "You decide" answers, grill-with-docs rounds
     (§8.3).
 28. What counts as an approved entry, and whether a comment in a plan can set
@@ -1446,10 +1446,6 @@ stage lists only what blocks that stage.
 
 ### 8.3 Decisions
 
-- Whether the decision lookup uses similarity search or keywords. If
-  keywords are chosen, `decision-runtime` no longer needs `embedding-lib` or
-  the ~1–2 GB environment at use time. Either way it filters locally first
-  and returns only the fields an agent needs (§4.10).
 - Whether a comment in a plan can set aside an approved principle, and how
   such a comment is traced to the owner rather than to the agent that wrote the
   plan (`bm-planner` writes GSD plans).
