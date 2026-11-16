@@ -938,7 +938,11 @@ fire on several events.
   - A term decided in an earlier run and not listed in the current one
   - The leak page shows only anonymised snippets, so a pseudonymised host
     can't be traced to its term there.
-  - Batches are rejected only on the review page; there is no command.
+  - Batches are rejected, and a source's review stopped, only on the
+    review page; there is no command for either.
+  - The leak check reads an iOS app-group identifier
+    (`group.com.<client>.<app>`, the client already a pseudonym) as the
+    private URL host `group.com`.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
