@@ -1136,9 +1136,9 @@ fire on several events.
   and is on no list goes out as written.
   Open in the pipeline:
   - A public URL whose host label is a kept product or a client spelling
-    gets the pseudonym inside its host, which then isn't on the public
-    list. Undecided: the whole URL becomes `[url]`, the host is left
-    whole, or the leak check ignores a host holding a pseudonym.
+    gets the pseudonym inside its host and is sent that way; the leak
+    check accepts a host holding a pseudonym rather than reading it as a
+    private URL.
   - Keep on the Mining page means replace. A kept term gets an entry in
     the append-only map, and every product entry in the map is replaced
     whatever its decision says now, so striking a term after keeping it
