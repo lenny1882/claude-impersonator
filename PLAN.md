@@ -621,7 +621,11 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   `autonomous`'s `handle_blocker` step stops at them before the next phase.
   That step offers retry, skip or stop rather than waiting for the answer;
   with `--interactive`, discuss for the next phase may already be running.
-  How the park rule maps onto both is open (§8.3).
+  How the park rule maps onto both is open (§8.3). The mirroring lives in
+  `decision-runtime`'s GSD adapters, so `question-store` has no GSD
+  dependency. Outside GSD repos no stop is added; the
+  agent holds the dependent step under §4.2 and `/questions` lists what is
+  waiting.
 
 ### 4.8 Decision log
 
@@ -843,12 +847,12 @@ fire on several events.
   review pages, validation, rebuilds and the regular review sessions.
   `voice-runtime` — the guide loader and exemplar search. `decision-runtime`
   — the `SessionStart`/`SubagentStart` blocks, gates, reviewers, plan-review
-  adapters, the lookup and the decision log. `question-store` — park
+  adapters (which also mirror open questions as GSD blockers), the lookup
+  and the decision log (the question store is in
   (record a question; the agent carries on with independent work), notify
   (push, session), collect (every channel's answer written back to
   one record; first answer wins, the others are told), hand back (waiting
-  work reads the answer), show (the session command), mirror (open
-  questions as GSD blockers; where mirroring lives is open, §8.4). This
+  work reads the answer), show (the session command).
 - **Building vs using:** only `voice-decision-pipeline` builds the models
   (corpus, labels, guide, principles, indexes, the short agent block of
   §4.3, review steps, validation, rebuilds). The others use what it built
@@ -1591,13 +1595,6 @@ stage lists only what blocks that stage.
 
 ### 8.4 Questions to the owner (`question-store`)
 
-- Blocker mirroring (§4.7) works only in GSD repos (no `STATE.md`
-  elsewhere; APPENDIX B.5). Open: whether anything outside GSD needs a stop
-  like `handle_blocker`, or the question record and the park rule are enough
-  there. Also open: whether mirroring lives in `question-store` (the contents
-  (the package list, §5, puts it there, which makes it depend on GSD's `gsd_add_blocker`
-  and `STATE.md`) or in `decision-runtime` or a GSD adapter, so
-  `question-store` keeps no GSD dependency.
 - How the owner changes an answer already given (which channel or command), and
   what happens to work that has already resumed on the old answer. §4.8
   covers only the log entry.
