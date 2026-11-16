@@ -261,7 +261,9 @@ approval of the exact text.
 | 1:1 colleagues | one-to-one DMs |
 
 Each conversation is assigned by its name and members; the owner checks the
-mapping. Any other internal channel not covered goes to the project team
+mapping. 1:1 colleagues is not split by whether the person reports to
+the owner; per-audience validation results show if it
+needs to be. Any other internal channel not covered goes to the project team
 (because those channels are less technical). Group DMs not
 made up of the senior/management people get no rule: the owner assigns each on the mapping page,
 and a group DM new in a later export comes up there the same way.
@@ -315,7 +317,11 @@ developer).
 - A measured "never say" list: phrases, words and habits common in generic
   business writing that the owner uses rarely or never (e.g. "Hope this helps",
   exclamation marks to clients), each with the owner's count;
-  built locally, no API.
+  built locally, no API. Measured against two references:
+  Phrases common in other people's messages in the corpus and rare
+  in the owner's, built from dictionary words only so no name gets in; and a
+  fixed list of a few hundred generic business and assistant phrases,
+  written once and committed.
 - Exemplars drawn from the whole labelled corpus, minus messages of 3 words
   or fewer and messages at least 50% code
   or logs by characters, counting fenced blocks and unfenced log or
@@ -329,6 +335,8 @@ developer).
   purposes, then similarity search picks the closest few. How many is set by
   validation: the model judge scores held-back drafts made with 3, 5 and 8
   exemplars, and the best-scoring count is used.
+  When an audience-and-purpose cell has too few, the rest come from the
+  same audience, the closest by similarity whatever their purpose.
   Similarity uses `BAAI/bge-base-en-v1.5`, run locally on the CPU
   (sentence-transformers, CPU PyTorch), so nothing is sent for the search.
   Messages are embedded with a short slice of context (the message plus the
@@ -1332,8 +1340,9 @@ stage lists only what blocks that stage.
     random ones, on top of the 60 blind pairs (§3.7).
 20. A rules file in the pipeline's state, copied into the guide
     and winning over corpus rules (§3.5).
-21. The 1:1 audience split, the generic-phrase reference list, and the
-    fallback for thin audience-and-purpose cells (§8.2).
+21. No 1:1 split (§3.2); the never-say list is measured against
+    colleagues' phrases and a fixed committed list; thin cells fill from
+    the same audience by similarity (§3.5).
 22. Drafting time: who sets audience and purpose, how an edited-after-
     sending version is captured, `jira-comments.md` wording, `/gsd:ship`
     and `/code-review` formats (§8.2).
@@ -1383,10 +1392,6 @@ stage lists only what blocks that stage.
 
 ### 8.2 Voice
 
-- Whether the 1:1 colleagues audience is split further by whether the person
-  reports to the owner.
-- Which reference list of generic business phrases the "never say" list is
-  measured against.
 - How a draft's audience and purposes are set at drafting time: inferred by
   Claude, or stated by the owner.
 - How the "approved version" is captured when the owner edits a draft after it
@@ -1402,8 +1407,6 @@ stage lists only what blocks that stage.
 - How the voice model sits alongside the formats other tools impose: the PR
   description template in `/gsd:ship` and `/bm:ship`, and the comment format
   of `/code-review --comment`.
-- When an audience-and-purpose cell has too few exemplars, whether to fall
-  back to the same purpose in another audience.
 - Whether subagents receive the `~/.claude/CLAUDE.md` line that loads the
   voice skill, and a test that a drafting subagent loads it (§3.6).
   Not checked. `/code-review --comment` may word its comments in reviewer
