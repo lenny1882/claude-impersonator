@@ -1157,6 +1157,34 @@ fire on several events.
     (`group.com.<client>.<app>`, the client already a pseudonym) as the
     private URL host `group.com`.;
     a rebuild that stops on such a hit is cleared by hand.
+  The voice steps, `builds-sync` and `voice-runtime` are tested on made-up fixtures with
+  stand-ins for `claude`, `age` and the embedding model. Design choices in
+  the build:
+  - Model calls go through `claude -p` on the logged-in Claude Code
+    account (no API key is used; §6), with structured output
+    against a JSON schema, checked again before use. Tools, settings files,
+    MCP servers, slash commands and session files are turned off, which
+    leaves about 1,100 tokens of overhead per call.
+  - Labelling sends 20 items a call. The labelling prompt is changed
+    through `labelling-notes.md` in the pipeline's state; `voice label
+    --redo <purposes>` sends again the items either model gave one of them.
+  - The guide is written by the drafting model, Opus 5.5.
+  - The guide and the exemplars are written from the pool without the
+    holdouts, so validation drafts against messages neither has seen; the
+    build ships the same pool.
+  - The pass's confidence figure comes from a Dirichlet over the owner's right,
+    wrong and can't-tell counts; the spotting rate is right minus wrong
+    over pairs, with its 95% range from the same draws.
+  - In the blind pairs, the grade is asked after the pick, once the page
+    says which side was the draft.
+  - `voice publish` refuses until the label check and the validation run
+    have passed.
+  - The build format, the `builds-sync` library (`publish_build`,
+    `read_live`) and the `voice-runtime install-build` call between them
+    are fixed in each package's README.
+  Not built yet: the §3.8 upkeep (matching edited drafts to sent messages,
+  the review sessions), which needs drafts that only exist once
+  `voice-runtime` is in use; and item 23's CLAUDE.md line.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
@@ -1529,7 +1557,7 @@ stage lists only what blocks that stage.
     The builds repo
     and `builds-sync` in §5. Code handling is in Stage 2.
 
-**Stage 2 – voice model and `voice-runtime`**
+**Stage 2 – voice model and `voice-runtime`** (with `builds-sync`; §5)
 17. Sonnet 5.5 labels, Opus 5.5 is the second labeller (a
     different model), Opus 5.5 drafts, Fable 5.2 judges
     (§3.4, §3.7).
