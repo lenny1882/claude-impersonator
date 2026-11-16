@@ -650,6 +650,10 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 
 - Every decision made alone is logged with the agent and the principle ids it
   relied on.
+- An approved entry, the only kind that lets a gate through, is an "asked"
+  entry or one citing a principle the gate itself looks up and finds usable
+  anything else is denied and the agent parks a
+  question.
 - Answers to parked questions are copied in as entries marked "asked". A
   changed answer gets a new entry that supersedes the old one, never an edit.
 - `decision-runtime` writes the "asked" entry when it reads the answer to
@@ -724,8 +728,10 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   kinds. One approved from a single project is marked so, and its first use
   elsewhere is logged for the next review session. The ladder climbs live as
   answers arrive; review sessions check every promotion and can undo it.
-- Whether a comment in a plan can set aside an approved principle is open
-  (§8.3).
+- A comment in a plan cannot set aside an approved principle.
+  Plans are written by agents (`bm-planner`), so a conflicting
+  comment makes the agent park a question naming the principle, and only
+  The owner's answer lets that one case through; the principle stays.
 - Format: JSON validated by JSON Schema — plain JSON,
   pretty-printed with sorted keys, for the records (principles, priority
   order, tech positions, client constraints), and JSON Lines for anything
@@ -1412,8 +1418,7 @@ stage lists only what blocks that stage.
 **Stage 4 – decision model and `decision-runtime`**
 26. Lookup: see §4.3.
 27. Extraction weighting: see §4.9.
-28. What counts as an approved entry, and whether a comment in a plan can set
-    aside a principle (§8.3).
+28. Approved entries and plan comments: see §4.8 and §4.10.
 29. Gates: marked paths, per-stack patterns, test-framework switch, timeout
     behaviour, overriding a false block (§8.3).
 30. Reviewers: hook type and model, what happens on a problem and on
@@ -1451,9 +1456,6 @@ stage lists only what blocks that stage.
 
 ### 8.3 Decisions
 
-- Whether a comment in a plan can set aside an approved principle, and how
-  such a comment is traced to the owner rather than to the agent that wrote the
-  plan (`bm-planner` writes GSD plans).
 - Reviewer hook type: prompt (single call) or agent (experimental; whether it
   can run `git diff` is unconfirmed), and which model it runs on (the cost
   estimate assumes the cheap background tier).
@@ -1510,9 +1512,6 @@ stage lists only what blocks that stage.
 - Whether OpenSpec runs its own agents (its docs don't say).
 - How the `SessionStart` block behaves in sessions that never touch code (it
   fires in every session; behaviour not decided).
-- What counts as an "approved entry" for the gates. If an agent can log its
-  own decision and then pass the gate, the gate is circular; it needs to be
-  limited to entries backed by a usable principle or by the owner's answer.
 - What the reviewer does when it finds a problem. Today §4.5 says it sends
   the agent back. Open: whether,
   besides that, it reverts, logs it or parks a question; and in the main
