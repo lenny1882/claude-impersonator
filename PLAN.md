@@ -1153,7 +1153,7 @@ fire on several events.
     from the map on this machine; the page stays local and Claude still
     never reads it.
   - Batches are rejected, and a source's review stopped, only on the
-    review page; there is no command for either.
+    review page; there is no command for either, and none is added.
   - The leak check reads an iOS app-group identifier
     (`group.com.<client>.<app>`, the client already a pseudonym) as the
     private URL host `group.com`.
