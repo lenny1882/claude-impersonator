@@ -604,9 +604,14 @@ recommendation can be reconsidered once that review is done.
     that reaches the owner only as a recommendation is not.
   - Each `claude -p` call carries about 46k tokens of Claude Code's own
     setup, which §6's reviewer figures leave out.
+- A phase-end audit is built: when a GSD phase
+  completes, Sonnet 5.5 diffs the whole phase against the decision log and
+  sends anything that looks like an unlogged decision to the question
+  record. It never blocks. Each find is a reviewer miss, logged for the
+  miss estimate (§8.3).
 - What stays unprevented: a judgement call made in text inside a GSD step
   that the reviewer misses. The owner's review sessions catch it after the fact,
-  as would a phase-end audit if one is built (§8.3).
+  as can the phase-end audit.
 
 ### 4.6 Plan review
 
@@ -1522,9 +1527,6 @@ stage lists only what blocks that stage.
 
 ### 8.3 Decisions
 
-- Whether a phase-end audit (diff against decision log, unlogged items to the
-  question record without blocking) is built, or the reviewer is enough.
-  GSD's own milestone-level audit in `autonomous` (§7) is not that audit.
 - Whether decisions are also written to GSD's own decision log
   (`gsd_add_decision`) in GSD repos, alongside `decision-runtime`'s log.
 - Where the decision log lives and its entry format, beyond the fields in §4.8
