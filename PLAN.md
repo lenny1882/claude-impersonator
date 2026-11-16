@@ -727,7 +727,13 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   aren't decisions under the model stay out of the log.
 - `decision-runtime` also logs every review block, with the reviewer, the
   diff range and its reason; the pipeline reads them at the next build,
-  false blocks included.
+  false blocks included. Every review is logged, not only blocks: one that
+  found nothing is logged with its diff range and the principles it checked
+  The owner's verdict is kept with each block they judge
+  in the owner's own session (fix it: right; allow this one, or the rule is wrong:
+  wrong). Blocks in subagents and GSD runs, which the owner never sees as they
+  happen, come to the next review session for the owner's verdict.
+  What a build does with wrong blocks is open (§8.3).
   the sweep, logging review blocks) follows the points above.
 
 ### 4.9 Extracting decisions
@@ -1555,6 +1561,10 @@ stage lists only what blocks that stage.
   the owner starts using it.
 - How the `SessionStart` block behaves in sessions that never touch code (it
   fires in every session; behaviour not decided).
+- What a build does with the review log: whether a principle with wrong
+  blocks against it is narrowed, or drops back to "ask" as a confirmed wrong
+  decision does (§4.12), and how logged reviews that found nothing are used
+  to estimate what the reviewer misses.
 - How the owner adds or adjusts a principle directly. The principles file is
   generated, so it needs a pipeline input, like the voice guide.
 - Sessions this machine's hooks don't reach: claude.ai cloud sessions and
