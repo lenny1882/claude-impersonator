@@ -370,7 +370,7 @@ subagent loads the skill is open (§8.2).
   review page saves progress between sittings;
   The progress file
   holds pair ids and answers only, the key staying in the pipeline's
-  state; how it saves depends on where the page runs, §8.2). A
+  state; each answer is written there as it is given). A
   model judge, Fable 5.2 (not the drafting model),
   compares every draft with the real message and scores it.
   The owner's graded pairs also show where the judge disagrees with them, which
@@ -1321,8 +1321,9 @@ stage lists only what blocks that stage.
 17. Sonnet 5.5 labels, Opus 5.5 is the second labeller (a
     different model), Opus 5.5 drafts, Fable 5.2 judges
     (§3.4, §3.7).
-18. Where the review pages run, and how the blind-pair page saves progress
-    (§8.2).
+18. Every review page runs on the pipeline's local review
+    server, as the Stage 1 pages do; the blind-pair page writes each
+    answer to its progress file in the state (§3.7).
 19. Whether the owner also reviews the judge's worst-scored drafts and a random
     few, on top of the 60 blind pairs (§8.2).
 20. How the owner's own rules get into the generated guide (§8.2).
@@ -1388,11 +1389,6 @@ stage lists only what blocks that stage.
 - How often the regular review sessions run, and what form they take.
 - The exact line added to `~/.claude/CLAUDE.md` to load the voice skill
   (the owner approves the wording; CLAUDE.md is theirs).
-- Where the review pages run — label checks, blind pairs, and confirmations
-  of inferred reasons and bulk-accepted records all show real corpus text; a
-  local page keeps it on this machine, a claude.ai page would send it off it —
-  and how the blind-pair page saves progress between sittings. (The pages
-  are part of `voice-decision-pipeline`.)
 - How `jira-comments.md`'s own wording rules (e.g. no second person,
   shorter) sit against the voice model where they disagree. Today §3.1
   keeps only the file's structure. Options: the file's
