@@ -80,7 +80,11 @@ def build(log=print):
 
 
 def newest():
+    """(build time, tarball) of the newest build, or (None, None) before the
+    first: voice/builds/ only exists once a build has been written."""
     d = builds_dir()
+    if not os.path.isdir(d):
+        return None, None
     bts = sorted(x for x in os.listdir(d) if os.path.exists(os.path.join(d, x, f"build-{x}.tar")))
     return (bts[-1], os.path.join(d, bts[-1], f"build-{bts[-1]}.tar")) if bts else (None, None)
 

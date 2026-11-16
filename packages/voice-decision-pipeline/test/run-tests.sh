@@ -700,6 +700,41 @@ echo "voice"
 VST="$TMP/vstate"; VBIN="$TMP/vbin"; VPYL="$TMP/vpylib"
 mkdir -p "$VST" "$VBIN" "$VPYL"
 "$PY" "$REPO/test/voice_fixtures.py" "$VST" "$VBIN" "$VPYL"
+# Every voice step, and every voice page, once on empty state and once on
+# state with nothing labelled yet: each either works or refuses with one
+# line, never a traceback. Most other tests run a step only after the steps
+# before it, so this is what covers a step run first.
+VE="$TMP/vempty"; mkdir -p "$VE"
+"$PY" - "$VST" "$TMP/vfresh" <<'EOF'
+import shutil, sys
+shutil.copytree(sys.argv[1], sys.argv[2])
+EOF
+for st in "$VE" "$TMP/vfresh"; do
+  name=$([ "$st" = "$VE" ] && echo "empty state" || echo "state starting with nothing labelled")
+  for step in "label" "label --second" "label --new-sample" "holdout" "holdout --fresh" "rules" "guide" \
+              "validate" "pairs" "pairs --more clients" "build" "publish" "status"; do
+    out=$(VDP_STATE="$st" VDP_CLAUDE="$VBIN/claude" BUILDS_SYNC_HOME="$TMP/no-builds-sync" \
+          PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp voice $step 2>&1); rc=$?
+    if printf '%s' "$out" | grep -q Traceback || { [ "$rc" != 0 ] && [ "$(printf '%s\n' "$out" | wc -l)" -gt 3 ]; }; then
+      no "voice $step on $name works or refuses in one line" "exit $rc: $(printf '%s' "$out" | tail -2)"
+    else ok "voice $step on $name works or refuses in one line (exit $rc)"; fi
+  done
+  # On the second state the steps above ran in order on approved sources,
+  # so by now it holds labels, a guide, drafts and a build.
+  want=$([ "$st" = "$VE" ] && echo '.newest_build==null' || echo '.newest_build!=null')
+  check "voice status on $name prints its JSON" \
+    bash -c "VDP_STATE='$st' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice status | jq -e 'has(\"publish_blocked_by\") and $want' >/dev/null"
+  RP=$(VDP_STATE="$st" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp review --port 0 --no-browser > "$TMP/vr-empty.out" 2>&1 & echo $!)
+  for _ in $(seq 50); do grep -q 'http://127' "$TMP/vr-empty.out" 2>/dev/null && break; sleep 0.1; done
+  EU=$(grep -o 'http://127.0.0.1:[0-9]*/' "$TMP/vr-empty.out")
+  for pg in "" voice voice/labels voice/disagree voice/pairs voice/judge voice/report leaks; do
+    code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$EU$pg")
+    case "$code" in 200|400) ok "page /$pg on $name answers ($code)" ;;
+      *) no "page /$pg on $name answers" "HTTP $code: $(tail -2 "$TMP/vr-empty.out")" ;; esac
+  done
+  kill "$RP" 2>/dev/null; wait "$RP" 2>/dev/null
+done
+rm -rf "$TMP/vfresh"
 if ! "$PY" -c 'import numpy' 2>/dev/null; then
   no "voice tests" "$PY has no numpy; run them with embedding-lib's venv python (VDP_TEST_PY)"
 else
