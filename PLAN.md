@@ -1145,6 +1145,8 @@ fire on several events.
     has no effect. Reversing a
     keep needs its decision and map entry edited in the state.
   - A term decided in an earlier run and not listed in the current one
+    Such terms get their own section on the Mining page, apart from
+    Decided, each with its decision, so a struck one can be kept.
   - The leak page shows only anonymised snippets, so a pseudonymised host
     can't be traced to its term there.
   - Batches are rejected, and a source's review stopped, only on the
