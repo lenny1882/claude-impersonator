@@ -211,8 +211,10 @@ Left out:
   session, log to a file Claude monitors, stop cleanly at a usage limit and
   resume from the last finished batch; prompts are adjusted between passes,
   not during one.
-- Not covered by this rule: reviewer hooks send code diffs
-  from the working repo to the API un-anonymised (they aren't corpus data).
+- Reviewer hooks send code diffs from the working repo to the API
+  un-anonymised: they aren't corpus data, the session
+  that wrote them already sent them, and client constraints need real names
+  to match the code.
 - Built outputs are anonymised: the voice guide,
   exemplars, principles, evidence quotes and client constraints are each
   stored twice, with real names and as an anonymised copy, and only the
@@ -577,6 +579,15 @@ recommendation can be reconsidered once that review is done.
   - A local pre-filter skips the review when the change is only whitespace
     or formatting, only comments, only docs other than plan and spec files,
     or only generated files.
+  - The end-of-turn `Stop` review runs in the background with
+    `asyncRewake`, as claude-guard-hooks 1.3.1 does: the turn ends at once,
+    and only a problem wakes Claude. On a timeout the review record isn't
+    advanced, so the next review covers the change.
+  - Changed plan and spec files (GSD `PLAN.md` and `CONTEXT.md`, OpenSpec
+    `proposal.md` and `specs/`, plan-mode plan files) are read as
+    decisions and checked like code. Apart from plan mode and the GSD
+    infrastructure skip (§4.6), this is the only check on plan text before
+    it is built.
   - Each `claude -p` call carries about 46k tokens of Claude Code's own
     setup, which §6's reviewer figures leave out.
 - What stays unprevented: a judgement call made in text inside a GSD step
@@ -1456,9 +1467,7 @@ stage lists only what blocks that stage.
 27. Extraction weighting: see §4.9.
 28. Approved entries and plan comments: see §4.8 and §4.10.
 29. Gates: see §4.4.
-30. Reviewers: hook type and model, what happens on a problem and on
-    repeated blocks, the pre-filter, `asyncRewake`, plan files as
-    decisions, un-anonymised diffs (§8.3).
+30. Reviewers: see §2.3 and §4.5.
 31. Coverage: `SubagentStart` skip list and a delivery test, advisor
     agents, `autonomous` and its UI phases, OpenSpec, non-git folders
     (§8.3). Other machines: §5, Builds on
@@ -1511,10 +1520,6 @@ stage lists only what blocks that stage.
 - Whether a pre-existing `CONTEXT.md` not written by the owner (discuss is
   skipped when `has_context` is true) needs the same check as the
   infrastructure skip.
-- Whether the end-of-turn reviewer treats changed plan and spec files
-  (OpenSpec's `proposal.md`/`specs/`, GSD's `PLAN.md`/`CONTEXT.md`, plan
-  files) as decisions rather than code; not
-  decided.
 - Which hook event catches `/opsx:apply` (a slash command is not a tool call
   unless run through the Skill tool; `UserPromptSubmit`/`UserPromptExpansion`
   are the candidates) — not checked.
@@ -1577,10 +1582,6 @@ stage lists only what blocks that stage.
 - In plan mode, whether a `PostToolUse` hook logs the approved plan's
   decisions as the owner's, and whether uncovered decisions go into the plan as
   open questions (the owner is present at approval) instead of `question-store`.
-- Reviewer diffs go to the API un-anonymised.
-- Whether the end-of-turn `Stop` reviewer uses `asyncRewake` like
-  claude-guard-hooks 1.3.1 (a `Stop` hook's block reason is otherwise printed
-  to the owner in full).
 - How the park rule maps onto `autonomous`. `autonomous` doesn't wait for
   replies (§7), so a parked question pauses a run only through blocker
   mirroring. A question mirrored to `STATE.md` blockers sends `autonomous`
