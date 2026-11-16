@@ -714,6 +714,11 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 
 ### 4.8 Decision log
 
+- The log is `decision-log.jsonl` in `decision-runtime`'s state,
+  append-only, travelling in segments (§5). Its JSON Schema is written at
+  build time, with the review verdicts, reviews that found nothing,
+  delegations and phase-audit finds as fields, and the owner reviews it before
+  use.
 - Every decision made alone is logged with the agent and the principle ids it
   relied on. Only in `decision-runtime`'s log, never in GSD's `STATE.md`
   decisions: the pipeline reads those as the owner's own,
@@ -1529,8 +1534,6 @@ stage lists only what blocks that stage.
 
 ### 8.3 Decisions
 
-- Where the decision log lives and its entry format, beyond the fields in §4.8
-  (decision, agent, principle ids, asked or made alone, supersedes).
 - The infrastructure-skip check: which hook event detects the minimal
   `CONTEXT.md` (the file write, or its `bm-sdk` commit), how it holds the
   run, and which signals it matches (candidates, §7: the display line, and
