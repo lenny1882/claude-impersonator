@@ -1134,7 +1134,6 @@ fire on several events.
   skipped; no guess at code-like lines. Code is still sent to the decision
   analysis with known names replaced, so a name that appears only in code
   and is on no list goes out as written.
-  Open in the pipeline:
   - A public URL whose host label is a kept product or a client spelling
     gets the pseudonym inside its host and is sent that way; the leak
     check accepts a host holding a pseudonym rather than reading it as a

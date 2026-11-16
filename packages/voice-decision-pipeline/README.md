@@ -209,9 +209,13 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   single word only spaCy found counts once marked a name; undecided ones
   are counted apart. The pipeline's own pseudonyms are skipped, so a word
   before one (`acme product-07`) doesn't spell a kept product's name with
-  it. A URL on a host that isn't public is a leak too, its host the term;
-  an identifier added by hand is searched for from 2 characters. Anything
-  found is listed on the review page with where it was.
+  it. A URL on a host that isn't public is a leak too, its host the term,
+  unless the host holds a pseudonym: a public host whose label is a kept
+  product or a client spelling is sent with the pseudonym inside it
+  (`docs.product-04.com`), and that is accepted. An identifier added by
+  hand is searched for from 2 characters. Anything found is listed on the
+  review page with where it was, and under each snippet every pseudonym in
+  it is named with the real term behind it, read from the map.
 - **Mining:** every text a record sends is read, its text and every string
   in its source fields (keys included; not timestamps), except code: fenced
   and inline code and log lines are blanked, and the code under a Bitbucket
@@ -235,7 +239,12 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   workflow builds it into the tarball, and in a checkout the tests build it
   when it is missing. The page shows one section at a time
   (check by hand, suggested keep, suggested strike, decided), each with its
-  own keep-all and strike-all; a decided term leaves its section.
+  own keep-all and strike-all; a decided term leaves its section. A fifth,
+  Earlier runs, lists terms decided in an earlier run that this run didn't
+  list, each with its decision, so a struck one can still be kept. Keep
+  means replace for good: a kept term is in the map, and striking it later
+  has no effect; reversing a keep means editing its decision and map entry
+  in the state.
 - **Gates:** no batch is drawn while a mining candidate or a word on Names is
   undecided, or after a decision until `anonymise` has run again; nor after an audience is set on
   the review page until `extract slack` and then `anonymise` have run again;

@@ -14,13 +14,14 @@ Four jobs, all the owner's, all before anything is sent:
     satisfied.
 
 Served on 127.0.0.1 only, from this machine's state; real text appears on
-the mining page because the page never leaves the machine. Every click is
+the mining and leak pages because the page never leaves the machine. Every click is
 written straight to state, so closing the tab loses nothing.
 """
 
 import html
 import json
 import os
+import re
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -77,8 +78,9 @@ if(left)left.textContent=document.querySelectorAll('tr[data-term]').length-
 document.querySelectorAll('tr[data-term] button[aria-pressed=true]').length})}
 let TAB=null;
 function minerows(){return [...document.querySelectorAll('#mining tr[data-term]')]}
-function minevisible(tr){return TAB==='decided'?!!tr.dataset.decision:
-(!tr.dataset.decision&&tr.dataset.section===TAB)}
+function minein(tr,k){return tr.dataset.section==='earlier'?k==='earlier':
+k==='decided'?!!tr.dataset.decision:(!tr.dataset.decision&&tr.dataset.section===k)}
+function minevisible(tr){return minein(tr,TAB)}
 function minerender(){const rows=minerows();
 if(!TAB){TAB=(location.hash.slice(1))||(['hand','keep','strike'].find(k=>rows.some(
 tr=>!tr.dataset.decision&&tr.dataset.section===k))||'decided')}
@@ -86,14 +88,13 @@ let vis=0;for(const tr of rows){const v=minevisible(tr);tr.hidden=!v;if(v)vis++;
 tr.classList.toggle('kept',tr.dataset.decision==='keep');
 tr.classList.toggle('struck',tr.dataset.decision==='strike')}
 for(const el of document.querySelectorAll('[data-count]')){const k=el.dataset.count;
-el.textContent=rows.filter(tr=>k==='decided'?!!tr.dataset.decision:
-(!tr.dataset.decision&&tr.dataset.section===k)).length}
+el.textContent=rows.filter(tr=>minein(tr,k)).length}
 for(const b of document.querySelectorAll('.tab'))b.classList.toggle('on',b.dataset.tab===TAB);
 const t=document.querySelector('.tab[data-tab='+TAB+']');
 document.getElementById('sectitle').textContent=t?t.firstChild.textContent.trim():'';
 for(const el of document.querySelectorAll('.vis'))el.textContent=vis;
-document.getElementById('secbulk').hidden=!vis||TAB==='decided';document.getElementById('empty').hidden=!!vis;
-document.getElementById('left').textContent=rows.filter(tr=>!tr.dataset.decision).length}
+document.getElementById('secbulk').hidden=!vis||TAB==='decided'||TAB==='earlier';document.getElementById('empty').hidden=!!vis;
+document.getElementById('left').textContent=rows.filter(tr=>!tr.dataset.decision&&tr.dataset.section!=='earlier').length}
 function minetab(k){TAB=k;history.replaceState(null,'','#'+k);minerender();window.scrollTo(0,0)}
 function mineset(trs,d){const body={};for(const tr of trs)body[tr.dataset.term]=d;
 return post('/api/mining',body).then(()=>{for(const tr of trs){tr.dataset.decision=d;
@@ -216,20 +217,48 @@ def leak_line():
             f"{lr['hits']} times</a></span>, of {lr['terms_checked']} checked.")
 
 
+def pseudonym_terms(text, amap):
+    """[(pseudonym, real term)] for every pseudonym in text, in order of
+    first appearance, read from the map on this machine, so
+    a pseudonymised host on the leak page can be traced to its term.
+    The real term is the entry's first alias, else its real id."""
+    by_p = {e["pseudonym"].lower(): e for e in amap.entries if e.get("pseudonym")}
+    if not by_p:
+        return []
+    rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
+        re.escape(p) for p in sorted(by_p, key=len, reverse=True)) + r")(?![A-Za-z0-9])", re.I)
+    out, seen = [], set()
+    for m in rx.finditer(text or ""):
+        k = m.group(1).lower()
+        if k not in seen:
+            seen.add(k)
+            e = by_p[k]
+            out.append((e["pseudonym"], (e.get("aliases") or [e["real_id"]])[0]))
+    return out
+
+
 def leaks_page():
+    from .anonmap import Map
     lr = leaks.load()
     if not lr or not lr["hits"]:
         return page("Leak check", f"<p>{leak_line()}</p>")
+    amap = Map.load()
+
+    def behind(text):
+        pts = pseudonym_terms(text, amap)
+        return (f"<div class=meta>{' · '.join(f'{html.escape(p)} is <b>{html.escape(t)}</b>' for p, t in pts)}"
+                f"</div>" if pts else "")
     rows = []
     for t in lr["terms"]:
         ex = "".join(f"<div class=meta>{html.escape(e['source'])} · {html.escape(e['id'])}</div>"
-                     f"<pre>{html.escape(e['text'])}</pre>" for e in t["examples"])
+                     f"<pre>{html.escape(e['text'])}</pre>{behind(e['text'])}" for e in t["examples"])
         rows.append(f"<tr><td><b>{html.escape(t['term'])}</b><div class=meta>{html.escape(t['kind'])}"
                     f" · {t['count']}×</div>{ex}</td></tr>")
     return page("Leak check", f"""
 <p>Each term below is a real name, handle, email or client name the pipeline knows,
 found in what is sent of the anonymised copies after <code>anonymise</code>. Each is a place the
-replacement missed. Fix the cause, or strike the person with <code>forget</code>,
+replacement missed. Under each snippet, every pseudonym in it is named with the real term behind
+it, from the map on this machine. Fix the cause, or strike the person with <code>forget</code>,
 then run <code>anonymise</code> again.</p>
 <table><tr><th>Term, kind, where it was found</th></tr>{''.join(rows)}</table>""")
 
@@ -278,6 +307,9 @@ as spaCy tagged it. <span id=left>{left}</span> undecided. Each click is saved.<
 
 MINING_SECTIONS = (("hand", "Check by hand"), ("keep", "Suggested keep"),
                    ("strike", "Suggested strike"))
+# Not a suggestion: terms decided in an earlier run that this run didn't list
+# Shown apart from Decided, each with its decision.
+EARLIER = ("earlier", "Earlier runs")
 
 
 def mining():
@@ -321,13 +353,33 @@ def mining():
             f"onclick=\"mine1(this,'keep')\">Keep</button>"
             f"<button class=strike data-d=strike aria-pressed={'true' if d == 'strike' else 'false'} "
             f"onclick=\"mine1(this,'strike')\">Strike</button></td></tr>")
+    # A term decided in an earlier run and not listed in this one: a kept
+    # term is in the map, so mining never offers it again, and a struck one
+    # may have left the corpus or fallen below the thresholds. Listed in its
+    # own section with its decision, so a struck one can still be kept.
+    listed = {c["term"].lower() for c in cands}
+    for term in sorted((t for t in dec if t.lower() not in listed), key=str.lower):
+        d = (dec.get(term) or {}).get("decision") or ""
+        t = html.escape(term)
+        note = ("kept: replaced as product-NN; a later strike has no effect (PLAN §5)"
+                if d == "keep" else "struck: left as written")
+        rows.append(
+            f"<tr data-term='{t}' data-section='earlier' data-decision='{d}'><td>"
+            f"<div class=term><b>{t}</b> <span class='badge d-keep'>kept</span>"
+            f"<span class='badge d-strike'>struck</span></div>"
+            f"<div class=meta>decided in an earlier run, not listed in this one · {note}</div></td>"
+            f"<td class=act><button class=keep data-d=keep aria-pressed={'true' if d == 'keep' else 'false'} "
+            f"onclick=\"mine1(this,'keep')\">Keep</button>"
+            f"<button class=strike data-d=strike aria-pressed={'true' if d == 'strike' else 'false'} "
+            f"onclick=\"mine1(this,'strike')\">Strike</button></td></tr>")
     tabs = "".join(f"<button class=tab data-tab={k} onclick=\"minetab('{k}')\">{label} "
                    f"<span class=n data-count={k}></span></button>"
-                   for k, label in MINING_SECTIONS + (("decided", "Decided"),))
+                   for k, label in MINING_SECTIONS + (("decided", "Decided"), EARLIER))
     return page("Mining candidates", f"""
 <p>Each term might name a client's product, store or project. <b>Keep</b> replaces it with
 product-NN everywhere at the next <code>anonymise</code>; <b>Strike</b> leaves it as written.
-A decided term leaves its section and moves to Decided, where it can be changed. Each click is
+A decided term leaves its section and moves to Decided, where it can be changed. Earlier runs
+lists terms decided before that this run didn't list, each with its decision. Each click is
 saved. <b><span id=left></span> undecided.</b></p>
 <details><summary class=meta>How the suggestions are made</summary><p class=meta>Keep is
 suggested for a term that is not an ordinary word and either sits mostly in one client's

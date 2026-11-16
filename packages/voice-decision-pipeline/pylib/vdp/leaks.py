@@ -9,8 +9,14 @@ people share, and the client and kept product names. A single word only
 spaCy took for a name counts once the owner has marked it a name; until then it
 is counted as undecided, and marked not a name it isn't searched for. A hit
 is a place the replacement missed. So is any URL whose host isn't on the
-public list (urls.py), the host standing as the term. A client identifier
-added by hand on the review page is searched for from 2 characters.
+public list (urls.py), the host standing as the term, unless the host holds
+one of the pipeline's pseudonyms: a public host whose label is a kept product
+or a client spelling ("docs.stripe.com" with Stripe kept) is sent with the
+pseudonym inside it ("docs.product-04.com"), and that is accepted.
+Only a public URL keeps its host at all; a private one became
+[url] whole, so a pseudonym in a host means the replacement worked. A client
+identifier added by hand on the review page is searched for from 2
+characters.
 
 Only what is sent is searched: each record's text, source fields (keys
 included), reactions and author. The source name, tag types, ids and
@@ -114,6 +120,8 @@ def scan(d, amap):
                      for m in (rx.finditer(searched) if rx else ())]
             # A URL on a host that isn't public is a leak in itself.
             for a, b, h in urls.private(searched):
+                if "\0" in h:
+                    continue
                 spans.append((a, b, h))
                 kinds.setdefault(h, "private URL host")
             for a0, b0, t in spans:

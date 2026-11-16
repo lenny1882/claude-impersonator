@@ -500,6 +500,8 @@ check "a batch can't be drawn until anonymise reruns after the decision" \
   test "$(post api/draw '{"source":"slack"}')" = 409
 vdp anonymise >/dev/null 2>&1
 check "a kept term is replaced as product-NN" bash -c "grep -q 'product-01 ready Friday' '$A' && ! grep -q -i zephyrline '$A'"
+check "a kept term mining no longer lists is under Earlier runs, with its decision, not under Decided" \
+  bash -c "jq -e 'map(select(.term|ascii_downcase==\"zephyrline\"))|length==0' '$ST/mining-candidates.json' >/dev/null && curl -sf '${URL}mining' | grep -q \"data-tab=earlier\" && curl -sf '${URL}mining' | grep -q \"data-term='Zephyrline' data-section='earlier' data-decision='keep'\""
 vdp sendable slack; [ $? = 5 ] && ok "slack is not sendable before a batch is approved" \
   || no "slack is not sendable before a batch is approved" "sendable said yes"
 check "a batch of items is drawn" test "$(post api/draw '{"source":"slack"}')" = 200
@@ -616,6 +618,35 @@ got = {t["term"]: t for t in r["terms"]}
 assert got["api.quillford.example.com"]["kind"] == "private URL host", r
 assert got["api.quillford.example.com"]["examples"][0]["id"] == "x4", r
 assert "pub.dev" not in got, r
+EOF
+check "leak check: a public host holding a pseudonym is sent that way and isn't a leak" "$PY" - <<'EOF'
+import json
+from vdp import leaks, inputs, state
+from vdp.anonmap import Map
+amap = Map.load()
+p = amap.ensure("product:other", kind="product", role="product", origin="mining",
+                aliases=["Otherthing"])["pseudonym"]
+with open(state.anon_file("gsd"), "a") as f:
+    f.write(json.dumps({"id": "x8", "text": f"see https://docs.{p}.com/start and {p}.stripe.com/a"}) + "\n")
+r = leaks.scan(inputs.load(), amap)
+assert not [t for t in r["terms"] if "x8" in [e["id"] for e in t["examples"]]], r
+EOF
+check "leak page: each snippet names the real term behind every pseudonym in it" "$PY" - <<'EOF'
+import json
+from vdp import leaks, inputs, review, state
+from vdp.anonmap import Map
+amap = Map.load()
+p = amap.ensure("product:other", kind="product", role="product", origin="mining",
+                aliases=["Otherthing"])["pseudonym"]
+amap.save()
+with open(state.anon_file("gsd"), "a") as f:
+    # A fixture name from the term list, so the page has a hit to show.
+    name = next(k for k, v in sorted(leaks.terms(inputs.load(), amap).items()) if v == "person name")
+    f.write(json.dumps({"id": "x9", "text": f"ask {name} about {p}"}) + "\n")
+leaks.scan(inputs.load(), amap)
+page = review.leaks_page()
+assert f"{p} is <b>Otherthing</b>" in page, page
+assert review.pseudonym_terms(f"{p} and {p}, self-01", amap)[0] == (p, "Otherthing")
 EOF
 check "leak check: a name after a newline or a tab is found; a public host after a newline isn't a leak" "$PY" - <<'EOF'
 import json
