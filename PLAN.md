@@ -225,7 +225,8 @@ Left out:
   samples). Its steps are run by hand: run the sampler, anonymise the sample,
   give the anonymised file to `bm-user-profiler`, keep the output in the
   pipeline's state, and answer "neither" to writing it into a CLAUDE.md. GSD's
-  plugin files are not edited.
+  plugin files are not edited. It is re-run with every pipeline rebuild, so
+  the profile matches the transcripts the build used.
 
 ### 2.4 Time
 
@@ -1548,7 +1549,6 @@ stage lists only what blocks that stage.
   unless run through the Skill tool; `UserPromptSubmit`/`UserPromptExpansion`
   are the candidates) — not checked. Deferred with the other OpenSpec
   points until the owner starts using it.
-- How often `/gsd:profile-user` is rerun on anonymised copies.
 - Whether the profiler's own "Sensitive Content Exclusion (Layer 1)" and
   "Message Thresholds" (in `references/user-profiling.md`, APPENDIX D.3)
   still behave correctly on an anonymised sample.
