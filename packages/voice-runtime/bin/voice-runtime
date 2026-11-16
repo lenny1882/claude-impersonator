@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# voice-runtime — the voice guide and exemplar search for drafts in the owner's
+# voice, and the record of each draft and the version the owner approved.
+#
+# Why it exists. A drafting session needs the guide cells for one audience
+# and its purposes, and the few closest real messages, from a build the
+# pipeline made on another machine (PLAN §3.5, §3.6, §5). Reading those
+# files by hand in a session gets three things wrong without any error: an
+# index embedded by another embedding setup gives nonsense neighbours, a
+# half-installed build mixes two builds, and an unknown schema is read as if
+# it were known. This command does the reading and refuses each of those
+# (exit 3, one line), so the skill can say the voice model is unavailable.
+#
+# Interpreter. `search` and `install-build` embed text, so they run on
+# embedding-lib's venv Python (3.14, numpy and the model), with
+# embedding_lib loaded from embedding-lib's install directory, never PATH
+# (PLAN §5 Coupling). The other commands run there too when it exists, and on
+# the system python3 otherwise, so the guide still loads on a machine whose
+# embedding-lib is missing.
+#
+# State is ~/.claude/skills/voice-runtime/state/, owner-only. ~/.claude is
+# outside Claude Code's Bash sandbox, so the install adds this command to
+# sandbox.excludedCommands.
+set -euo pipefail
+umask 077
+
+PKG=voice-runtime
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+HOME_DIR="${VOICE_RUNTIME_HOME:-$HOME/.local/share/$PKG}"
+if [ -d "$HOME_DIR/pylib/voice_runtime" ]; then PYLIB="$HOME_DIR/pylib"
+else PYLIB="$(cd "$(dirname "$SELF")/../pylib" && pwd)"; fi
+EL_HOME="${EMBEDDING_LIB_HOME:-$HOME/.local/share/embedding-lib}"
+EL_VPY="$EL_HOME/venv/bin/python"
+export EMBEDDING_LIB_HOME="$EL_HOME"
+
+usage() {
+  cat <<EOF
+voice-runtime — guide and exemplar search for drafts in your voice
+
+USAGE
+  voice-runtime install-build <dir> --build-time <YYYYMMDDTHHMMSSZ>
+      copy a build in (builds-sync runs this), embed its exemplars, write
+      manifest.json last, delete the previous build
+  voice-runtime guide --audience <a> --purposes <p,...>
+      the guide text for one audience and its purposes
+  voice-runtime search --audience <a> --purposes <p,...> --situation <text> [--k N]
+      the closest exemplars, as JSON
+  voice-runtime save-draft --audience <a> --purposes <p,...> --destination <d> --text-file <f>
+      record a draft; prints its id
+  voice-runtime save-final --id <id> --text-file <f> [--status approved|discarded]
+      record the version you approved, or that you discarded it
+  voice-runtime status
+      the installed build and whether it can be used, as JSON
+
+Audiences: clients, project-team, technical-team, senior, one-to-one, jira.
+Purposes: push-back, decline, ask, chase, status, explain, approve,
+own-mistake, thank, escalate, small-talk, other.
+Destination: slack:<conversation>, bitbucket:<repo>#<pr>, jira:<key>, other.
+
+Exit 3 means the voice model is unavailable; the one line says why.
+EOF
+}
+
+refuse() { printf '%s: %s\n' "$PKG" "$*" >&2; exit 3; }
+
+run_on() { # run_on <python> <args...>
+  local py="$1"; shift
+  PYTHONPATH="$PYLIB:$EL_HOME/pylib" PYTHONDONTWRITEBYTECODE=1 exec "$py" -m voice_runtime "$@"
+}
+
+case "${1:-}" in
+  -h|--help|help|"") usage ;;
+  install-build|search)
+    [ -x "$EL_VPY" ] || refuse "voice model unavailable: embedding-lib is not installed or not set up ($EL_VPY is missing). Fix: install embedding-lib, then run: embedding-lib setup"
+    run_on "$EL_VPY" "$@" ;;
+  guide|save-draft|save-final|status)
+    if [ -x "$EL_VPY" ]; then run_on "$EL_VPY" "$@"; else run_on python3 "$@"; fi ;;
+  *) printf 'unknown command: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+esac
