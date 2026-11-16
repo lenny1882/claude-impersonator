@@ -1142,7 +1142,8 @@ fire on several events.
   - Keep on the Mining page means replace. A kept term gets an entry in
     the append-only map, and every product entry in the map is replaced
     whatever its decision says now, so striking a term after keeping it
-    has no effect.
+    has no effect. Reversing a
+    keep needs its decision and map entry edited in the state.
   - A term decided in an earlier run and not listed in the current one
   - The leak page shows only anonymised snippets, so a pseudonymised host
     can't be traced to its term there.
