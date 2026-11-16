@@ -631,6 +631,10 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   before execution; anything not covered is parked.
   The file, event and signals that mark a skip are taken at build time from
   the installed GSD version and shown to the owner with the gate patterns.
+  The same hold applies to any phase where discuss didn't run with the owner,
+  including a pre-existing `CONTEXT.md` the owner didn't write (`has_context`);
+  one they wrote through discuss is recognised from its discuss session in
+  the transcripts and isn't held.
 - **Claude Code plan mode:** a `PreToolUse` hook on `ExitPlanMode` (it
   receives `plan` and `planFilePath`) reviews the plan before the owner is asked
   to approve. Planning research runs in the built-in Plan and Explore agents:
@@ -1536,9 +1540,6 @@ stage lists only what blocks that stage.
 
 ### 8.3 Decisions
 
-- Whether a pre-existing `CONTEXT.md` not written by the owner (discuss is
-  skipped when `has_context` is true) needs the same check as the
-  infrastructure skip.
 - Which hook event catches `/opsx:apply` (a slash command is not a tool call
   unless run through the Skill tool; `UserPromptSubmit`/`UserPromptExpansion`
   are the candidates) — not checked.
