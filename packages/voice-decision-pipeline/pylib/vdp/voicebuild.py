@@ -54,11 +54,13 @@ def build(log=print):
     }
     lr = leaks.scan_built(files, inputs.load(), Map.load())
     state.write_json(state.path("voice", "build-leak-report.json"), lr)
-    if lr["hits"]:
-        for t in lr["terms"][:10]:
+    # A term cleared by hand on the leak page is cleared here too (PLAN §5).
+    out_ = leaks.outstanding(lr, by_count=False)
+    if out_:
+        for t in out_[:10]:
             log(f"  leak  {t['kind']}: {t['count']}x in {', '.join(sorted({e['id'] for e in t['examples']}))}")
-        raise SystemExit(f"voice-decision-pipeline: the leak check found {len(lr['terms'])} terms "
-                         f"{lr['hits']} times in the built files; nothing was written "
+        raise SystemExit(f"voice-decision-pipeline: the leak check found {len(out_)} terms "
+                         f"{sum(t['count'] for t in out_)} times in the built files; nothing was written "
                          "(voice/build-leak-report.json)")
     out = builds_dir(bt, f"build-{bt}.tar")
     buf = io.BytesIO()

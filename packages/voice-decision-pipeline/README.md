@@ -179,6 +179,7 @@ files 600), never backed up:
 | `batches/`, `review-state.json` | drawn batches; per-source approvals and stops |
 | `index/` | `vectors.npy`, `ids.json`, `identity.json` |
 | `leak-report.json` | real names the leak check found in the anonymised copies, with where |
+| `leak-cleared.json` | the hits you marked cleared by hand, each with its count then |
 | `views/` | `show bitbucket`'s text, real names |
 | `spacy-cache.jsonl` | spaCy's tags by text hash, so reruns tag only new text |
 | `bitbucket-progress/` | each finished repo of an `extract bitbucket` still running or stopped |
@@ -271,7 +272,11 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   (`docs.product-04.com`), and that is accepted. An identifier added by
   hand is searched for from 2 characters. Anything found is listed on the
   review page with where it was, and under each snippet every pseudonym in
-  it is named with the real term behind it, read from the map.
+  it is named with the real term behind it, read from the map. A hit that
+  isn't a leak (an identifier read as a host name)
+  can be marked cleared by hand there; one found more times later is
+  outstanding again. No `voice` step sends anything, and no build is
+  written, while a term is neither fixed nor cleared.
 - **Mining:** every text a record sends is read, its text and every string
   in its source fields (keys included; not timestamps), except code: fenced
   and inline code and log lines are blanked, and the code under a Bitbucket

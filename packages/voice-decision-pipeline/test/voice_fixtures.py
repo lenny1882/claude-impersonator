@@ -95,6 +95,7 @@ w(f"{STATE}/anonymising-map.json", {"schema_version": 1, "counters": {"self": 1,
     {"real_id": "UME", "aliases": ["Sam Fixture"], "kind": "person", "role": "self", "pseudonym": "self-01", "origin": "users.json"},
     {"real_id": "UOTHER", "aliases": ["Robin Madeup"], "kind": "person", "role": "colleague", "pseudonym": "colleague-01", "origin": "users.json"},
     {"real_id": "client:zarnwick", "aliases": ["Zarnwick"], "kind": "client", "role": "client", "pseudonym": "client-01", "origin": "list"}]})
+w(f"{STATE}/leak-report.json", {"terms_checked": 3, "undecided_names": 0, "hits": 0, "terms": []})
 w(f"{STATE}/review-state.json", {s: {"batches": [], "approved": 1 if s in ("slack", "bitbucket") else 0, "stopped": False}
                            for s in ("slack", "transcripts", "bitbucket", "gsd")})
 

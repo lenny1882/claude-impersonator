@@ -53,12 +53,17 @@ class NotSendable(SystemExit):
 
 def require_sendable():
     """Nothing from a source is sent until its own first batch is approved
-    (PLAN §2.3)."""
+    (PLAN §2.3), nor while the leak check has a term not fixed or cleared
+    by hand (PLAN §5, §8.5)."""
     held = [s for s in VOICE_SOURCES if not batches.sendable(s)]
     if held:
         raise NotSendable(
             "voice-decision-pipeline: nothing is sent from " + ", ".join(held) +
             " until its first review batch is approved")
+    from . import leaks
+    why = leaks.gate()
+    if why:
+        raise NotSendable("voice-decision-pipeline: nothing is sent: " + why)
 
 
 def answered_id(r, by_id):

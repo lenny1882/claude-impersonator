@@ -225,8 +225,14 @@ def leak_line():
         und = lr.get("undecided_names") or 0
         return (f"None of {lr['terms_checked']} names, handles, emails and client names is left."
                 + (f" {und} words on Names are undecided and not counted." if und else ""))
-    return (f"<span class=err><a href='/leaks'>{len(lr['terms'])} terms left "
-            f"{lr['hits']} times</a></span>, of {lr['terms_checked']} checked.")
+    out = leaks.outstanding(lr)
+    done = len(lr["terms"]) - len(out)
+    tail = f" {done} cleared by hand." if done else ""
+    if not out:
+        return (f"<a href='/leaks'>{len(lr['terms'])} terms found {lr['hits']} times</a>, all cleared by "
+                f"hand, of {lr['terms_checked']} checked.")
+    return (f"<span class=err><a href='/leaks'>{len(out)} terms left "
+            f"{sum(t['count'] for t in out)} times</a></span>, of {lr['terms_checked']} checked.{tail}")
 
 
 def pseudonym_terms(text, amap):
@@ -261,18 +267,33 @@ def leaks_page():
         return (f"<div class=meta>{' · '.join(f'{html.escape(p)} is <b>{html.escape(t)}</b>' for p, t in pts)}"
                 f"</div>" if pts else "")
     rows = []
+    open_ = {t["term"] for t in leaks.outstanding(lr)}
+    marks = leaks.cleared()
     for t in lr["terms"]:
         ex = "".join(f"<div class=meta>{html.escape(e['source'])} · {html.escape(e['id'])}</div>"
                      f"<pre>{html.escape(e['text'])}</pre>{behind(e['text'])}" for e in t["examples"])
-        rows.append(f"<tr><td><b>{html.escape(t['term'])}</b><div class=meta>{html.escape(t['kind'])}"
-                    f" · {t['count']}×</div>{ex}</td></tr>")
+        term = html.escape(t["term"])
+        if t["term"] in open_:
+            again = (f" · cleared at {marks[t['term']]['count']}×, found more since"
+                     if t["term"] in marks else "")
+            act = (f"<button class=strike data-term='{term}' onclick=\"if(confirm('Clear this term by hand? "
+                   f"Nothing will stop on it until it is found more times than now.'))post('/api/leak-clear',"
+                   f"{{term:this.dataset.term,cleared:true}}).then(()=>location.reload())\">Cleared by hand</button>")
+        else:
+            again = f" · <b>cleared by hand</b> {html.escape(marks[t['term']]['at'])}"
+            act = (f"<button data-term='{term}' onclick=\"post('/api/leak-clear',{{term:this.dataset.term,"
+                   f"cleared:false}}).then(()=>location.reload())\">Undo</button>")
+        rows.append(f"<tr><td><b>{term}</b><div class=meta>{html.escape(t['kind'])}"
+                    f" · {t['count']}×{again}</div>{ex}</td><td class=act>{act}</td></tr>")
     return page("Leak check", f"""
 <p>Each term below is a real name, handle, email or client name the pipeline knows,
 found in what is sent of the anonymised copies after <code>anonymise</code>. Each is a place the
 replacement missed. Under each snippet, every pseudonym in it is named with the real term behind
 it, from the map on this machine. Fix the cause, or strike the person with <code>forget</code>,
-then run <code>anonymise</code> again.</p>
-<table><tr><th>Term, kind, where it was found</th></tr>{''.join(rows)}</table>""")
+then run <code>anonymise</code> again. A hit that isn't a leak (an iOS app-group identifier read
+as the host <code>group.com</code>) can be marked cleared by hand. Nothing is sent while any term
+is neither fixed nor cleared, and a cleared term found more times later is outstanding again.</p>
+<table><tr><th>Term, kind, where it was found</th><th></th></tr>{''.join(rows)}</table>""")
 
 
 def names_page():
@@ -598,6 +619,12 @@ class Handler(BaseHTTPRequestHandler):
                 batches.draw(body["source"])
             elif p == "/api/decide":
                 batches.decide(body["name"], body["status"], body.get("note", ""))
+            elif p == "/api/leak-clear":
+                lr = leaks.load() or {}
+                t = {x["term"]: x for x in lr.get("terms", [])}.get(body["term"])
+                if t is None:
+                    raise ValueError("not a term in the leak report")
+                leaks.set_cleared(t["term"], bool(body.get("cleared")), t["count"])
             elif p == "/api/stop":
                 batches.stop(body["source"])
             else:

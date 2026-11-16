@@ -711,6 +711,33 @@ vv label >/dev/null 2>&1 && no "voice label refuses before a source's first batc
   || ok "voice label refuses before a source's first batch is approved"
 cp "$VST/review.ok.json" "$VST/review-state.json"
 check "voice label: the stand-in claude was never called while held" test ! -e "$VST/labels/labeller.jsonl"
+cp "$VST/leak-report.json" "$VST/leak-report.clean.json"
+cat > "$VST/leak-report.json" <<'EOF'
+{"terms_checked": 3, "undecided_names": 0, "hits": 3, "terms": [{"term": "group.com", "kind": "private URL host", "count": 3, "examples": [{"source": "bitbucket", "id": "x", "text": "group.com.client-01.app"}]}]}
+EOF
+out=$(vv label 2>&1); rc=$?
+[ $rc != 0 ] && printf '%s' "$out" | grep -q "leak check has 1 term(s) not fixed or cleared (private URL host 3x)" \
+  && ! printf '%s' "$out" | grep -q "group.com" \
+  && ok "voice label refuses on an uncleared leak hit, naming its kind and count, never the term" \
+  || no "voice label refuses on an uncleared leak hit, naming its kind and count, never the term" "exit $rc: $out"
+check "the stand-in claude was never called while the leak hit stood" test ! -e "$VST/labels/labeller.jsonl"
+check "a term cleared by hand no longer stops sending; found more times, it does again" vpy <<'EOF'
+from vdp import leaks, state, voice
+leaks.set_cleared("group.com", True, 3)
+assert leaks.gate() is None, leaks.gate()
+voice.require_sendable()
+r = leaks.load(); r["terms"][0]["count"] = 4; r["hits"] = 4
+state.write_json(leaks.report_file(), r)
+assert "1 term(s)" in leaks.gate()
+assert leaks.outstanding(r, by_count=False) == []
+leaks.set_cleared("group.com", False)
+assert leaks.cleared() == {}
+EOF
+rm -f "$VST/leak-report.json"
+out=$(vv label 2>&1); rc=$?
+[ $rc != 0 ] && printf '%s' "$out" | grep -q "leak check hasn't run yet" \
+  && ok "voice label refuses before any leak check has run" || no "voice label refuses before any leak check has run" "exit $rc: $out"
+cp "$VST/leak-report.clean.json" "$VST/leak-report.json"
 export FAKE_CLAUDE_COUNT="$TMP/claude-count"; echo 0 > "$FAKE_CLAUDE_COUNT"
 FAKE_CLAUDE_LIMIT=3 vv label > "$TMP/vlabel1.out" 2>&1; rc=$?
 [ $rc = 6 ] && grep -q "usage limit after 40 items" "$TMP/vlabel1.out" \
@@ -923,6 +950,20 @@ check "a grade is saved at once" \
   bash -c "curl -sf -X POST -H 'Content-Type: application/json' -d '{\"ref\":\"$P1\",\"grade\":5}' '${VURL}api/voice/pair-grade' >/dev/null && tail -1 '$VST/validation-answers.jsonl' | jq -e '.grade==5' >/dev/null"
 check "a label-check verdict is saved" \
   bash -c "I=\$(jq -r '.ids[0]' '$VST/label-check.json'); curl -sf -X POST -H 'Content-Type: application/json' -d \"{\\\"id\\\":\\\"\$I\\\",\\\"verdict\\\":\\\"right\\\"}\" '${VURL}api/voice/label-check' >/dev/null && jq -e --arg i \"\$I\" '.answers[\$i].verdict==\"right\"' '$VST/label-check.json' >/dev/null"
+cp "$VST/leak-report.json" "$VST/leak-report.clean.json"
+cat > "$VST/leak-report.json" <<'EOF'
+{"terms_checked": 3, "undecided_names": 0, "hits": 3, "terms": [{"term": "group.com", "kind": "private URL host", "count": 3, "examples": [{"source": "bitbucket", "id": "x", "text": "group.com.client-01.app"}]}]}
+EOF
+check "the leak page offers to clear a hit by hand" bash -c "curl -sf '${VURL}leaks' | grep -q 'Cleared by hand</button>'"
+check "clearing a hit on the leak page is saved with its count" \
+  bash -c "curl -sf -X POST -H 'Content-Type: application/json' -d '{\"term\":\"group.com\",\"cleared\":true}' '${VURL}api/leak-clear' >/dev/null && jq -e '.\"group.com\".count==3' '$VST/leak-cleared.json' >/dev/null"
+check "a cleared hit is shown as cleared, with Undo, and the home line says all are cleared" \
+  bash -c "curl -sf '${VURL}leaks' | grep -q '<b>cleared by hand</b>' && curl -sf '${VURL}leaks' | grep -q '>Undo</button>' && curl -sf '$VURL' | grep -q 'all cleared by hand'"
+check "clearing a term not in the report is refused" \
+  test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"term":"nothing.example","cleared":true}' "${VURL}api/leak-clear")" = 400
+check "Undo takes the mark off" \
+  bash -c "curl -sf -X POST -H 'Content-Type: application/json' -d '{\"term\":\"group.com\",\"cleared\":false}' '${VURL}api/leak-clear' >/dev/null && jq -e '.==({})' '$VST/leak-cleared.json' >/dev/null"
+cp "$VST/leak-report.clean.json" "$VST/leak-report.json"
 check "the voice pages refuse a cross-origin POST" \
   test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Origin: http://evil.example' -d '{}' "${VURL}api/voice/pair")" = 403
 kill "$RPIDV" 2>/dev/null; wait "$RPIDV" 2>/dev/null

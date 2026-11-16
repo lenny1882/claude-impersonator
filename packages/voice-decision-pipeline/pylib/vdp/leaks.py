@@ -193,3 +193,55 @@ def scan_built(files, d, amap):
     return {"terms_checked": len(found), "hits": sum(h["count"] for h in hits.values()),
             "terms": sorted(({"term": t, "kind": kinds[t], **h} for t, h in hits.items()),
                             key=lambda x: (-x["count"], x["term"]))}
+
+
+# -- hits cleared by hand (PLAN §5) ----
+
+def cleared_file():
+    return state.path("leak-cleared.json")
+
+
+def cleared():
+    """{term: {"count", "at"}}: hits the owner marked cleared on the leak page,
+    each with how many times the term was found when they did."""
+    return state.read_json(cleared_file(), {}) or {}
+
+
+def set_cleared(term, on, count=0):
+    import time
+    c = cleared()
+    if on:
+        c[term] = {"count": count, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    else:
+        c.pop(term, None)
+    state.write_json(cleared_file(), c)
+
+
+def outstanding(report, by_count=True):
+    """The report's terms not cleared by hand. A term found more times than
+    when it was cleared is outstanding again: the new places weren't seen.
+    The build's report is matched by term alone (by_count=False), since its
+    counts are of the built files, not the copies."""
+    c = cleared()
+    out = []
+    for t in (report or {}).get("terms", []):
+        m = c.get(t["term"])
+        if m is None or (by_count and t["count"] > m["count"]):
+            out.append(t)
+    return out
+
+
+def gate():
+    """Why nothing may be sent, or None: no leak check yet, or terms in it
+    not cleared (PLAN §8.5: a failing leak check stops a run before anything
+    is sent). Names kinds and counts only, never a term: the message goes to
+    a log Claude reads."""
+    r = load()
+    if r is None:
+        return "the leak check hasn't run yet: run 'voice-decision-pipeline anonymise'"
+    out = outstanding(r)
+    if not out:
+        return None
+    kinds = ", ".join(f"{t['kind']} {t['count']}x" for t in out[:5])
+    return (f"the leak check has {len(out)} term(s) not fixed or cleared ({kinds}); fix them and "
+            "rerun 'anonymise', or mark them cleared on the review page's leak check")
