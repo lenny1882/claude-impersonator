@@ -428,6 +428,11 @@ subagent loads the skill is open (§8.2).
   conversation, close in time, closest by similarity) and records that as
   the approved version.
 - Regular review sessions with the owner feed them back in.
+  One is offered once 20 edited drafts have built up or 4 weeks
+  have passed, whichever is first (config values), and the owner can start one
+  at any time. It runs on the local review page: recurring edits shown as
+  suggested lines for the owner's rules file, approved versions proposed as
+  exemplars, each accepted or rejected by the owner.
 - Approved versions do not join the exemplar pool on their own; they go in
   only through the review sessions.
 
@@ -1404,7 +1409,6 @@ stage lists only what blocks that stage.
 
 ### 8.2 Voice
 
-- How often the regular review sessions run, and what form they take.
 - The exact line added to `~/.claude/CLAUDE.md` to load the voice skill
   (the owner approves the wording; CLAUDE.md is theirs).
 - Whether subagents receive the `~/.claude/CLAUDE.md` line that loads the
