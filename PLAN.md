@@ -489,6 +489,9 @@ subagent loads the skill is open (§8.2).
 
 A short block (about 300–600 tokens): the three kinds that may be decided
 alone, the park rule, the priority order, and how to call the lookup script.
+Its wording limits it to technical decisions in code work and in
+recommendations about code; in sessions that never touch code it asks and
+parks nothing.
 At each decision the agent calls the lookup, which returns the matching
 principles, tech positions and client constraints, each with its status
 (usable, below the evidence bar, unresolved). The lookup uses similarity
@@ -1573,8 +1576,6 @@ stage lists only what blocks that stage.
 
 - Whether OpenSpec runs its own agents (its docs don't say). Deferred until
   the owner starts using it.
-- How the `SessionStart` block behaves in sessions that never touch code (it
-  fires in every session; behaviour not decided).
 - What a build does with the review log: whether a principle with wrong
   blocks against it is narrowed, or drops back to "ask" as a confirmed wrong
   decision does (§4.12), and how logged reviews that found nothing are used
