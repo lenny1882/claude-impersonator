@@ -625,10 +625,12 @@ text lives and which event marks it final. The first adapters are the GSD
 infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 
 - **GSD infrastructure skip:** `autonomous` skips discuss for phases it judges
-  pure infrastructure and writes a minimal `CONTEXT.md`. A hook detects that
-  minimal `CONTEXT.md` (which event, how it holds the run, and what it
-  reviews at that point: §8.3) and holds the run until the planner's
-  approach has been looked up; anything not covered is parked.
+  pure infrastructure and writes a minimal `CONTEXT.md`. A hook notes the
+  skipped phase when that file is written, and when the executor is about
+  to start, the phase's first `PLAN.md` is reviewed against the principles
+  before execution; anything not covered is parked.
+  The file, event and signals that mark a skip are taken at build time from
+  the installed GSD version and shown to the owner with the gate patterns.
 - **Claude Code plan mode:** a `PreToolUse` hook on `ExitPlanMode` (it
   receives `plan` and `planFilePath`) reviews the plan before the owner is asked
   to approve. Planning research runs in the built-in Plan and Explore agents:
@@ -1534,14 +1536,6 @@ stage lists only what blocks that stage.
 
 ### 8.3 Decisions
 
-- The infrastructure-skip check: which hook event detects the minimal
-  `CONTEXT.md` (the file write, or its `bm-sdk` commit), how it holds the
-  run, and which signals it matches (candidates, §7: the display line, and
-  a `<domain>` that is the phase boundary from the ROADMAP goal). Also what is
-  reviewed at that point: when the minimal `CONTEXT.md` is written the planner
-  hasn't run, so there is no approach yet; the check either reviews the phase
-  goal against the decision model there, or waits for the first `PLAN.md`
-  before execution starts.
 - Whether a pre-existing `CONTEXT.md` not written by the owner (discuss is
   skipped when `has_context` is true) needs the same check as the
   infrastructure skip.
