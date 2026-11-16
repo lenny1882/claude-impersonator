@@ -712,9 +712,11 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 - Every decision made alone is logged with the agent and the principle ids it
   relied on.
 - An approved entry, the only kind that lets a gate through, is an "asked"
-  entry or one citing a principle the gate itself looks up and finds usable
-  anything else is denied and the agent parks a
-  question.
+  entry. An entry citing a principle the gate itself
+  looks up and finds usable passes too, but only once the owner takes the
+  §4.12 step that lets at-bar principles satisfy the gates; until then only
+  the owner's answers pass. Anything else is denied and the
+  agent parks a question.
 - Answers to parked questions are copied in as entries marked "asked". A
   changed answer gets a new entry that supersedes the old one, never an edit.
 - `decision-runtime` writes the "asked" entry when it reads the answer to
