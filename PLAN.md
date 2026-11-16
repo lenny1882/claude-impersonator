@@ -628,6 +628,9 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   lists the question as answered with nothing waiting, with its session
   link; the owner reopens it, and nothing runs `claude -p --resume` on its
   own.
+- `question-store` registers one hook, `SessionStart`:
+  it lists the repo's open questions, and answered ones whose session has
+  closed, reading the question record only.
 - The session that parks a question sends its push, with Claude Code's
   push notification tool. No session runs only to
   deliver questions.
@@ -1396,8 +1399,8 @@ stage lists only what blocks that stage.
     evidence quotes keep it (§4.10).
 
 **Stage 3 – `question-store`**
-24. All of §8.4.
-25. Which hooks it registers (§8.5).
+24. §8.4: see §4.7.
+25. Hooks: see §4.7.
 
 **Stage 4 – decision model and `decision-runtime`**
 26. Similarity search or keyword lookup (§8.3); decides whether
@@ -1613,8 +1616,6 @@ stage lists only what blocks that stage.
 
 ### 8.5 Packaging and process
 
-- Which hooks `question-store` itself registers (it's a command package
-  with hook registrations, §5).
 - Which estimates still need measuring: Bitbucket PR and comment volume,
   commits per GSD plan (the after-each-plan figure in §6 rests on an assumed
   count), the number of PRs per repo.
