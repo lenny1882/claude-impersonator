@@ -1562,8 +1562,13 @@ stage lists only what blocks that stage.
   unless run through the Skill tool; `UserPromptSubmit`/`UserPromptExpansion`
   are the candidates) — not checked. Deferred with the other OpenSpec
   points until the owner starts using it.
-- Whether any GSD setting can narrow `bm-executor`'s Rules 1–3 (not checked).
-  L116 also forbids ad-hoc pauses to ask about mechanics (APPENDIX D.3).
+- No GSD setting narrows `bm-executor`'s Rules 1–3 (checked in GSD 5.1.0's
+  `agents/bm-executor.md`): its only config reads are
+  `workflow._auto_chain_active` and `workflow.auto_advance`. Rule 3 already
+  excludes package-manager installs. The one lever is a project
+  `./CLAUDE.md`, which the executor treats as hard constraints over plan
+  instructions (open below). L116 also forbids ad-hoc pauses to ask about
+  mechanics (APPENDIX D.3).
 - Whether `bm-phase-researcher` (spawned by `/gsd:quick`, `quick.md` L411)
   needs the parking test along with the other deciding agents (§4.11).
 - Whether the after-each-plan review hooks `SubagentStop` or `PreToolUse` on
