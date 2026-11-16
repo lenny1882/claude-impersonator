@@ -1616,8 +1616,14 @@ stage lists only what blocks that stage.
   tested.
 - Origin weighting (§4.9) needs the transcript's AskUserQuestion answers,
   because GSD's `CONTEXT.md` records only the final answer (§7).
-- Which GSD checkpoints auto-approve, beyond `gate="blocking-human"` ones
-  being excluded (§7): not checked.
+- Which GSD checkpoints auto-approve (checked in GSD 5.1.0):
+  with `workflow.auto_advance` or `workflow._auto_chain_active` true, and
+  `auto_advance` defaults to true, `checkpoint:human-verify` auto-approves
+  except `gate="blocking-human"` and package-legitimacy checks;
+  `checkpoint:decision` auto-selects its first option (logged "⚡
+  Auto-selected"); `checkpoint:human-action` still stops
+  (`references/checkpoints.md` L11, `agents/bm-executor.md` L315). How
+  auto-selected decisions are handled is open.
 - Whether Rule 4's checkpoint (what was found, proposed change, why, impact,
   alternatives — §7), and the package-install `checkpoint:human-verify`
   (answered "verified" with the package name, or "abort"; APPENDIX D.3),
@@ -1631,9 +1637,9 @@ stage lists only what blocks that stage.
   beyond that page.
 - OpenSpec lets any artifact change at any time, so edits to
   `openspec/changes/<change>/` after `/opsx:apply` aren't seen by the plan
-  reviewer. Whether the adapter re-reviews on later edits, or leaves them to
-  the end-of-turn review treating spec text as decisions (open above), is
-  not decided.
+  reviewer. The end-of-turn review reads spec files as decisions (§4.5),
+  so later edits are caught there; the rest waits until the owner starts using
+  OpenSpec.
 - Whether `[Rule N - Type]` deviation entries in GSD `SUMMARY.md` files are
   also decision candidates for the extraction filter (§4.9). Not decided.
 - How grill-with-docs records are weighted (§4.9). `grilling` asks a whole
