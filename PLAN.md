@@ -797,7 +797,11 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   maintainability).
 - Tech positions on specific tools and platforms (for example:
   Flutter), dated.
-- Client constraints, per client or project.
+- Client constraints, per client or project. Which client a repo belongs
+  to comes from a mapping the pipeline proposes from each picked repo's
+  name and its PRs' conversations, which the owner confirms on the local review
+  page; it is stored with the build. A repo with no client, or first seen
+  after the build, gets no client constraints until a build maps it.
 - Examples of the contents: principle "prefer
   the platform's own service over a third-party one"; priority order
   a principle weighing maintainability against delivery speed, except for client-facing
@@ -1542,9 +1546,8 @@ stage lists only what blocks that stage.
 
 - Which hook event catches `/opsx:apply` (a slash command is not a tool call
   unless run through the Skill tool; `UserPromptSubmit`/`UserPromptExpansion`
-  are the candidates) — not checked.
-- How client constraints are matched to the current repo (a repo-to-client
-  mapping).
+  are the candidates) — not checked. Deferred with the other OpenSpec
+  points until the owner starts using it.
 - How often `/gsd:profile-user` is rerun on anonymised copies.
 - Whether the profiler's own "Sensitive Content Exclusion (Layer 1)" and
   "Message Thresholds" (in `references/user-profiling.md`, APPENDIX D.3)
