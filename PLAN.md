@@ -1148,7 +1148,10 @@ fire on several events.
     Such terms get their own section on the Mining page, apart from
     Decided, each with its decision, so a struck one can be kept.
   - The leak page shows only anonymised snippets, so a pseudonymised host
-    can't be traced to its term there.
+    can't be traced to its term there. So each
+    hit's snippet notes the real term behind every pseudonym in it, read
+    from the map on this machine; the page stays local and Claude still
+    never reads it.
   - Batches are rejected, and a source's review stopped, only on the
     review page; there is no command for either.
   - The leak check reads an iOS app-group identifier
