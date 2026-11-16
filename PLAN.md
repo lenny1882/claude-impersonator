@@ -211,8 +211,6 @@ Left out:
   session, log to a file Claude monitors, stop cleanly at a usage limit and
   resume from the last finished batch; prompts are adjusted between passes,
   not during one.
-- Accepted exception: Slack questions and replies go through the Slack
-  connector with real names (§4.7).
 - Not covered by this rule: reviewer hooks send code diffs
   from the working repo to the API un-anonymised (they aren't corpus data).
 - Built outputs are anonymised: the voice guide,
@@ -594,36 +592,25 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   it. At trust level 0 the asking agent's recommendation and the model's
   prediction are both hidden until the owner answers, then shown with whether
   each matched; from level 1 both appear with the question.
-- Channels: push notification (only tells the owner a question is waiting), the
-  session itself (locally or through Remote Control), and a Slack DM to the owner
-  with real names. Questions and replies go through the Slack connector, so
-  their text reaches the API with real names — an accepted exception to §2.3.
-  The reason: it's a DM to the owner in the company Slack, which already
-  holds this material, and anonymised questions would be hard to answer from
-  a phone.
+- Channels: push notification (only tells the owner a question is waiting) and
+  the session itself, answered locally or from the phone through Remote
+  Control. Slack is not a channel: a Slack connector
+  message posts as the owner, and Slack doesn't notify a user of their own
+  self-DM. A run started in a plain terminal session is answered only at
+  that terminal; long runs are started in Remote Control sessions. Slack
+  can be added later through a separate bot app with its own token, never
+  the connector.
 - Every answer, from any channel, is written back to one local question
   record (`questions.jsonl` in `question-store`'s state, holding each
   question, its status, the answer, the channel it came from and when); first
-  answer wins and the other channels are told (Slack gets a thread reply
-  saying where it was answered.
+  answer wins and the other channels are told.
   A later, different answer is not applied; the owner is told it was
   already answered.
 - One session command lists every question, open and answered, with the
   answer and the channel it came from.
-- The session that parks a question sends its push and Slack notice; Slack
-  replies are read when the owner next runs the session command.
-  No session runs only to deliver or collect, so a reply sent from
-  the phone waits until then. The push is Claude Code's push notification
-  tool, called by that session.
-- Slack questions go out without per-message approval, under a standing
-  exception in `~/.claude/CLAUDE.md` limited to `question-store`'s question
-  DMs to the owner; the owner approves its exact wording.
-- If Slack stays a channel, it uses a separate personal Slack app with its
-  own bot token, as the owner's other notification hooks do, never the Slack
-  connector. A connector message posts as the owner, and
-  Slack doesn't notify a user of their own self-DM. The bot needs `im:history` as well as `chat:write` and `im:write` to read
-  replies. Whether Slack stays at all, beside push and Remote Control, is
-  open (§8.4).
+- The session that parks a question sends its push, with Claude Code's
+  push notification tool. No session runs only to
+  deliver questions.
 - Open questions are mirrored to GSD blockers (`gsd_add_blocker`; resolved
   with `gsd_resolve_blocker`), so questions survive a restart and
   `autonomous`'s `handle_blocker` step stops at them before the next phase.
@@ -853,7 +840,7 @@ fire on several events.
   — the `SessionStart`/`SubagentStart` blocks, gates, reviewers, plan-review
   adapters, the lookup and the decision log. `question-store` — park
   (record a question; the agent carries on with independent work), notify
-  (push, session, Slack DM), collect (every channel's answer written back to
+  (push, session), collect (every channel's answer written back to
   one record; first answer wins, the others are told), hand back (waiting
   work reads the answer), show (the session command), mirror (open
   questions as GSD blockers; where mirroring lives is open, §8.4). This
@@ -1599,7 +1586,6 @@ stage lists only what blocks that stage.
 
 ### 8.4 Questions to the owner (`question-store`)
 
-- Whether Slack stays a question channel beside push and Remote Control.
 - The session command's name, and whether it can also be used to answer.
 - What a question shows beyond the fields in §4.7 (decision, options,
   principles that came close, waiting work), e.g. a deadline or which run is
