@@ -715,7 +715,9 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 ### 4.8 Decision log
 
 - Every decision made alone is logged with the agent and the principle ids it
-  relied on.
+  relied on. Only in `decision-runtime`'s log, never in GSD's `STATE.md`
+  decisions: the pipeline reads those as the owner's own,
+  so the model would learn from its own output.
 - An approved entry, the only kind that lets a gate through, is an "asked"
   entry. An entry citing a principle the gate itself
   looks up and finds usable passes too, but only once the owner takes the
@@ -1527,8 +1529,6 @@ stage lists only what blocks that stage.
 
 ### 8.3 Decisions
 
-- Whether decisions are also written to GSD's own decision log
-  (`gsd_add_decision`) in GSD repos, alongside `decision-runtime`'s log.
 - Where the decision log lives and its entry format, beyond the fields in §4.8
   (decision, agent, principle ids, asked or made alone, supersedes).
 - The infrastructure-skip check: which hook event detects the minimal
