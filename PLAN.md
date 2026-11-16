@@ -589,7 +589,9 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 
 - Each question states the decision, what happens today, each option and
   what it changes, the principles that came close, and the work waiting on
-  it. At trust level 0 the asking agent's recommendation and the model's
+  it, plus where it came from (the repo, the session's name and its Remote
+  Control link) and when it was parked; no deadline.
+  At trust level 0 the asking agent's recommendation and the model's
   prediction are both hidden until the owner answers, then shown with whether
   each matched; from level 1 both appear with the question.
 - Channels: push notification (only tells the owner a question is waiting) and
@@ -1589,9 +1591,6 @@ stage lists only what blocks that stage.
 
 ### 8.4 Questions to the owner (`question-store`)
 
-- What a question shows beyond the fields in §4.7 (decision, options,
-  principles that came close, waiting work), e.g. a deadline or which run is
-  waiting.
 - Blocker mirroring (§4.7) works only in GSD repos (no `STATE.md`
   elsewhere; APPENDIX B.5). Open: whether anything outside GSD needs a stop
   like `handle_blocker`, or the question record and the park rule are enough
