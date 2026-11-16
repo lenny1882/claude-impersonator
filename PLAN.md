@@ -610,6 +610,20 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   already answered.
 - One session command lists every question, open and answered, with the
   answer and the channel it came from.
+- The session that parks a question sends its push and Slack notice; Slack
+  replies are read when the owner next runs the session command.
+  No session runs only to deliver or collect, so a reply sent from
+  the phone waits until then. The push is Claude Code's push notification
+  tool, called by that session.
+- Slack questions go out without per-message approval, under a standing
+  exception in `~/.claude/CLAUDE.md` limited to `question-store`'s question
+  DMs to the owner; the owner approves its exact wording.
+- If Slack stays a channel, it uses a separate personal Slack app with its
+  own bot token, as the owner's other notification hooks do, never the Slack
+  connector. A connector message posts as the owner, and
+  Slack doesn't notify a user of their own self-DM. The bot needs `im:history` as well as `chat:write` and `im:write` to read
+  replies. Whether Slack stays at all, beside push and Remote Control, is
+  open (§8.4).
 - Open questions are mirrored to GSD blockers (`gsd_add_blocker`; resolved
   with `gsd_resolve_blocker`), so questions survive a restart and
   `autonomous`'s `handle_blocker` step stops at them before the next phase.
@@ -1585,21 +1599,7 @@ stage lists only what blocks that stage.
 
 ### 8.4 Questions to the owner (`question-store`)
 
-- Which session sends notices and reads Slack replies, and how often (push
-  and the Slack connector are only callable from a Claude session). Push and
-  Slack delivery, and reading Slack replies, only happen while a Claude
-  session is running, not from a background service. A question parked when
-  no session is running isn't delivered until one starts. A background
-  sender could only send by some other route than those two tools.
-- Whether a Slack DM to the owner themselves counts as "posting" under the
-  approval gate on outgoing messages, which covers the exact
-  text. Sending questions there needs either a standing exception written
-  into that rule or approval per message.
-- Which push mechanism is used (Claude Code's push notification tool is
-  assumed).
-- Whether a Slack DM the owner sends to themselves notifies them at all. Slack may not send
-  notifications for messages in a self-DM, which would make it a place
-  to answer but not a way to be told. Not checked.
+- Whether Slack stays a question channel beside push and Remote Control.
 - The session command's name, and whether it can also be used to answer.
 - What a question shows beyond the fields in §4.7 (decision, options,
   principles that came close, waiting work), e.g. a deadline or which run is
