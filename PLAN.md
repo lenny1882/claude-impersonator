@@ -489,7 +489,7 @@ is a `voice-decision-pipeline` output (§5).
 |---|---|---|
 | Gating hooks: deny dependency changes (manifest edits, installs), test-framework switches and edits under marked paths unless the decision log has an approved entry | enforced | every session and subagent |
 | Logging gate: a `SubagentStop` and `Stop` hook refuses to let an agent finish while it has decisions it hasn't logged. **Ambiguous** — see §8.3 | enforced (that it records, not that it decided well) | every session and subagent |
-| `SubagentStart` block | advisory | every subagent, plugin and workflow agents included (agents that never decide can be skipped by type; which ones, Explore included, is open — §8.3). Observed firing for workflow agents and for a GSD plugin agent (`gsd:bm-executor`; saved hook log, APPENDIX D.2). That the block's context reaches the agent is not tested for either — §8.3 |
+| `SubagentStart` block | advisory | every subagent, plugin and workflow agents included (read-only search and help agents, such as Explore and `claude-code-guide`, are skipped by type; Plan agents and every agent that edits or recommends get it). Observed firing for workflow agents and for a GSD plugin agent (`gsd:bm-executor`; saved hook log, APPENDIX D.2). That the block's context reaches the agent is not tested for either — §8.3 |
 | `SessionStart` block (instead of a CLAUDE.md section, so subagents don't get it twice) | advisory | the main session, every session (not just GSD repos, because Claude's recommendations in ordinary sessions follow the model — §4.1) |
 
 Gates:
@@ -588,6 +588,18 @@ recommendation can be reconsidered once that review is done.
     decisions and checked like code. Apart from plan mode and the GSD
     infrastructure skip (§4.6), this is the only check on plan text before
     it is built.
+  - Coverage: the reports of `bm-advisor-researcher`,
+    `bm-framework-selector`, `bm-plan-checker`, `code-review-fix` and
+    `bm-ui-auditor` are checked against the principles when each finishes,
+    so a recommendation against one is flagged before the owner chooses.
+    `UI-SPEC.md` is read as a plan file. A hook records every file written
+    or edited through Claude's file tools, in any folder, and the reviewer
+    gets those changes as well as the git diff, so folders that aren't git
+    repos and files such as `~/.claude` are covered; a shell-made change
+    outside a git repo is not. OpenSpec's open points wait until the owner
+    starts using it.
+  - A skipped agent's decision is still caught if it ends up in code; one
+    that reaches the owner only as a recommendation is not.
   - Each `claude -p` call carries about 46k tokens of Claude Code's own
     setup, which §6's reviewer figures leave out.
 - What stays unprevented: a judgement call made in text inside a GSD step
@@ -1468,9 +1480,8 @@ stage lists only what blocks that stage.
 28. Approved entries and plan comments: see §4.8 and §4.10.
 29. Gates: see §4.4.
 30. Reviewers: see §2.3 and §4.5.
-31. Coverage: `SubagentStart` skip list and a delivery test, advisor
-    agents, `autonomous` and its UI phases, OpenSpec, non-git folders
-    (§8.3). Other machines: §5, Builds on
+31. Coverage: settled in §4.4 and §4.5; the
+    `SubagentStart` delivery test is a build task (§8.3). Other machines: §5 (Builds on
     every machine.
 32. Behaviour before the model passes validation (§8.3).
 33. Build task, not a question: search every available transcript for a
@@ -1538,7 +1549,8 @@ stage lists only what blocks that stage.
   `SubagentHandback`: the observed `bm-executor` handed back through a
   `SubagentHandback` tool call, logged by `PreToolUse` a second before
   `SubagentStop` (APPENDIX D.2). Not decided.
-- Whether OpenSpec runs its own agents (its docs don't say).
+- Whether OpenSpec runs its own agents (its docs don't say). Deferred until
+  the owner starts using it.
 - How the `SessionStart` block behaves in sessions that never touch code (it
   fires in every session; behaviour not decided).
 - What the gates and reviewers do before the decision model exists or while
@@ -1546,10 +1558,6 @@ stage lists only what blocks that stage.
   validation.
 - How the owner adds or adjusts a principle directly. The principles file is
   generated, so it needs a pipeline input, like the voice guide.
-- Folders that aren't git repos (e.g. a scratch folder) have no diff
-  for the end-of-turn review, and changes outside the working directory (e.g.
-  `~/.claude` files) aren't seen unless the hook is told where to look.
-  Whether those are covered is not decided.
 - Sessions this machine's hooks don't reach: claude.ai cloud sessions and
   any other machine.
   Per §5 (Builds on every machine), the runtimes are installed on
@@ -1560,17 +1568,9 @@ stage lists only what blocks that stage.
 - `bm-executor` treats a project `./CLAUDE.md` as hard constraints — a
   stronger route for that agent (it would mean editing each repo's
   CLAUDE.md).
-- Whether `bm-advisor-researcher`, `bm-framework-selector`, `bm-plan-checker`
-  and `code-review-fix` — which recommend or judge without the owner — are covered
-  beyond the `SubagentStart` block (the review points cover code changes, not
-  recommendations).
-- Which agent types the `SubagentStart` block skips. Today §4.4 allows
-  skipping agents that never decide, by type, while §4.6 has the Explore and
-  Plan agents (planning research) and grill-me's fact-finding subagents
-  receiving the block. Options: skip Explore (and other read-only types),
-  so they get nothing; or skip none, so every subagent gets the block.
-  Workflow agents launched with `agentType` report that type, not
-  `workflow-subagent` (APPENDIX D.1).
+- Workflow agents launched with `agentType` report that type, not
+  `workflow-subagent` (APPENDIX D.1), which the `SubagentStart` skip list
+  matches on.
 - A test that the `SubagentStart` block's `additionalContext` reaches the
   agent, for GSD plugin agents and workflow agents. That the event fires for
   both is shown by the saved hook log (§7); delivery of the context was not
@@ -1591,8 +1591,6 @@ stage lists only what blocks that stage.
   e.g. stopping, then resuming with `--from`. In `autonomous --interactive`,
   plan and execute for phase N run as background agents while discuss for
   N+1 starts; how a question parked by N's executor interacts with that is open.
-- Whether `autonomous`'s ui-phase (UI design contract) and ui-review are
-  covered; not decided.
 - Origin weighting (§4.9) needs the transcript's AskUserQuestion answers,
   because GSD's `CONTEXT.md` records only the final answer (§7).
 - Which GSD checkpoints auto-approve, beyond `gate="blocking-human"` ones
