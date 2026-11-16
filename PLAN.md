@@ -606,8 +606,13 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   record (`questions.jsonl` in `question-store`'s state, holding each
   question, its status, the answer, the channel it came from and when); first
   answer wins and the other channels are told.
-  A later, different answer is not applied; the owner is told it was
-  already answered.
+  A later, different answer from another channel is not applied;
+  The owner is told it was already answered. The owner changes an answer on
+  purpose in `/questions`: not yet picked up, the new
+  answer replaces it; picked up by a session still running, that session is
+  told on its next turn; picked up by a run that has ended, `/questions`
+  marks it changed after use for the owner to decide what to redo. The
+  decision log keeps both answers.
 - One session command, `/questions`, lists every question, open and
   answered, with the answer and the channel it came from, and answers them:
   an open question picked there is put to the owner as a multiple-choice prompt
@@ -1595,9 +1600,6 @@ stage lists only what blocks that stage.
 
 ### 8.4 Questions to the owner (`question-store`)
 
-- How the owner changes an answer already given (which channel or command), and
-  what happens to work that has already resumed on the old answer. §4.8
-  covers only the log entry.
 - How waiting work learns that a parked question has been answered and is
   resumed, outside `autonomous`'s blocker route: polling by the waiting
   agent, a hook in the next turn, or the owner restarting it. Open: if
