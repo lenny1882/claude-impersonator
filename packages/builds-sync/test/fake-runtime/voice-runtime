@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# A stand-in voice-runtime, for the tests only: records each install-build
+# call, keeps a copy of what it was handed, and writes its manifest.json last
+# as the real runtime does.
+set -eu
+[ "${1:-}" = install-build ] || { echo "fake voice-runtime: $*" >&2; exit 2; }
+dir="$2"; bt="$4"
+printf 'install-build %s --build-time %s\n' "$dir" "$bt" >> "$FAKE_RUNTIME_CALLS"
+stat -c '%a' "$(dirname "$dir")" >> "$FAKE_RUNTIME_CALLS.modes"
+rm -rf "$FAKE_RUNTIME_GOT"; cp -r "$dir" "$FAKE_RUNTIME_GOT"
+[ -n "${FAKE_RUNTIME_FAIL:-}" ] && { echo "fake failure"; exit 1; }
+st="$CLAUDE_DIR/skills/voice-runtime/state"; mkdir -p "$st"
+printf '{"schema_version":1,"build_time":"%s","files":{}}\n' "$bt" > "$st/manifest.json"
+echo "installed $bt"

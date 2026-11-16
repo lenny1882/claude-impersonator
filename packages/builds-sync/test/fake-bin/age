@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""A stand-in for `age`, for the tests only: age is not installed on every
+machine the suite runs on. A reversible transform (bytes reversed, XORed,
+base64) under a header naming the recipient; decryption fails unless the
+identity's recipient matches, as real age's does. Not encryption."""
+import base64, hashlib, sys
+
+def recipient_of(key_file):
+    for line in open(key_file):
+        if line.startswith("AGE-SECRET-KEY-"):
+            return "age1" + hashlib.sha256(line.strip().encode()).hexdigest()[:40]
+    sys.exit("age: no identity in %s" % key_file)
+
+args = sys.argv[1:]
+mode = rcpt = ident = out = None
+src = None
+i = 0
+while i < len(args):
+    a = args[i]
+    if a in ("-e", "--encrypt"): mode = "e"
+    elif a in ("-d", "--decrypt"): mode = "d"
+    elif a in ("-r", "--recipient"): i += 1; rcpt = args[i]
+    elif a in ("-i", "--identity"): i += 1; ident = args[i]
+    elif a in ("-o", "--output"): i += 1; out = args[i]
+    else: src = a
+    i += 1
+data = open(src, "rb").read() if src else sys.stdin.buffer.read()
+if mode == "d":
+    head, _, body = data.partition(b"\n")
+    if not head.startswith(b"FAKEAGE "):
+        sys.exit("age: not an age file")
+    if not ident or head[8:].decode() != recipient_of(ident):
+        sys.exit("age: no identity matched any of the recipients")
+    res = bytes(b ^ 0x5A for b in base64.b64decode(body))[::-1]
+else:
+    if not rcpt:
+        sys.exit("age: missing recipient")
+    res = b"FAKEAGE " + rcpt.encode() + b"\n" + base64.b64encode(bytes(b ^ 0x5A for b in data[::-1])) + b"\n"
+if out:
+    open(out, "wb").write(res)
+else:
+    sys.stdout.buffer.write(res)
