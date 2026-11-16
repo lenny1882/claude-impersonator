@@ -791,8 +791,11 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 - A broad local filter (so that fewer decisions are missed)
   picks candidates (threads weighing options, wording
   like "rather", "instead", "should we", PR comments asking for changes,
-  transcript corrections). `[Rule N - Type]`
-  deviation entries in GSD `SUMMARY.md` files are another candidate. All
+  transcript corrections). `[Rule N - Type]` deviation entries in GSD
+  `SUMMARY.md` files are picked up too: Rules 1–3
+  entries are logged as the executor's decisions made alone, checked in
+  review sessions and the phase audit, never counted as the owner's evidence;
+  Rule 4 entries count as the owner's, with their answer from the question store. All
   candidates are sent, plus a random 10% of the rest to measure what the
   filter misses; the sample is raised in 10% steps until the estimate is
   clearly above or below 95%. The filter is widened if it catches under 95% of
@@ -1640,14 +1643,13 @@ stage lists only what blocks that stage.
   dependency fails to load (the aihero.dev page describes this failure mode
   without saying more), which would undercut §4.6's reliance
   on recommended answers shaped by the `SessionStart` block. Unchecked
-  beyond that page.
+  beyond that page. Deferred with the other grill-with-docs points until it
+  is installed.
 - OpenSpec lets any artifact change at any time, so edits to
   `openspec/changes/<change>/` after `/opsx:apply` aren't seen by the plan
   reviewer. The end-of-turn review reads spec files as decisions (§4.5),
   so later edits are caught there; the rest waits until the owner starts using
   OpenSpec.
-- Whether `[Rule N - Type]` deviation entries in GSD `SUMMARY.md` files are
-  also decision candidates for the extraction filter (§4.9). Not decided.
 - How grill-with-docs records are weighted (§4.9). `grilling` asks a whole
   numbered round, each question with a recommended answer that "yes"
   accepts, so a round answered "yes" is close to bulk acceptance. An ADR is
