@@ -227,6 +227,12 @@ Left out:
   pipeline's state, and answer "neither" to writing it into a CLAUDE.md. GSD's
   plugin files are not edited. It is re-run with every pipeline rebuild, so
   the profile matches the transcripts the build used.
+  Checked against GSD 5.1.0's `references/user-profiling.md`:
+  anonymising doesn't change message counts, so the message thresholds
+  behave as on raw text; the sensitive-content patterns (`sk-`, `Bearer `,
+  `password`, `secret`, `token`, `api_key`, home-directory paths) still
+  match where those words or paths remain, so such quotes are skipped, and
+  a quote holding a `[REDACTED:<type>]` marker carries no value.
 
 ### 2.4 Time
 
@@ -1549,9 +1555,6 @@ stage lists only what blocks that stage.
   unless run through the Skill tool; `UserPromptSubmit`/`UserPromptExpansion`
   are the candidates) — not checked. Deferred with the other OpenSpec
   points until the owner starts using it.
-- Whether the profiler's own "Sensitive Content Exclusion (Layer 1)" and
-  "Message Thresholds" (in `references/user-profiling.md`, APPENDIX D.3)
-  still behave correctly on an anonymised sample.
 - What a review session for decisions looks like, and how often.
 - Whether any GSD setting can narrow `bm-executor`'s Rules 1–3 (not checked).
   L116 also forbids ad-hoc pauses to ask about mechanics (APPENDIX D.3).
