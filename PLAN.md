@@ -1593,7 +1593,10 @@ stage lists only what blocks that stage.
   any other machine.
   Per §5 (Builds on every machine), the runtimes are installed on
   each of the owner's machines and use the one build made here. claude.ai cloud
-  sessions are still not decided.
+  sessions are not covered and not used. They need a
+  GitHub-connected account, clone only GitHub repos, and load none of
+  `~/.claude`. Sessions started from claude.ai run through Remote Control
+  servers on the owner's machines, which the runtimes cover.
 - Buildomator's `.agents/workspace.json` reader (§7) as another delivery
   route: `decision-runtime` could emit a conformant file.
 - `bm-executor` treats a project `./CLAUDE.md` as hard constraints — a
