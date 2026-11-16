@@ -505,7 +505,7 @@ is a `voice-decision-pipeline` output (§5).
 | Layer | Strength | Reaches |
 |---|---|---|
 | Gating hooks: deny dependency changes (manifest edits, installs), test-framework switches and edits under marked paths unless the decision log has an approved entry | enforced | every session and subagent |
-| Logging gate: a `SubagentStop` and `Stop` hook refuses to let an agent finish while it has decisions it hasn't logged. **Ambiguous** — see §8.3 | enforced (that it records, not that it decided well) | every session and subagent |
+| Logging gate: not built; the reviewer sends agents back for unlogged decisions at the same points | — | — |
 | `SubagentStart` block | advisory | every subagent, plugin and workflow agents included (read-only search and help agents, such as Explore and `claude-code-guide`, are skipped by type; Plan agents and every agent that edits or recommends get it). Observed firing for workflow agents and for a GSD plugin agent (`gsd:bm-executor`; saved hook log, APPENDIX D.2). That the block's context reaches the agent is not tested for either — §8.3 |
 | `SessionStart` block (instead of a CLAUDE.md section, so subagents don't get it twice) | advisory | the main session, every session (not just GSD repos, because Claude's recommendations in ordinary sessions follow the model — §4.1) |
 
@@ -1608,10 +1608,6 @@ stage lists only what blocks that stage.
   agent, for GSD plugin agents and workflow agents. That the event fires for
   both is shown by the saved hook log (§7); delivery of the context was not
   tested.
-- The logging gate (a `SubagentStop`/`Stop` hook refusing to let an agent
-  finish with unlogged decisions): whether it is one of the enforcement layers,
-  and whether it's still needed now the reviewer reads diffs and catches
-  unlogged decisions itself.
 - In plan mode, whether a `PostToolUse` hook logs the approved plan's
   decisions as the owner's, and whether uncovered decisions go into the plan as
   open questions (the owner is present at approval) instead of `question-store`.
