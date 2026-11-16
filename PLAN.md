@@ -1627,10 +1627,13 @@ stage lists only what blocks that stage.
   a usable principle picking the same option lets it
   proceed, logged; a principle pointing elsewhere, or none, parks it for
   the owner; at trust level 0 every one is parked. Auto-advance stays on.
-- Whether Rule 4's checkpoint (what was found, proposed change, why, impact,
-  alternatives — §7), and the package-install `checkpoint:human-verify`
-  (answered "verified" with the package name, or "abort"; APPENDIX D.3),
-  feed `question-store`; not decided.
+- GSD's own stop-and-ask checkpoints: a Rule 4 stop
+  (an architectural change: what was found, proposed change, why, impact,
+  alternatives — §7) becomes a parked question in `question-store`, pushed
+  and listed in `/questions`, its answer logged as an asked entry. The
+  package-legitimacy `checkpoint:human-verify` ("verified" with the package
+  name, or "abort"; APPENDIX D.3) stays in GSD's own flow, its answer
+  logged.
 - `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (§7) bears on the model-choice items
   above and in §8.2.
 - grill-with-docs may ask questions with no recommendations when a
