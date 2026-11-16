@@ -1622,8 +1622,11 @@ stage lists only what blocks that stage.
   except `gate="blocking-human"` and package-legitimacy checks;
   `checkpoint:decision` auto-selects its first option (logged "⚡
   Auto-selected"); `checkpoint:human-action` still stops
-  (`references/checkpoints.md` L11, `agents/bm-executor.md` L315). How
-  auto-selected decisions are handled is open.
+  (`references/checkpoints.md` L11, `agents/bm-executor.md` L315).
+  `decision-runtime`'s GSD adapter looks up each auto-selected decision
+  a usable principle picking the same option lets it
+  proceed, logged; a principle pointing elsewhere, or none, parks it for
+  the owner; at trust level 0 every one is parked. Auto-advance stays on.
 - Whether Rule 4's checkpoint (what was found, proposed change, why, impact,
   alternatives — §7), and the package-install `checkpoint:human-verify`
   (answered "verified" with the package name, or "abort"; APPENDIX D.3),
