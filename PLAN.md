@@ -813,6 +813,12 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 - Cases and evidence quotes keep any code they quote:
   an agent asking for the evidence behind a rule sees the code it came
   from. The rules themselves hold no code.
+- The owner's own principles: a principles file in the
+  pipeline's state, owner-only and never committed. Each entry is marked as
+  the owner's and counts as approved, so it is usable without evidence; it wins
+  over an extracted principle it conflicts with; an entry naming an
+  extracted principle's id changes or removes it. It reaches other
+  machines inside the encrypted build.
 - Principles, each with dated evidence quotes, what it trades against, and
   when it was last seen — last-seen date because a position from, say, 2021
   may no longer hold.
@@ -1583,8 +1589,6 @@ stage lists only what blocks that stage.
 
 - Whether OpenSpec runs its own agents (its docs don't say). Deferred until
   the owner starts using it.
-- How the owner adds or adjusts a principle directly. The principles file is
-  generated, so it needs a pipeline input, like the voice guide.
 - Sessions this machine's hooks don't reach: claude.ai cloud sessions and
   any other machine.
   Per §5 (Builds on every machine), the runtimes are installed on
