@@ -657,10 +657,11 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   to approve. Planning research runs in the built-in Plan and Explore agents:
   they skip CLAUDE.md, get the `SubagentStart` block unless their type is
   skipped (Explore may be — §8.3), and never trigger `SubagentStop` review
-  (no edits). Open (§8.3): a
-  `PostToolUse` hook logging the approved plan's decisions as the owner's, and
-  putting uncovered decisions into the plan as open questions instead of
-  `question-store`.
+  (no edits). Decisions the review finds no principle for go into the plan
+  as open questions, which the owner answers as part of approving; each answer
+  is logged as an asked entry. After approval, a `PostToolUse` hook logs
+  each decision in the plan as "approved in a plan", weak evidence that
+  counts only once the owner confirms it in a review session.
 - **OpenSpec:** an adapter at `/opsx:apply`, reviewing
   `openspec/changes/<change>/` (`proposal.md`, `design.md`, `tasks.md`,
   `specs/`), added when the owner starts using it.
@@ -1608,9 +1609,6 @@ stage lists only what blocks that stage.
   agent, for GSD plugin agents and workflow agents. That the event fires for
   both is shown by the saved hook log (§7); delivery of the context was not
   tested.
-- In plan mode, whether a `PostToolUse` hook logs the approved plan's
-  decisions as the owner's, and whether uncovered decisions go into the plan as
-  open questions (the owner is present at approval) instead of `question-store`.
 - How the park rule maps onto `autonomous`. `autonomous` doesn't wait for
   replies (§7), so a parked question pauses a run only through blocker
   mirroring. A question mirrored to `STATE.md` blockers sends `autonomous`
