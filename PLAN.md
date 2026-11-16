@@ -1434,7 +1434,9 @@ machine):
 - Buildomator reads any conformant `.agents/workspace.json` at
   `SessionStart` (spec at https://github.com/workspace-json/spec, GSD
   `README.md` L400) and injects its fragile files, frameworks and co-change
-  notes; the plugin neither generates nor bundles the file.
+  notes; the plugin neither generates nor bundles the file. `decision-runtime`
+  doesn't write one: its start-up block already
+  reaches every session, and the gates enforce marked paths.
 
 ## 8. Undecided
 
@@ -1597,8 +1599,6 @@ stage lists only what blocks that stage.
   GitHub-connected account, clone only GitHub repos, and load none of
   `~/.claude`. Sessions started from claude.ai run through Remote Control
   servers on the owner's machines, which the runtimes cover.
-- Buildomator's `.agents/workspace.json` reader (§7) as another delivery
-  route: `decision-runtime` could emit a conformant file.
 - `bm-executor` treats a project `./CLAUDE.md` as hard constraints — a
   stronger route for that agent (it would mean editing each repo's
   CLAUDE.md).
