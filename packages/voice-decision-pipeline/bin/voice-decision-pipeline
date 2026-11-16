@@ -68,6 +68,21 @@ REVIEW
   batch <source>             draw the next batch of 50 for a source
   sendable <source>          exit 0 once a source's first batch is approved
 
+BUILD THE VOICE MODEL (sends anonymised text through claude -p, PLAN §3)
+  voice label [--second] [--redo <purposes>] [--new-sample]
+                             label purposes (Sonnet), or the second model's blind
+                             pass (Opus); resumes after the last finished batch
+  voice holdout [--fresh]    hold back 10% for validation (fresh: a new run)
+  voice rules                create the own-rules file from its template
+  voice guide                statistics, never-say list and the corpus guide
+  voice validate [--limit N] drafts with 3, 5 and 8 exemplars, judged
+  voice pairs [--more <audience>]
+                             the blind pairs and the judge review on the review page
+  voice build                assemble and leak-check a build in the state
+  voice publish              send the newest build through builds-sync (needs the
+                             label check and validation passed)
+  voice status               where the voice build stands (JSON)
+
   forget <person|conversation>
                              remove someone's or a conversation's records
   show bitbucket [--repo <workspace/repo>]
@@ -192,5 +207,11 @@ case "${1:-}" in
   status|sendable)
     need_env
     run_py "$@" ;;
+  voice)
+    # The voice build runs on embedding-lib's interpreter: validation and the
+    # build embed with it, and nothing in it needs spaCy.
+    need_env
+    case "${2:-}" in status|rules) ;; *) log_to "voice-${2:-}" ;; esac
+    PYTHONPATH="$PYLIB:$EL_HOME/pylib" PYTHONUNBUFFERED=1 exec "$EL_VPY" -m vdp "$@" ;;
   *) printf 'unknown command: %s\n' "$1" >&2; usage >&2; exit 2 ;;
 esac

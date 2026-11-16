@@ -164,6 +164,57 @@ def cmd_probe(a):
     return 0 if ok else 1
 
 
+def cmd_voice(a):
+    """The voice build's steps (PLAN §3), in order: label, label --second,
+    holdout, guide, validate, pairs, build, publish."""
+    from . import guide, labels, pool, validate, voicebuild
+    step = a.step
+    if step == "label":
+        with state.lock():
+            rc = labels.run("second" if a.second else "labeller",
+                            redo=[x for x in (a.redo or "").split(",") if x])
+            if not rc and labels.read("labeller") and labels.read("second"):
+                labels.write_disagreements()
+            if not rc and a.new_sample:
+                labels.draw_sample(new=True)
+            return rc
+    if step == "holdout":
+        with state.lock():
+            pool.holdout(fresh=a.fresh)
+        return 0
+    if step == "rules":
+        made = guide.init_rules()
+        print(f"  ok    {guide.rules_file()}" + (" created from the template" if made else " already exists"))
+        return 0
+    if step == "guide":
+        with state.lock():
+            return 0 if guide.write() is not None else 6
+    if step == "validate":
+        with state.lock():
+            return validate.drafts_and_judge(limit=a.limit)
+    if step == "pairs":
+        with state.lock():
+            validate.make_pairs(audience=a.more)
+            validate.judge_review()
+        return 0
+    if step == "build":
+        with state.lock():
+            voicebuild.build()
+        return 0
+    if step == "publish":
+        with state.lock():
+            voicebuild.publish()
+        return 0
+    if step == "status":
+        out = {"labels": labels.summary(), "holdout": (state.read_json(pool.holdout_file(), {}) or {}).get("run"),
+               "best_count": validate.best_count(), "validation": validate.report(),
+               "publish_blocked_by": voicebuild.gates(), "newest_build": voicebuild.newest()[0],
+               "own_rules": guide.rules_file()}
+        print(json.dumps(out, indent=1))
+        return 0
+    raise SystemExit(f"unknown voice step {step}")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="voice-decision-pipeline")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -187,6 +238,16 @@ def main(argv=None):
     s = sub.add_parser("status"); s.set_defaults(f=cmd_status)
     s = sub.add_parser("sendable"); s.add_argument("source", choices=SOURCES); s.set_defaults(f=cmd_sendable)
     s = sub.add_parser("probe"); s.set_defaults(f=cmd_probe)
+    s = sub.add_parser("voice")
+    s.add_argument("step", choices=["label", "holdout", "rules", "guide", "validate", "pairs",
+                                    "build", "publish", "status"])
+    s.add_argument("--second", action="store_true", help="label: the second model's blind pass")
+    s.add_argument("--redo", help="label: send again items either model gave one of these purposes")
+    s.add_argument("--new-sample", action="store_true", help="label: draw a fresh label-check sample")
+    s.add_argument("--fresh", action="store_true", help="holdout: draw a fresh holdout (a new validation run)")
+    s.add_argument("--limit", type=int, help="validate: only the first N held-back messages")
+    s.add_argument("--more", help="pairs: 12 more pairs for this audience")
+    s.set_defaults(f=cmd_voice)
     a = p.parse_args(argv)
     return a.f(a) or 0
 

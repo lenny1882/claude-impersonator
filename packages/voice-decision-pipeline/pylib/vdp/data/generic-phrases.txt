@@ -1,0 +1,316 @@
+# Generic business and assistant phrases (PLAN §3.5).
+# The fixed reference for the never-say list: each is counted in the voice
+# items, and those found rarely or never are listed with that count.
+# One phrase per line, lower case; matched as whole words, any case.
+# Written once and committed; the build reads it, nothing else edits it.
+hope this helps
+hope this finds you well
+i hope this email finds you well
+hope you are well
+hope you're well
+hope you're doing well
+i hope you are doing well
+kind regards
+best regards
+warm regards
+warmest regards
+many thanks
+thanks in advance
+thank you in advance
+thanks so much
+thank you so much
+thank you for your patience
+thanks for your patience
+thank you for your understanding
+thanks for your understanding
+i appreciate your patience
+we appreciate your patience
+i really appreciate it
+much appreciated
+greatly appreciated
+please do not hesitate
+please don't hesitate
+don't hesitate to reach out
+do not hesitate to contact
+feel free to reach out
+feel free to get in touch
+please feel free
+reach out
+reaching out
+circle back
+circling back
+touch base
+touching base
+let's touch base
+loop in
+looping in
+keep you in the loop
+keep me in the loop
+keep you posted
+i'll keep you posted
+going forward
+moving forward
+at the end of the day
+at this point in time
+in due course
+as per
+as per my last email
+as per our conversation
+as discussed
+per our discussion
+for your reference
+for your information
+please find attached
+please see attached
+attached please find
+i have attached
+please advise
+please let me know if you have any questions
+let me know if you have any questions
+if you have any questions
+any questions please let me know
+let me know if you need anything else
+let me know if there's anything else
+is there anything else
+anything else i can help with
+happy to help
+more than happy to help
+i'd be happy to
+i would be happy to
+i'd be glad to
+glad to help
+great question
+good question
+that's a great point
+excellent point
+absolutely
+certainly
+definitely
+of course
+no problem at all
+no worries at all
+sounds great
+sounds good to me
+that sounds great
+perfect
+awesome
+amazing
+fantastic
+wonderful
+exciting
+super excited
+thrilled
+delighted
+i'm excited to
+we're excited to
+pleased to announce
+pleased to inform you
+i am pleased to
+i wanted to
+i just wanted to
+just wanted to check in
+just checking in
+checking in
+quick question
+quick update
+gentle reminder
+friendly reminder
+just a reminder
+a quick reminder
+kindly
+kindly note
+kindly advise
+please note that
+it is worth noting
+it's worth noting
+it is important to note
+it's important to note
+needless to say
+in order to
+with regard to
+with regards to
+in regard to
+in relation to
+in terms of
+due to the fact that
+at your earliest convenience
+as soon as possible
+asap
+on the same page
+low hanging fruit
+low-hanging fruit
+move the needle
+think outside the box
+synergy
+synergies
+leverage
+leveraging
+utilise
+utilize
+utilisation
+utilization
+facilitate
+streamline
+streamlined
+robust
+seamless
+seamlessly
+holistic
+best practice
+best practices
+value add
+value-add
+deep dive
+drill down
+bandwidth
+take this offline
+take it offline
+action items
+action item
+next steps
+key takeaways
+key takeaway
+deliverables
+stakeholders
+alignment
+aligned on
+align on
+on my radar
+on your radar
+heads up
+just a heads up
+a heads up
+fyi
+in summary
+to summarise
+to summarize
+in conclusion
+overall
+ultimately
+essentially
+basically
+furthermore
+moreover
+additionally
+in addition
+however
+therefore
+thus
+hence
+consequently
+as a result
+it seems that
+it appears that
+i believe that
+i think that
+i feel that
+in my opinion
+to be honest
+honestly
+frankly
+literally
+actually
+really appreciate
+truly
+genuinely
+incredibly
+extremely
+very important
+crucial
+critical
+vital
+essential
+key
+pivotal
+paramount
+delve
+delve into
+dive into
+let's dive in
+navigate
+navigating
+landscape
+realm
+tapestry
+journey
+embark
+unlock
+empower
+elevate
+enhance
+foster
+harness
+showcase
+spearhead
+game changer
+game-changer
+cutting edge
+cutting-edge
+state of the art
+state-of-the-art
+world class
+world-class
+best in class
+top notch
+top-notch
+i hope that makes sense
+hope that makes sense
+does that make sense
+makes sense
+i understand your concern
+i understand your frustration
+i apologise for any inconvenience
+i apologize for any inconvenience
+sorry for any inconvenience
+apologies for any inconvenience
+we apologise for the inconvenience
+sorry for the inconvenience
+apologies for the delay
+sorry for the delay
+sorry for the late reply
+apologies for the late reply
+thank you for reaching out
+thanks for reaching out
+thank you for getting back to me
+thanks for getting back to me
+thank you for your email
+thanks for your email
+thank you for your message
+thanks for your message
+thank you for bringing this to my attention
+thanks for flagging
+great work
+great job
+well done
+good job
+nice work
+keep up the good work
+looking forward to
+look forward to
+i look forward to hearing from you
+looking forward to hearing from you
+speak soon
+talk soon
+have a great day
+have a good day
+have a great weekend
+have a lovely weekend
+enjoy your weekend
+cheers
+best
+best wishes
+all the best
+regards
+sincerely
+yours sincerely
+yours faithfully
+dear
+to whom it may concern
+hi all
+hi team
+hello team
+hey team
+hi everyone
+hello everyone
+good morning all
+good morning team

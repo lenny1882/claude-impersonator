@@ -1,0 +1,373 @@
+"""Voice validation (PLAN §3.5, §3.7).
+
+For every held-back message, drafts are written from its context, audience
+and purposes only, by the drafting model (Opus 5.5), with 3, 5 and 8
+exemplars; the judge (Fable 5.2, not the drafting model) compares each with
+the real message and scores it 1 to 5. The count with the best mean score is
+the build's exemplar count.
+
+Exemplars are picked as voice-runtime picks them: the pool narrowed to the
+audience and to any of the purposes, then the closest by similarity to the
+situation; a cell with too few is filled from the same audience, closest
+first, whatever the purpose. The situation is the
+message the held-back one answers, else the last message before it. Vectors
+come from embedding-lib, so this runs on its interpreter; each exemplar's
+vector is cached by its hash.
+
+The owner then sees blind pairs (their message and the best count's draft,
+shuffled): 12 per audience across the five corpus audiences, spread across
+the purposes. Each answer is written to validation-answers.jsonl as it is
+given; pairs.json holds the pairs and pairs-key.json which side is real,
+both in the state. On top of the pairs the owner reviews the judge's 20
+worst-scored drafts and 10 random ones.
+
+Pass: right picks minus wrong picks no more than 10% of
+pairs ("can't tell" counts as neither); at least 80% of drafts graded 4 or
+higher and none at 1. Overall, reported per audience; an audience where
+right picks beat wrong picks by 3 or more gets 12 more pairs before the
+result stands.
+"""
+
+import json
+import os
+import random
+import time
+from collections import Counter, defaultdict
+
+from . import guide, labels, model, pool, state, voice
+
+COUNTS = (3, 5, 8)
+PAIRS_PER_AUDIENCE = 12
+WORST, RANDOM = 20, 10
+
+DRAFT_SYSTEM = """You draft a message as self-01, in self-01's own voice, following the guide below
+and matching the example messages self-01 really wrote. Names are pseudonyms (colleague-07,
+client-03, product-04); keep using them. [code] stands for code left out: write [code] where
+self-01 would paste code. Reply with the message text only: no preamble, no quotation marks.
+
+"""
+
+DRAFT_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["text"],
+                "properties": {"text": {"type": "string"}}}
+
+JUDGE_SYSTEM = """You judge drafts written in one person's voice. The person is self-01; names
+are pseudonyms. You see the conversation, the message self-01 really wrote next, and several
+drafts written for the same moment without seeing it. Score each draft 1 to 5 for how far
+self-01 would send it as is, judged against the real message: voice (wording, length, tone,
+punctuation, capitalisation) and whether it does what the real message does.
+5: indistinguishable from self-01's own. 4: sendable as is or with a trivial edit.
+3: content right, needs rewording. 2: voice or content wrong. 1: of no use."""
+
+JUDGE_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["scores"],
+                "properties": {"scores": {"type": "array", "items": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["draft", "score", "reason"],
+                    "properties": {"draft": {"type": "integer"},
+                                   "score": {"type": "integer", "minimum": 1, "maximum": 5},
+                                   "reason": {"type": "string"}}}}}}
+
+
+def vdir(*p):
+    return state.path("validation", *p)
+
+
+def run_no():
+    return (state.read_json(pool.holdout_file(), {}) or {}).get("run", 0)
+
+
+# -- embeddings ---------------------------------------------------------------
+
+def _el():
+    import embedding_lib as el
+    if getattr(el, "EMBEDDING_LIB_API", None) != 1:
+        raise SystemExit("voice-decision-pipeline: embedding-lib API 1 is required")
+    return el
+
+
+def exemplar_vectors(ex, log=print):
+    import numpy as np
+    from .index import fit
+    el = _el()
+    cache_p, hashes_p = vdir("exemplar-vectors.npy"), vdir("exemplar-hashes.json")
+    ident = el.identity()
+    cached = {}
+    meta = state.read_json(hashes_p, None)
+    if meta and meta.get("identity") == ident and os.path.exists(cache_p):
+        m = np.load(cache_p)
+        cached = {h: m[i] for i, h in enumerate(meta["hashes"])}
+    todo = [e for e in ex if e["hash"] not in cached]
+    if todo:
+        log(f"  embed {len(todo)} exemplars ({len(ex) - len(todo)} cached)")
+        texts = fit(el, [(e["id"], e["answered"], e["text"]) for e in todo])
+        for i in range(0, len(texts), 512):
+            for e, v in zip(todo[i:i + 512], el.embed(texts[i:i + 512])):
+                cached[e["hash"]] = v
+    hs = [e["hash"] for e in ex]
+    m = np.vstack([cached[h] for h in hs]).astype("float32") if hs else np.zeros((0, 1), "float32")
+    tmp = vdir(".vec.tmp.npy")
+    np.save(tmp, m)
+    os.replace(tmp, cache_p)
+    state.write_json(hashes_p, {"identity": ident, "hashes": hs})
+    return m
+
+
+def search(ex, m, qv, audience, purposes, k):
+    """voice-runtime's pick: audience and any purpose, closest first; filled
+    from the same audience, closest first."""
+    import numpy as np
+    idx = [i for i, e in enumerate(ex) if e["audience"] == audience]
+    if not idx:
+        return []
+    sims = m[idx] @ qv
+    order = [idx[j] for j in np.argsort(-sims)]
+    ps = set(purposes)
+    first = [i for i in order if ps & set(ex[i]["purposes"])][:k]
+    rest = [i for i in order if i not in set(first)][:max(0, k - len(first))]
+    return [ex[i] for i in first + rest]
+
+
+def situation(it):
+    if it["answered"]:
+        return voice.without_code(it["answered"], it["answered_tags"])
+    return it["before"][-1][1] if it["before"] else it["text"][:0]
+
+
+# -- drafting and judging -----------------------------------------------------
+
+def draft_prompt(it, purposes, exs):
+    ctx = voice.render_context(it["before"], 4000) or "(no earlier messages)"
+    shown = "\n\n---\n\n".join(
+        (f"(answering: {e['answered'][:300]})\n" if e["answered"] else "") + e["text"] for e in exs)
+    return (f"Examples of messages self-01 wrote to this audience:\n\n{shown}\n\n"
+            f"Conversation so far ({'Bitbucket pull request' if it['source'] == 'bitbucket' else 'Slack'}):\n{ctx}\n\n"
+            f"Write self-01's next message. Audience: {it['audience']}. Purposes, in order: "
+            f"{', '.join(purposes)}.")
+
+
+def read_lines(name):
+    return list(state.read_jsonl(vdir(name)))
+
+
+def append(name, rows):
+    with open(vdir(name), "a", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def drafts_and_judge(counts=COUNTS, limit=None, log=print):
+    import numpy as np
+    voice.require_sendable()
+    g = guide.assemble("validation")
+    stats = state.read_json(state.path("voice", "stats.json"), {}) or {}
+    items = voice.load()
+    by_id = {it["id"]: it for it in items}
+    lab = labels.final()
+    hold = [by_id[i] for i in sorted(pool.held()) if i in by_id and i in lab]
+    if not hold:
+        raise SystemExit("voice-decision-pipeline: no holdouts; run 'voice holdout' first")
+    if limit:
+        hold = hold[:limit]
+    ex = pool.exemplars(items)
+    m = exemplar_vectors(ex, log=log)
+    el = _el()
+    run = run_no()
+    have = {(r["id"], r["k"]) for r in read_lines("drafts.jsonl") if r["run"] == run}
+    judged = {r["id"] for r in read_lines("judge.jsonl") if r["run"] == run}
+    todo = [it for it in hold if it["id"] not in judged]
+    log(f"== validate run {run}: {len(todo)} of {len(hold)} held-back messages to draft and judge, "
+        f"counts {list(counts)}")
+    qvs = el.embed([situation(it) or it["audience"] for it in todo]) if todo else []
+    for n, (it, qv) in enumerate(zip(todo, qvs), 1):
+        ps = lab[it["id"]]
+        system = DRAFT_SYSTEM + guide.render(g, stats, it["audience"], ps)
+        try:
+            for k in counts:
+                if (it["id"], k) in have:
+                    continue
+                exs = search(ex, m, np.asarray(qv, "float32"), it["audience"], ps, k)
+                ans = model.call("drafter", system, draft_prompt(it, ps, exs), DRAFT_SCHEMA, log=log)
+                append("drafts.jsonl", [{"run": run, "id": it["id"], "k": k, "text": ans["text"],
+                                         "exemplars": [e["id"] for e in exs]}])
+                have.add((it["id"], k))
+            ds = {r["k"]: r["text"] for r in read_lines("drafts.jsonl")
+                  if r["run"] == run and r["id"] == it["id"]}
+            ks = [k for k in counts if k in ds]
+            jp = (f"Conversation:\n{voice.render_context(it['before'], 4000) or '(none)'}\n\n"
+                  f"The message self-01 really wrote:\n{it['text']}\n\n" +
+                  "\n\n".join(f"Draft {i}:\n{ds[k]}" for i, k in enumerate(ks, 1)) +
+                  f"\n\nScore drafts 1 to {len(ks)}.")
+            ans = model.call("judge", JUDGE_SYSTEM, jp, JUDGE_SCHEMA, log=log)
+        except model.UsageLimit as e:
+            log(f"  stop  usage limit after {n - 1} messages: {e}; run the same command again to resume")
+            return 6
+        except model.CallFailed as e:
+            log(f"  skip  {it['id']}: {e}")
+            continue
+        sc = {x["draft"]: x for x in ans["scores"]}
+        append("judge.jsonl", [{"run": run, "id": it["id"], "k": k, "score": sc[i]["score"],
+                                "reason": sc[i]["reason"]} for i, k in enumerate(ks, 1) if i in sc])
+        if n % 25 == 0 or n == len(todo):
+            log(f"  {n}/{len(todo)} judged")
+    log(f"  ok    validate run {run}: best count {best_count()}")
+    return 0
+
+
+def scores(run=None):
+    run = run_no() if run is None else run
+    out = defaultdict(list)
+    for r in read_lines("judge.jsonl"):
+        if r["run"] == run:
+            out[r["k"]].append(r["score"])
+    return out
+
+
+def best_count(run=None):
+    sc = scores(run)
+    if not sc:
+        return None
+    return max(sorted(sc), key=lambda k: (sum(sc[k]) / len(sc[k]), -k))
+
+
+# -- blind pairs ----------------------------------------------------------------
+
+def pairs_file():
+    return vdir("pairs.json")
+
+
+def key_file():
+    return vdir("pairs-key.json")
+
+
+def answers_file():
+    return state.path("validation-answers.jsonl")
+
+
+def make_pairs(audience=None, log=print):
+    """12 pairs per corpus audience, or 12 more for one audience."""
+    run = run_no()
+    k = best_count(run)
+    if k is None:
+        raise SystemExit("voice-decision-pipeline: no judged drafts; run 'voice validate' first")
+    cur = state.read_json(pairs_file(), None)
+    if cur and cur["run"] != run:
+        cur = None
+    if cur and audience is None:
+        return cur
+    cur = cur or {"run": run, "k": k, "pairs": []}
+    key = state.read_json(key_file(), {}) if cur["pairs"] else {}
+    used = {p["id"] for p in cur["pairs"]}
+    items = {it["id"]: it for it in voice.load()}
+    lab = labels.final()
+    drafts = {r["id"]: r["text"] for r in read_lines("drafts.jsonl") if r["run"] == run and r["k"] == k}
+    rnd = random.Random(f"pairs-{run}-{len(cur['pairs'])}")
+    for aud in ([audience] if audience else voice.CORPUS_AUDIENCES):
+        pool_ = {i: (aud, lab[i]) for i in drafts if i in items and items[i]["audience"] == aud
+                 and i not in used}
+        for i in labels.spread_sample(pool_, PAIRS_PER_AUDIENCE, seed=f"pairs-{run}-{aud}-{len(used)}"):
+            it = items[i]
+            real_a = rnd.random() < 0.5
+            pid = f"p{len(cur['pairs']) + 1:03d}"
+            cur["pairs"].append({"pair": pid, "id": i, "audience": aud, "purposes": lab[i],
+                                 "context": voice.render_context(it["before"], 3000),
+                                 "a": it["text"] if real_a else drafts[i],
+                                 "b": drafts[i] if real_a else it["text"]})
+            key[pid] = "A" if real_a else "B"
+            used.add(i)
+    state.write_json(key_file(), key)
+    state.write_json(pairs_file(), cur)
+    log(f"  ok    {len(cur['pairs'])} blind pairs (exemplar count {cur['k']})")
+    return cur
+
+
+def judge_review(log=print):
+    """The judge's 20 worst-scored drafts and 10 random others, for the best
+    count, drawn once per run."""
+    p = vdir("judge-review.json")
+    run = run_no()
+    cur = state.read_json(p, None)
+    if cur and cur["run"] == run:
+        return cur
+    k = best_count(run)
+    rows = [r for r in read_lines("judge.jsonl") if r["run"] == run and r["k"] == k]
+    rows.sort(key=lambda r: (r["score"], r["id"]))
+    worst = rows[:WORST]
+    rest = rows[WORST:]
+    random.Random(f"judge-review-{run}").shuffle(rest)
+    items = {it["id"]: it for it in voice.load()}
+    drafts = {r["id"]: r["text"] for r in read_lines("drafts.jsonl") if r["run"] == run and r["k"] == k}
+    cur = {"run": run, "k": k, "items": [
+        {"id": r["id"], "why": w, "score": r["score"], "reason": r["reason"],
+         "audience": items[r["id"]]["audience"], "real": items[r["id"]]["text"],
+         "draft": drafts.get(r["id"], ""), "context": voice.render_context(items[r["id"]]["before"], 3000)}
+        for w, group in (("worst", worst), ("random", rest[:RANDOM])) for r in group if r["id"] in items]}
+    state.write_json(p, cur)
+    return cur
+
+
+def answer(kind, ref, **fields):
+    """Write one answer as it is given: pair id and answer only, plus the
+    pair's audience and purposes and the time (PLAN §3.7)."""
+    row = {"run": run_no(), "kind": kind, "ref": ref, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    row.update(fields)
+    append_answer(row)
+    return row
+
+
+def append_answer(row):
+    with open(answers_file(), "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def answers(run=None, kind="pair"):
+    """{ref: newest answer row} for a run."""
+    run = run_no() if run is None else run
+    out = {}
+    for r in state.read_jsonl(answers_file()):
+        if r["run"] == run and r["kind"] == kind:
+            out[r["ref"]] = {**out.get(r["ref"], {}), **r}
+    return out
+
+
+def _dirichlet(rnd, a):
+    xs = [rnd.gammavariate(x, 1) for x in a]
+    s = sum(xs)
+    return [x / s for x in xs]
+
+
+def report(run=None):
+    run = run_no() if run is None else run
+    pr = state.read_json(pairs_file(), None)
+    if not pr or pr["run"] != run:
+        return {"run": run, "pairs": 0}
+    key = state.read_json(key_file(), {}) or {}
+    ans = answers(run)
+    per = {"all": Counter()}
+    for p in pr["pairs"]:
+        a = ans.get(p["pair"])
+        if not a or "pick" not in a:
+            continue
+        res = "cant" if a["pick"] == "cant" else ("right" if a["pick"] == key[p["pair"]] else "wrong")
+        for k in ("all", "aud:" + p["audience"]) + tuple("pur:" + x for x in p["purposes"]):
+            per.setdefault(k, Counter())[res] += 1
+    grades = [a["grade"] for a in ans.values() if a.get("grade")]
+    c = per["all"]
+    n = sum(c.values())
+    rnd = random.Random(f"report-{run}-{n}")
+    draws = [_dirichlet(rnd, [1 + c["right"], 1 + c["wrong"], 1 + c["cant"]]) for _ in range(4000)]
+    spot = sorted(r - w for r, w, _ in draws)
+    blind_ok = n > 0 and c["right"] - c["wrong"] <= 0.1 * n
+    grades_ok = bool(grades) and sum(1 for x in grades if x >= 4) >= 0.8 * len(grades) and 1 not in grades
+    more = [k[4:] for k, v in per.items() if k.startswith("aud:") and v["right"] - v["wrong"] >= 3]
+    done = n == len(pr["pairs"]) and len(grades) == len(pr["pairs"])
+    return {
+        "run": run, "k": pr["k"], "pairs": len(pr["pairs"]), "answered": n, "graded": len(grades),
+        "counts": {k: dict(v) for k, v in per.items()},
+        "spotting": {"estimate": round((c["right"] - c["wrong"]) / n, 3) if n else None,
+                     "low": round(spot[int(0.025 * len(spot))], 3), "high": round(spot[int(0.975 * len(spot))], 3)},
+        "confidence_pass_holds": round(sum(1 for s in spot if s <= 0.1) / len(spot), 3),
+        "grades": dict(Counter(grades)), "blind_ok": blind_ok, "grades_ok": grades_ok,
+        "more_pairs_for": more, "done": done,
+        "passed": done and blind_ok and grades_ok and not more,
+        "right_pairs": [p["pair"] for p in pr["pairs"]
+                        if ans.get(p["pair"], {}).get("pick") == key.get(p["pair"])],
+    }

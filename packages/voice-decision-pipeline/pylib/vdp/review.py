@@ -1,6 +1,6 @@
 """The local review page: `voice-decision-pipeline review` (PLAN §2.3).
 
-Four jobs, all the owner's, all before anything is sent:
+The jobs on it, all the owner's:
   - audiences: pick the audience of each Slack conversation the hand-written
     list leaves open (PLAN §3.2: group DMs outside the senior set). Saved to
     the inputs; the Slack extract and anonymise then run again.
@@ -12,6 +12,9 @@ Four jobs, all the owner's, all before anything is sent:
   - batches: read 50 anonymised items from one source, every replacement
     highlighted, and approve or reject the batch; stop a source once
     satisfied.
+  - the voice build's checks under /voice (voicereview.py): the label
+    check, second-model disagreements, blind pairs, the judge review and
+    the validation report.
 
 Served on 127.0.0.1 only, from this machine's state; real text appears on
 the mining and leak pages because the page never leaves the machine. Every click is
@@ -179,9 +182,18 @@ def home():
 <h2>Clients added by hand: names the lists and mining missed</h2>
 <p><a href='/clients'>{len(added_clients())} added</a>.</p>
 <h2>What blocks the next batch</h2><ul>{g}</ul>
+{voice_home()}
 <h2>Sources</h2>
 <table><tr><th>Source</th><th>Records</th><th>Items</th><th>Approved batches</th>
 <th>Open batch</th><th>May be sent</th></tr>{''.join(rows)}</table>""")
+
+
+def voice_home():
+    from . import voicereview
+    try:
+        return voicereview.home_section()
+    except SystemExit as e:
+        return f"<h2>Voice model</h2><p class=meta>{html.escape(str(e))}</p>"
 
 
 def clients_page():
@@ -534,6 +546,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, mapping())
             if u.path == "/batch":
                 return self._send(200, batch_page((q.get("source") or [""])[0]))
+            if u.path.startswith("/voice"):
+                from . import voicereview
+                body = voicereview.get(u.path)
+                if body is not None:
+                    return self._send(200, body)
             return self._send(404, page("Not found", ""))
         except SystemExit as e:
             return self._send(400, page("Error", f"<p class=err>{html.escape(str(e))}</p>"))
@@ -545,6 +562,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(self.rfile.read(n) or b"{}")
             p = urlparse(self.path).path
+            if p.startswith("/api/voice/"):
+                from . import voicereview
+                out = voicereview.post(p, body)
+                if out is None:
+                    return self._send(404, "no such endpoint", "text/plain")
+                return self._send(200, out, "text/plain")
             if p == "/api/mining":
                 dec = state.read_json(state.path("mining-decisions.json"), {}) or {}
                 for term, d in body.items():

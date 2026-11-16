@@ -694,6 +694,241 @@ for leaked in ("xoxb-1234", "ghp_abc", "eyJhbGci", "wJalrXUt", "MIIEow", "abc123
 assert redact("the password field is required") == "the password field is required"
 EOF
 
+# --- voice --------------------------------------------------------------------
+
+echo "voice"
+VST="$TMP/vstate"; VBIN="$TMP/vbin"; VPYL="$TMP/vpylib"
+mkdir -p "$VST" "$VBIN" "$VPYL"
+"$PY" "$REPO/test/voice_fixtures.py" "$VST" "$VBIN" "$VPYL"
+if ! "$PY" -c 'import numpy' 2>/dev/null; then
+  no "voice tests" "$PY has no numpy; run them with embedding-lib's venv python (VDP_TEST_PY)"
+else
+vv(){ VDP_STATE="$VST" VDP_CLAUDE="$VBIN/claude" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp voice "$@"; }
+vpy(){ VDP_STATE="$VST" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" - ; }
+echo '{"slack":{"batches":[],"approved":0,"stopped":false}}' > "$VST/review.held.json"
+cp "$VST/review-state.json" "$VST/review.ok.json"; cp "$VST/review.held.json" "$VST/review-state.json"
+vv label >/dev/null 2>&1 && no "voice label refuses before a source's first batch is approved" "it sent" \
+  || ok "voice label refuses before a source's first batch is approved"
+cp "$VST/review.ok.json" "$VST/review-state.json"
+check "voice label: the stand-in claude was never called while held" test ! -e "$VST/labels/labeller.jsonl"
+export FAKE_CLAUDE_COUNT="$TMP/claude-count"; echo 0 > "$FAKE_CLAUDE_COUNT"
+FAKE_CLAUDE_LIMIT=3 vv label > "$TMP/vlabel1.out" 2>&1; rc=$?
+[ $rc = 6 ] && grep -q "usage limit after 40 items" "$TMP/vlabel1.out" \
+  && ok "a usage limit stops the pass cleanly (exit 6) after the finished batches" \
+  || no "a usage limit stops the pass cleanly (exit 6) after the finished batches" "exit $rc: $(tail -2 "$TMP/vlabel1.out")"
+check "the stopped pass kept its two finished batches" test "$(wc -l < "$VST/labels/labeller.jsonl")" = 40
+check "the rerun resumes after them and labels every voice item" \
+  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice label | grep -q '50 of 90 items to send' && test \$(wc -l < '$VST/labels/labeller.jsonl') = 90"
+check "each label line names its model and prompt version" \
+  bash -c "head -1 '$VST/labels/labeller.jsonl' | jq -e '.model==\"claude-sonnet-5-5\" and (.prompt|length)==12' >/dev/null"
+check "the second model's blind pass labels them all with Opus" \
+  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice label --second >/dev/null && jq -s -e 'length==90 and all(.[]; .model==\"claude-opus-5-5\")' '$VST/labels/second.jsonl' >/dev/null"
+check "every disagreement is recorded with both models' labels" \
+  bash -c "jq -s -e 'length>0 and all(.[]; (.second|index(\"thank\")) and (.labeller|index(\"thank\")|not))' '$VST/labels/disagreements.jsonl' >/dev/null"
+check "the disagreement rate is measured per purpose" vpy <<'EOF'
+from vdp import labels
+r = labels.disagreement_rates()
+assert r["thank"]["differ"] == r["thank"]["either"] > 0 and r["ask"]["differ"] == 0, r
+EOF
+check "labelling notes in the state change the prompt version, so a rerun is traceable" vpy <<'EOF'
+from vdp import labels
+v = labels.prompt_version()
+open(labels.notes_file(), "w").write("Thanks at the end of a status is still status.")
+assert labels.prompt_version() != v and "Thanks at the end" in labels.system_prompt()
+EOF
+check "label --redo sends again only the items either model gave that purpose" \
+  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice label --redo thank | grep -q '== label labeller: 10 of 90 items'"
+check "the label-check sample spreads across audiences, and grading it is a gate" vpy <<'EOF'
+from vdp import labels, voice, voicebuild
+d = labels.draw_sample()
+aud = {it["id"]: it["audience"] for it in voice.load()}
+assert len(d["ids"]) == 90 and len({aud[i] for i in d["ids"]}) == 5, len(d["ids"])
+assert any("label check" in g for g in voicebuild.gates())
+for i in d["ids"][:7]:
+    d["answers"][i] = {"verdict": "wrong", "purposes": ["other"]}
+for i in d["ids"][7:]:
+    d["answers"][i] = {"verdict": "right", "purposes": []}
+from vdp import state
+state.write_json(labels.check_file(), d)
+c = labels.check_result()
+assert c["done"] and not c["passed"], c   # 7 of 90 is over 6 of 120's rate
+for i in d["ids"][:3]:
+    d["answers"][i] = {"verdict": "right", "purposes": []}
+state.write_json(labels.check_file(), d)
+assert labels.check_result()["passed"]
+assert labels.final()[d["ids"][3]] == ["other"], "the owner's correction wins"
+EOF
+check "holdout: 10% per audience, drawn once, fresh only on request" vpy <<'EOF'
+from vdp import pool
+h = pool.holdout(log=lambda *a: None)
+assert h["run"] == 1 and len(h["ids"]) == 10, h
+assert pool.holdout(log=lambda *a: None)["ids"] == h["ids"]
+EOF
+check "the pool leaves out holdouts, 3-word messages and code, and stores [code]" vpy <<'EOF'
+from vdp import pool, voice
+ex = pool.exemplars()
+held = pool.held()
+assert not held & {e["id"] for e in ex}
+assert not any(e["text"] in ("ok",) for e in ex)
+assert not any("Traceback" in e["text"] for e in ex)
+assert all(len(e["hash"]) == 64 for e in ex)
+assert voice.without_code("see `x = 1` and\n```\ncode\n```\ndone", [
+    {"type": "code", "start": 4, "end": 11}, {"type": "code", "start": 16, "end": 28}]) == "see [code] and\n[code]\ndone"
+EOF
+check "stats and the never-say list are local, measured on the anonymised copies" vpy <<'EOF'
+from vdp import voicestats
+s = voicestats.build(log=lambda *a: None)
+assert set(s["audiences"]) == {"clients", "project-team", "technical-team", "senior", "one-to-one"}, s["audiences"].keys()
+ns = {x["phrase"]: x for x in s["never_say"]}
+assert ns["kind regards"]["self"] == 0 and ns["kind regards"]["reference"] == "generic"
+assert "much appreciated" not in ns or ns["much appreciated"]["self"] / 90 <= 0.001
+EOF
+check "voice rules creates the own-rules file once" bash -c "VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice rules | grep -q created && VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice rules | grep -q 'already exists'"
+cat >> "$VST/own-rules.md" <<'EOF'
+EOF
+"$PY" - "$VST/own-rules.md" <<'EOF'
+import sys
+p = sys.argv[1]
+s = open(p).read().replace("## All drafts\n", "## All drafts\n\n- Never write \"Hope this helps\".\n- Sign off with nothing,\n  not even a name.\n")
+s = s.replace("## Jira\n", "## Jira\n\n- Name the ticket's status first.\n")
+open(p, "w").write(s)
+EOF
+check "voice guide writes rules per audience and purpose, and across them" \
+  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice guide >/dev/null && jq -e '(.audiences|length)==5 and (.audiences.clients.purposes|has(\"ask\")) and (.combinations|length)==1' '$VST/voice/corpus-guide.json' >/dev/null"
+check "the owner's rules come first, word for word, and win; their Jira section is Jira's guide" vpy <<'EOF'
+from vdp import guide, state
+g = guide.assemble("x")
+assert g["own_rules"] == ['Never write "Hope this helps".', "Sign off with nothing, not even a name."], g["own_rules"]
+assert g["jira"] == ["Name the ticket's status first."], g["jira"]
+t = guide.render(g, state.read_json(state.path("voice", "stats.json")), "clients", ["ask", "status"])
+assert t.startswith("self-01's own rules (these win") and "Combining purposes" in t and "When the purpose is ask" in t
+j = guide.render(g, {}, "jira", ["status"])
+assert "Jira comments" in j and "Writing to" not in j
+EOF
+check "voice validate drafts each holdout with 3, 5 and 8 exemplars and the judge scores them" \
+  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice validate >/dev/null && test \$(wc -l < '$VST/validation/drafts.jsonl') = 30 && test \$(wc -l < '$VST/validation/judge.jsonl') = 30"
+check "drafts used the closest exemplars of the right count, holdouts never among them" vpy <<'EOF'
+import json
+from vdp import pool, state, validate
+held = pool.held()
+for r in state.read_jsonl(state.path("validation", "drafts.jsonl")):
+    assert r["text"] == f"draft with {r['k']} examples", r
+    assert len(r["exemplars"]) == r["k"] and not held & set(r["exemplars"])
+assert validate.best_count() == 5
+EOF
+check "a rerun of validate sends nothing more" \
+  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice validate | grep -q '0 of 10 held-back'"
+check "the exemplar search fills a thin cell from the same audience" vpy <<'EOF'
+import numpy as np
+from vdp import validate
+ex = [{"id": str(i), "audience": "clients" if i < 4 else "senior", "purposes": ["ask"] if i == 0 else ["status"]}
+      for i in range(6)]
+m = np.eye(6, dtype="float32")
+got = validate.search(ex, m, m[2], "clients", ["ask"], 3)
+assert [e["id"] for e in got] == ["0", "2", "1"] or [e["id"] for e in got][0] == "0", got
+assert all(e["audience"] == "clients" for e in got)
+EOF
+check "voice pairs makes 2 blind pairs per audience here (12 where there are enough), the key apart" \
+  bash -c "VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice pairs >/dev/null && jq -e '.k==5 and (.pairs|length)==10' '$VST/validation/pairs.json' >/dev/null && jq -e 'length==10' '$VST/validation/pairs-key.json' >/dev/null && ! grep -q '\"real\"' '$VST/validation/pairs.json'"
+check "the judge review lists the worst and random drafts once per run" \
+  jq -e '.k==5 and (.items|length)==10 and (.items[0].why=="worst")' "$VST/validation/judge-review.json"
+check "the pass is worked out from the owner's answers: picks, grades and the per-audience rule" vpy <<'EOF'
+from vdp import state, validate
+pr = state.read_json(validate.pairs_file())
+key = state.read_json(validate.key_file())
+for i, p in enumerate(pr["pairs"]):
+    pick = "cant" if i % 2 else ("B" if key[p["pair"]] == "A" else "A")
+    validate.answer("pair", p["pair"], pick=pick, audience=p["audience"], purposes=p["purposes"])
+    validate.answer("pair", p["pair"], grade=4, audience=p["audience"], purposes=p["purposes"])
+r = validate.report()
+assert r["answered"] == 10 and r["counts"]["all"] == {"cant": 5, "wrong": 5}, r["counts"]
+assert r["blind_ok"] and r["grades_ok"] and r["passed"] and not r["more_pairs_for"], r
+for p in pr["pairs"]:
+    validate.answer("pair", p["pair"], pick=key[p["pair"]])
+r = validate.report()
+assert not r["blind_ok"] and not r["passed"] and len(r["more_pairs_for"]) == 0, r
+assert r["counts"]["aud:clients"]["right"] == 2
+lines = [l for l in open(validate.answers_file())]
+assert all(set(__import__("json").loads(l)) <= {"run", "kind", "ref", "ts", "pick", "grade", "audience", "purposes"} for l in lines)
+for p in pr["pairs"]:
+    validate.answer("pair", p["pair"], pick="cant")
+validate.answer("pair", pr["pairs"][0]["pair"], grade=1)
+assert not validate.report()["grades_ok"]
+validate.answer("pair", pr["pairs"][0]["pair"], grade=5)
+assert validate.report()["passed"]
+EOF
+check "voice build: guide, exemplars, stats and build.json in a tarball, leak-checked" \
+  bash -c "VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice build >/dev/null && t=\$(ls '$VST'/voice/builds/*/build-*.tar) && tar -tf \"\$t\" | sort | tr '\n' ' ' | grep -q 'voice-runtime/build.json voice-runtime/exemplars.json voice-runtime/guide.json voice-runtime/stats.json'"
+check "build.json names the exemplar count and embedding identity" vpy <<'EOF'
+import json, tarfile, glob
+from vdp import state
+t = sorted(glob.glob(state.path("voice", "builds", "*", "build-*.tar")))[-1]
+b = json.load(tarfile.open(t).extractfile("voice-runtime/build.json"))
+assert b["exemplar_count"] == 5 and b["embedding_identity"]["model"] == "fake-hash" and b["files"]["guide.json"] == 1, b
+EOF
+check "a real name in a built file stops the build before anything is written" vpy <<'EOF'
+import glob, os
+from vdp import state, voicebuild
+before = len(glob.glob(state.path("voice", "builds", "*")))
+p = voicebuild.guide.rules_file()
+open(p, "a").write("\n## All drafts\n\n- Copy Robin Madeup and zarnwick on client mail.\n")
+try:
+    voicebuild.build(log=lambda *a: None)
+    raise AssertionError("built")
+except SystemExit as e:
+    assert "leak check" in str(e), e
+r = state.read_json(state.path("voice", "build-leak-report.json"))
+assert {t["term"] for t in r["terms"]} >= {"robin madeup", "zarnwick"}, r
+assert len(glob.glob(state.path("voice", "builds", "*"))) == before
+s = open(p).read().replace("- Copy Robin Madeup and zarnwick on client mail.\n", "")
+open(p, "w").write(s)
+EOF
+check "publish goes through builds-sync's library once the gates pass" vpy <<'EOF'
+import os, sys, json
+from vdp import state, voicebuild
+home = state.path("fake-bs")
+os.makedirs(os.path.join(home, "pylib"), exist_ok=True)
+open(os.path.join(home, "pylib", "builds_sync.py"), "w").write(
+    "BUILDS_SYNC_API = 1\nCALLS = []\ndef publish_build(t, bt):\n"
+    "    open(t + '.published', 'w').write(bt)\n    return '/fake/repo'\n")
+os.environ["BUILDS_SYNC_HOME"] = home
+assert voicebuild.gates() == [], voicebuild.gates()
+bt = voicebuild.publish(log=lambda *a: None)
+_, tar = voicebuild.newest()
+assert open(tar + ".published").read() == bt
+EOF
+check "publish refuses while validation hasn't passed" vpy <<'EOF'
+from vdp import state, validate, voicebuild
+pr = state.read_json(validate.pairs_file())
+validate.answer("pair", pr["pairs"][0]["pair"], grade=1)
+try:
+    voicebuild.publish(log=lambda *a: None)
+    raise AssertionError("published")
+except SystemExit as e:
+    assert "validation run 1 hasn't passed (grades failed)" in str(e), e
+validate.answer("pair", pr["pairs"][0]["pair"], grade=5)
+EOF
+RPIDV=$(VDP_STATE="$VST" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp review --port 0 --no-browser > "$TMP/vreview.out" 2>&1 & echo $!)
+for _ in $(seq 50); do grep -q 'http://127' "$TMP/vreview.out" 2>/dev/null && break; sleep 0.1; done
+VURL=$(grep -o 'http://127.0.0.1:[0-9]*/' "$TMP/vreview.out")
+vpost(){ curl -s -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "$2" "$VURL$1"; }
+check "the review home links the voice build" bash -c "curl -sf '$VURL' | grep -q \"href='/voice'\""
+for pg in voice voice/labels voice/disagree voice/pairs voice/judge voice/report; do
+  check "the $pg page serves" bash -c "curl -sf '$VURL$pg' | grep -q '<h1>'"
+done
+P1=$(jq -r '.pairs[0].pair' "$VST/validation/pairs.json")
+check "a pick is saved at once and tells which side was real" \
+  bash -c "out=\$(curl -sf -X POST -H 'Content-Type: application/json' -d '{\"pair\":\"$P1\",\"pick\":\"A\"}' '${VURL}api/voice/pair') && echo \"\$out\" | jq -e '.real==\"A\" or .real==\"B\"' >/dev/null && tail -1 '$VST/validation-answers.jsonl' | jq -e '.ref==\"$P1\" and .pick==\"A\"' >/dev/null"
+check "a grade is saved at once" \
+  bash -c "curl -sf -X POST -H 'Content-Type: application/json' -d '{\"ref\":\"$P1\",\"grade\":5}' '${VURL}api/voice/pair-grade' >/dev/null && tail -1 '$VST/validation-answers.jsonl' | jq -e '.grade==5' >/dev/null"
+check "a label-check verdict is saved" \
+  bash -c "I=\$(jq -r '.ids[0]' '$VST/label-check.json'); curl -sf -X POST -H 'Content-Type: application/json' -d \"{\\\"id\\\":\\\"\$I\\\",\\\"verdict\\\":\\\"right\\\"}\" '${VURL}api/voice/label-check' >/dev/null && jq -e --arg i \"\$I\" '.answers[\$i].verdict==\"right\"' '$VST/label-check.json' >/dev/null"
+check "the voice pages refuse a cross-origin POST" \
+  test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Origin: http://evil.example' -d '{}' "${VURL}api/voice/pair")" = 403
+kill "$RPIDV" 2>/dev/null; wait "$RPIDV" 2>/dev/null
+unset FAKE_CLAUDE_COUNT
+fi
+
 # --- real -------------------------------------------------------------------
 
 echo "real"

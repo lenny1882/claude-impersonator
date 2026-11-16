@@ -52,6 +52,15 @@ def unescape_blank(body):
     return JSON_ESCAPE.sub(lambda m: " " * len(m.group(0)), body)
 
 
+def blanked(body, prx):
+    """body with JSON escapes blanked, and the pipeline's pseudonyms (prx)
+    blanked to NULs, lengths kept so offsets still point into body."""
+    out = unescape_blank(body)
+    if not prx:
+        return out
+    return prx.sub(lambda hit: "\0" * (hit.end() - hit.start()), out)
+
+
 def terms(d, amap):
     """{lowercased term: kind} for everything that must not appear."""
     from .anonymise import Replacer, first_name_roles, name_decisions, one_word, slack_users
@@ -114,8 +123,7 @@ def scan(d, amap):
     for s in SOURCES:
         for r in state.read_jsonl(state.anon_file(s)):
             body = json.dumps({k: r[k] for k in SENT_KEYS if k in r}, ensure_ascii=False)
-            searched = unescape_blank(body)
-            searched = prx.sub(lambda m: "\0" * len(m.group(0)), searched) if prx else searched
+            searched = blanked(body, prx)
             spans = [(m.start(), m.end(), m.group(1).lower())
                      for m in (rx.finditer(searched) if rx else ())]
             # A URL on a host that isn't public is a leak in itself.
@@ -150,3 +158,38 @@ def report_file():
 
 def load():
     return state.read_json(report_file(), None)
+
+
+def scan_built(files, d, amap):
+    """The leak check on a build's files before they are written to the
+    builds repo (PLAN §5, Builds on every machine): {name: object} searched
+    as JSON, the same terms, pseudonyms blanked and URL rule as `scan`.
+    Returns {"terms_checked", "hits", "terms": [...]}, examples naming the
+    file."""
+    found = terms(d, amap)
+    rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
+        re.escape(t) for t in sorted(found, key=len, reverse=True)) + r")(?![A-Za-z0-9])",
+        re.IGNORECASE) if found else None
+    kinds = dict(found)
+    pseud = sorted({e["pseudonym"] for e in amap.entries if e.get("pseudonym")},
+                   key=len, reverse=True)
+    prx = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(map(re.escape, pseud)) + r")(?![A-Za-z0-9])",
+                     re.IGNORECASE) if pseud else None
+    hits = defaultdict(lambda: {"count": 0, "examples": []})
+    for name, obj in files.items():
+        body = json.dumps(obj, ensure_ascii=False)
+        searched = blanked(body, prx)
+        spans = [(m.start(), m.end(), m.group(1).lower()) for m in (rx.finditer(searched) if rx else ())]
+        for a, b, h in urls.private(searched):
+            if "\0" not in h:
+                spans.append((a, b, h))
+                kinds.setdefault(h, "private URL host")
+        for a0, b0, t in spans:
+            h = hits[t]
+            h["count"] += 1
+            if len(h["examples"]) < MAX_EXAMPLES:
+                h["examples"].append({"source": "build", "id": name,
+                                      "text": body[max(0, a0 - SNIPPET):b0 + SNIPPET]})
+    return {"terms_checked": len(found), "hits": sum(h["count"] for h in hits.values()),
+            "terms": sorted(({"term": t, "kind": kinds[t], **h} for t, h in hits.items()),
+                            key=lambda x: (-x["count"], x["term"]))}

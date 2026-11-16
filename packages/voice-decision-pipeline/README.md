@@ -3,14 +3,19 @@
 Builds the corpus the voice and decision models are made from: Slack, Bitbucket
 PRs, Claude Code transcripts and GSD records, with credentials redacted, an
 anonymised copy of everything, per-source review batches, and a local
-embedding index of the voice items.
+embedding index of the voice items. Then builds the voice model from it:
+purpose labels, the voice guide, statistics and never-say list, exemplars,
+validation against held-back messages, and a leak-checked build that
+`builds-sync` carries to every machine's `voice-runtime`.
 
 Everything sent to the Anthropic API to build the models has to be anonymised
 first, by local scripts, and nothing from a source may go until its first
 batch has been read and approved. Done by hand in a session, real names leak:
 a subagent that reads the export carries them into its prompt. This package
 is the only thing that reads the sources, keeps the real-name corpus local,
-and writes the anonymised copy that later passes send. It covers
+and writes the anonymised copy that the voice passes send. Only the `voice`
+steps send anything, and only anonymised text, through `claude -p` on your
+own login, after each source's first batch is approved.
 
 Part of [claude-impersonator](https://github.com/lenny1882/claude-impersonator), which holds several packages
 that are each versioned, released and installed on their own.
@@ -111,8 +116,51 @@ anonymising map, the mining and batch decisions, the inputs with their
     status                       JSON: records, items, batches, sendable, modes
     paths                        where everything lives
 
+    voice label [--second] [--redo <purposes>] [--new-sample]
+    voice holdout [--fresh]
+    voice rules
+    voice guide
+    voice validate [--limit N]
+    voice pairs [--more <audience>]
+    voice build
+    voice publish
+    voice status
+
 Exit 4 means not set up, embedding-lib missing, or a venv built for another
 embedding-lib Python or lock; the message says what to run.
+
+## Building the voice model
+
+Run in order, each in your own shell (each logs to
+`/tmp/voice-decision-pipeline-voice-<step>.log`):
+
+1. `voice label`: Sonnet 5.5 labels every voice item's purposes, 20 items a
+   call, sent anonymised with its context. `voice label --second`: Opus 5.5
+   labels them all again, blind. A usage limit stops either cleanly (exit 6)
+   after the last finished batch; the same command resumes.
+2. On the review page's Voice build: the label check (120 items spread over
+   audiences and purposes; more than 6 wrong fails, then the prompt is
+   changed through `labelling-notes.md` in the state, the pass rerun with
+   `--redo <purposes>` or in full, and `--new-sample` drawn), and 60 of the
+   second model's disagreements to grade. The disagreement rate per purpose
+   is on the same page.
+3. `voice holdout`: 10% of each audience held back for validation.
+4. `voice rules` creates `own-rules.md` in the state; each `- ` line is one
+   of your rules, its `## Jira` section the Jira guide. `voice guide` writes
+   the statistics, the never-say list and the corpus guide (Opus 5.5).
+5. `voice validate`: every held-back message drafted with 3, 5 and 8
+   exemplars (Opus 5.5) and judged against the real one (Fable 5.2); the
+   best mean score sets the build's exemplar count.
+6. `voice pairs`, then on the review page: 60 blind pairs (12 per audience),
+   the judge's 20 worst and 10 random drafts, and the report: counts,
+   spotting rate with its 95% range, confidence the pass holds.
+7. `voice build`: guide.json, exemplars.json, stats.json and build.json in a
+   tarball in the state; the leak check reads them first and stops on any
+   real name. `voice publish` sends it through `builds-sync` once the label
+   check and the validation run have passed.
+
+Each call turns off tools, settings, MCP servers and slash commands, so it
+carries about 1,100 tokens of Claude Code's own overhead.
 
 ## How it works
 
@@ -134,6 +182,14 @@ files 600), never backed up:
 | `views/` | `show bitbucket`'s text, real names |
 | `spacy-cache.jsonl` | spaCy's tags by text hash, so reruns tag only new text |
 | `bitbucket-progress/` | each finished repo of an `extract bitbucket` still running or stopped |
+| `labels/` | each pass's labels, and every disagreement between them |
+| `labelling-notes.md` | additions to the labelling prompt |
+| `label-check.json`, `disagreement-grades.json` | your label check and disagreement grades |
+| `holdouts.json` | the held-back items and the validation run |
+| `own-rules.md` | your own rules, first in the guide |
+| `voice/` | the corpus guide, statistics, builds and the build leak report |
+| `validation/` | drafts, judge scores, blind pairs and their key, the judge review |
+| `validation-answers.jsonl` | every answer you give on the validation pages, as you give it |
 
 A record holds `id`, `source`, `conversation`, `author` (real id), `audience`,
 `ts`, `text`, `tags`, `context_ids`, `reactions`, `source_fields` and
