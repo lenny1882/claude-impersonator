@@ -241,10 +241,19 @@ Left out:
 ### 3.1 Uses
 
 Slack messages, PR descriptions, PR review comments, Jira comments. Jira
-comments keep their structure from `~/.claude/reference/jira-comments.md`;
-how that file's own wording rules (e.g. no second person, shorter) sit
-against the voice model is open (§8.2). Every draft goes to the owner for
+comments are their own audience (§3.2), with no exemplars: their guide
+  section is the `## Jira` section of
+the owner's rules file (§3.5), and those rules win on wording.
+Validation has no held-back Jira messages, so it can't test Jira
+drafts. Where a tool sets a format (the PR description templates in
+`/gsd:ship` and `/bm:ship`, the comment format of `/code-review
+--comment`), the tool keeps its structure and the voice model does the
+wording inside it. Every draft goes to the owner for
 approval before anything is sent.
+
+At drafting time Claude works out a draft's audience (from where it is
+going, by the §3.2 mapping) and purposes (from the request), and shows
+both above the draft for the owner to correct.
 
 Slack drafts go out through the Slack connector, which can draft and send
 messages. Sending still needs the owner's
@@ -259,6 +268,7 @@ approval of the exact text.
 | Technical team | technical channels, all Bitbucket PR content |
 | Senior / management | senior and management channels, group DMs with the same people |
 | 1:1 colleagues | one-to-one DMs |
+| Jira | none: rules only, no exemplars (§3.1) |
 
 Each conversation is assigned by its name and members; the owner checks the
 mapping. 1:1 colleagues is not split by whether the person reports to
@@ -376,7 +386,7 @@ subagent loads the skill is open (§8.2).
   sessions draft with; validation runs again if that
   model changes.
 - In parallel: the owner sees 60 blind pairs (their real message and the draft,
-  shuffled), 12 per audience across the five audiences, covering as many of
+  shuffled), 12 per audience across the five corpus audiences (not Jira), covering as many of
   the 11 purposes as each audience's held-back messages allow. For
   each pair the owner answers "A is mine", "B is mine" or "can't tell", and grades
   the draft 1–5 for "would send as is". The owner can review more at any time (the
@@ -413,6 +423,10 @@ subagent loads the skill is open (§8.2).
 ### 3.8 Upkeep
 
 - The skill saves each draft and the version the owner approved, and keeps them.
+  When the owner edits a draft after it leaves Claude (in Slack, say), the next
+  build matches the saved draft to the message actually sent (same
+  conversation, close in time, closest by similarity) and records that as
+  the approved version.
 - Regular review sessions with the owner feed them back in.
 - Approved versions do not join the exemplar pool on their own; they go in
   only through the review sessions.
@@ -1343,9 +1357,7 @@ stage lists only what blocks that stage.
 21. No 1:1 split (§3.2); the never-say list is measured against
     colleagues' phrases and a fixed committed list; thin cells fill from
     the same audience by similarity (§3.5).
-22. Drafting time: who sets audience and purpose, how an edited-after-
-    sending version is captured, `jira-comments.md` wording, `/gsd:ship`
-    and `/code-review` formats (§8.2).
+22. Drafting time: see §3.1 and §3.8.
 23. The exact CLAUDE.md line that loads the skill (§8.2); last, before voice
     goes live.
 23a. Code in the corpus.
@@ -1392,21 +1404,9 @@ stage lists only what blocks that stage.
 
 ### 8.2 Voice
 
-- How a draft's audience and purposes are set at drafting time: inferred by
-  Claude, or stated by the owner.
-- How the "approved version" is captured when the owner edits a draft after it
-  leaves Claude (e.g. edited in Slack before sending).
 - How often the regular review sessions run, and what form they take.
 - The exact line added to `~/.claude/CLAUDE.md` to load the voice skill
   (the owner approves the wording; CLAUDE.md is theirs).
-- How `jira-comments.md`'s own wording rules (e.g. no second person,
-  shorter) sit against the voice model where they disagree. Today §3.1
-  keeps only the file's structure. Options: the file's
-  wording rules win for Jira comments; the voice model wins; or the file's
-  rules apply only where the voice model has no Jira-specific evidence.
-- How the voice model sits alongside the formats other tools impose: the PR
-  description template in `/gsd:ship` and `/bm:ship`, and the comment format
-  of `/code-review --comment`.
 - Whether subagents receive the `~/.claude/CLAUDE.md` line that loads the
   voice skill, and a test that a drafting subagent loads it (§3.6).
   Not checked. `/code-review --comment` may word its comments in reviewer
