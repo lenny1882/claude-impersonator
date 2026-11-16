@@ -1185,6 +1185,13 @@ fire on several events.
   Not built yet: the §3.8 upkeep (matching edited drafts to sent messages,
   the review sessions), which needs drafts that only exist once
   `voice-runtime` is in use; and item 23's CLAUDE.md line.
+  To fix in the pipeline: the voice
+  steps that send (`voice label`, `voice guide`, `voice validate`) check
+  only that each source's first batch is approved, not the leak report, so
+  they would send with a leak hit outstanding, against §8.5. The fix: they
+  refuse while `leak-report.json` has hits, except hits marked cleared by
+  hand on the leak page, which gets a button to mark a hit cleared (the
+  app-group host `group.com`, above, is one).
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
