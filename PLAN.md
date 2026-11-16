@@ -563,6 +563,22 @@ recommendation can be reconsidered once that review is done.
 - The same reviewer covers decisions made only in code, decisions an agent
   doesn't notice it's making, and GSD executor Rules 1–3 (auto-fix bugs, add
   missing critical functionality, fix blockers).
+- How the reviewer runs:
+  - A command hook works out the diff against the review record locally,
+    looks up the principles touching the changed files, and sends both in
+    one `claude -p` call.
+  - Haiku 5.5 screens every review; Sonnet 5.5 confirms before anything is
+    blocked.
+  - On a problem, subagents and GSD runs are sent back with the reason; in
+    the main session the owner is asked first (fix it, allow this one, or the
+    rule is wrong). Nothing is reverted.
+  - After 2 blocks on the same problem the reviewer parks a question
+    (diff, principle, both attempts) and lets the agent stop.
+  - A local pre-filter skips the review when the change is only whitespace
+    or formatting, only comments, only docs other than plan and spec files,
+    or only generated files.
+  - Each `claude -p` call carries about 46k tokens of Claude Code's own
+    setup, which §6's reviewer figures leave out.
 - What stays unprevented: a judgement call made in text inside a GSD step
   that the reviewer misses. The owner's review sessions catch it after the fact,
   as would a phase-end audit if one is built (§8.3).
@@ -1475,9 +1491,6 @@ stage lists only what blocks that stage.
 
 ### 8.3 Decisions
 
-- Reviewer hook type: prompt (single call) or agent (experimental; whether it
-  can run `git diff` is unconfirmed), and which model it runs on (the cost
-  estimate assumes the cheap background tier).
 - Which model makes the held-back decision predictions and which runs the
   decision judge.
 - Whether a phase-end audit (diff against decision log, unlogged items to the
@@ -1523,17 +1536,6 @@ stage lists only what blocks that stage.
 - Whether OpenSpec runs its own agents (its docs don't say).
 - How the `SessionStart` block behaves in sessions that never touch code (it
   fires in every session; behaviour not decided).
-- What the reviewer does when it finds a problem. Today §4.5 says it sends
-  the agent back. Open: whether,
-  besides that, it reverts, logs it or parks a question; and in the main
-  session, where the owner is present, whether it asks them directly instead of
-  sending Claude back.
-- What happens when the reviewer keeps blocking: Claude Code caps
-  continuations at 8; whether the reviewer then parks a question. (A prompt
-  hook's `"impossible": true` lets the stop go ahead, APPENDIX D.1.)
-- Whether a local pre-filter limits the end-of-turn and after-plan reviews to
-  changes that touch structure (new or moved files, large diffs), to cut
-  cost.
 - What the gates and reviewers do before the decision model exists or while
   it's at trust level 0: live from the start, or only once the model passes
   validation.
