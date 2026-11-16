@@ -440,6 +440,13 @@ subagent loads the skill is open (§8.2).
   at any time. It runs on the local review page: recurring edits shown as
   suggested lines for the owner's rules file, approved versions proposed as
   exemplars, each accepted or rejected by the owner.
+- Decision review happens in the same session, on a Decisions tab
+  inferred reasons, bulk-accepted records, the choices Claude made in
+  answers given after a "You decide", reviewer blocks from subagents and GSD runs,
+  phase-audit finds, recommendations against the owner's choices, and ladder
+  promotions, each with its evidence, accepted, rejected or corrected one
+  by one. The offer rule counts items waiting on either side: 20, or 4
+  weeks, or whenever the owner starts one.
 - Approved versions do not join the exemplar pool on their own; they go in
   only through the review sessions.
 
@@ -1555,7 +1562,6 @@ stage lists only what blocks that stage.
   unless run through the Skill tool; `UserPromptSubmit`/`UserPromptExpansion`
   are the candidates) — not checked. Deferred with the other OpenSpec
   points until the owner starts using it.
-- What a review session for decisions looks like, and how often.
 - Whether any GSD setting can narrow `bm-executor`'s Rules 1–3 (not checked).
   L116 also forbids ad-hoc pauses to ask about mechanics (APPENDIX D.3).
 - Whether `bm-phase-researcher` (spawned by `/gsd:quick`, `quick.md` L411)
