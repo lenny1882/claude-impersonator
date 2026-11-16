@@ -875,7 +875,8 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   the owner.
 - Machinery tests: every agent type that gets the `SubagentStart` block
   parks a decision outside the three kinds — the test list and the block
-  list are one list, with read-only search and help agents skipped (§4.4);
+  list are one list, with read-only search and help agents skipped (§4.4),
+  so GSD's phase researcher, which quick tasks also spawn, is tested too;
   each review point sends back a planted bad decision; the question record
   delivers by push and the session, and returns answers by message (§4.7).
 - Starting bar (all of): no confident wrong predictions in the owner's
@@ -1569,8 +1570,7 @@ stage lists only what blocks that stage.
   `./CLAUDE.md`, which the executor treats as hard constraints over plan
   instructions (open below). L116 also forbids ad-hoc pauses to ask about
   mechanics (APPENDIX D.3).
-- Whether `bm-phase-researcher` (spawned by `/gsd:quick`, `quick.md` L411)
-  needs the parking test along with the other deciding agents (§4.11).
+
 - Whether the after-each-plan review hooks `SubagentStop` or `PreToolUse` on
   `SubagentHandback`: the observed `bm-executor` handed back through a
   `SubagentHandback` tool call, logged by `PreToolUse` a second before
