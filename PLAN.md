@@ -618,6 +618,11 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   an open question picked there is put to the owner as a multiple-choice prompt
   in whichever session the owner is in, and the answer goes to the question record
   for the waiting work.
+- Waiting work resumes through a background wait: the
+  parking session runs `question-store wait <id>` as a background command,
+  which exits when the answer is recorded, and Claude Code re-invokes the
+  session with it. If the session has closed, `/questions` lists the
+  question as answered with nothing waiting, with its session link.
 - The session that parks a question sends its push, with Claude Code's
   push notification tool. No session runs only to
   deliver questions.
@@ -1600,10 +1605,6 @@ stage lists only what blocks that stage.
 
 ### 8.4 Questions to the owner (`question-store`)
 
-- How waiting work learns that a parked question has been answered and is
-  resumed, outside `autonomous`'s blocker route: polling by the waiting
-  agent, a hook in the next turn, or the owner restarting it. Open: if
-  the run that parked the question has ended, nothing in the plan restarts it.
 
 ### 8.5 Packaging and process
 
