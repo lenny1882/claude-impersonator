@@ -1586,7 +1586,8 @@ stage lists only what blocks that stage.
   `workflow._auto_chain_active` and `workflow.auto_advance`. Rule 3 already
   excludes package-manager installs. The one lever is a project
   `./CLAUDE.md`, which the executor treats as hard constraints over plan
-  instructions (open below). L116 also forbids ad-hoc pauses to ask about
+  instructions; `decision-runtime` doesn't write to work repos'
+  `CLAUDE.md` files, which colleagues share. L116 also forbids ad-hoc pauses to ask about
   mechanics (APPENDIX D.3).
 
 - Whether OpenSpec runs its own agents (its docs don't say). Deferred until
@@ -1599,9 +1600,7 @@ stage lists only what blocks that stage.
   GitHub-connected account, clone only GitHub repos, and load none of
   `~/.claude`. Sessions started from claude.ai run through Remote Control
   servers on the owner's machines, which the runtimes cover.
-- `bm-executor` treats a project `./CLAUDE.md` as hard constraints — a
-  stronger route for that agent (it would mean editing each repo's
-  CLAUDE.md).
+
 - Workflow agents launched with `agentType` report that type, not
   `workflow-subagent` (APPENDIX D.1), which the `SubagentStart` skip list
   matches on.
