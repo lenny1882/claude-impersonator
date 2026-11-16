@@ -1156,7 +1156,8 @@ fire on several events.
     review page; there is no command for either, and none is added.
   - The leak check reads an iOS app-group identifier
     (`group.com.<client>.<app>`, the client already a pseudonym) as the
-    private URL host `group.com`.
+    private URL host `group.com`.;
+    a rebuild that stops on such a hit is cleared by hand.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
