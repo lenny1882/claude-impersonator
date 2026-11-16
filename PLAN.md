@@ -823,7 +823,8 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   per kind for 80%, 169 for 90%). `other` principles get no holdout floor:
   they are graded live in shadow and reported, not counted towards the pass.
 - Each held-back case is predicted from the question, options and context
-  alone. Outcomes: right, wrong, or refusal. Refusals are split:
+  alone, by Opus 5.5, the model the owner's sessions decide with; Fable 5.2
+  judges. Outcomes: right, wrong, or refusal. Refusals are split:
   correct (no principle at the bar, outside the kinds, or a client
   constraint conflicts) and unnecessary (a principle at the bar covered it
   and would have given the owner's answer). Unnecessary refusals are reported
@@ -832,15 +833,15 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   Why refusals don't count against the model:
   a confident wrong prediction is the failure that
   matters; a refusal is safe, because the question just reaches the owner.
-- Grading in parallel: a model judge scores every prediction against the owner's
+- Grading in parallel: a model judge (Fable 5.2) scores every prediction against the owner's
   real choice and stated reason; the owner grades every held-back case,
   so the owner's grades decide the pass and measure how far the judge agrees with
   the owner.
 - Machinery tests: every agent type that gets the `SubagentStart` block
   parks a decision outside the three kinds — the test list and the block
-  list are one list, and which types are skipped is open (§8.3); each review
-  point sends back a planted bad decision; the question record delivers to all
-  three channels and returns answers.
+  list are one list, with read-only search and help agents skipped (§4.4);
+  each review point sends back a planted bad decision; the question record
+  delivers by push and the session, and returns answers by message (§4.7).
 - Starting bar (all of): no confident wrong predictions in the owner's
   grades; at least 95% right among predictions made, refusals excluded,
   with the refusal rate reported next to it; the owner's sign-off; every
@@ -1521,8 +1522,6 @@ stage lists only what blocks that stage.
 
 ### 8.3 Decisions
 
-- Which model makes the held-back decision predictions and which runs the
-  decision judge.
 - Whether a phase-end audit (diff against decision log, unlogged items to the
   question record without blocking) is built, or the reviewer is enough.
   GSD's own milestone-level audit in `autonomous` (§7) is not that audit.
