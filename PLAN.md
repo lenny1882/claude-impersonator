@@ -686,6 +686,12 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
 - Written records are weighted by origin: answers the owner overrode or gave one
   by one count as the owner's; recommendations accepted in bulk, and context written
   by infrastructure skips, are weak evidence until the owner confirms them.
+- A "You decide" answer in discuss is a delegation, not the owner's choice
+  it counts towards no principle and is recorded as a
+  kind of decision the owner hands to agents (§4.1); what Claude then chose is
+  weak evidence until the owner confirms it in a review session.
+- How grill-with-docs records are weighted is decided when their reader is
+  added (§1).
 
 ### 4.10 Output
 
@@ -1405,8 +1411,7 @@ stage lists only what blocks that stage.
 
 **Stage 4 – decision model and `decision-runtime`**
 26. Lookup: see §4.3.
-27. Extraction weighting: "You decide" answers, grill-with-docs rounds
-    (§8.3).
+27. Extraction weighting: see §4.9.
 28. What counts as an approved entry, and whether a comment in a plan can set
     aside a principle (§8.3).
 29. Gates: marked paths, per-stack patterns, test-framework switch, timeout
@@ -1577,9 +1582,7 @@ stage lists only what blocks that stage.
 - Whether `autonomous`'s ui-phase (UI design contract) and ui-review are
   covered; not decided.
 - Origin weighting (§4.9) needs the transcript's AskUserQuestion answers,
-  because GSD's `CONTEXT.md` records only the final answer (§7). A "You
-  decide" answer in discuss is the owner delegating and shouldn't count as the owner's
-  choice; how it is counted is not decided.
+  because GSD's `CONTEXT.md` records only the final answer (§7).
 - Which GSD checkpoints auto-approve, beyond `gate="blocking-human"` ones
   being excluded (§7): not checked.
 - Whether Rule 4's checkpoint (what was found, proposed change, why, impact,
@@ -1606,6 +1609,7 @@ stage lists only what blocks that stage.
   written only when the owner says yes to it, and `GLOSSARY.md` is updated
   without asking. Whether these count as the owner's or as weak
   evidence is not decided.
+  Deferred until the reader is added.
 
 ### 8.4 Questions to the owner (`question-store`)
 
