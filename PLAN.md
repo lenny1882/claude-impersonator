@@ -549,7 +549,7 @@ the agent back if it finds a bad or unlogged decision:
 
 | Work | Review point |
 |---|---|
-| GSD execute runs (including `/gsd:quick`) | after each plan: `SubagentStop` on `gsd:bm-executor` |
+| GSD execute runs (including `/gsd:quick`) | after each plan: `PreToolUse` on the executor's `SubagentHandback`, so a problem denies the hand-back before the report leaves; `SubagentStop` as the fallback for agents that end without one |
 | Main session (including `/gsd:fast` and repos without `.planning/`) | end of turn: `Stop`, only if the repo changed since the last review |
 | Non-GSD subagents that change code (incl. worktree-isolated and background agents) | `SubagentStop`, if their worktree or the main tree changed since they started |
 | Written plans before code | plan review, one reviewer with an adapter per tool (§4.6) |
@@ -1571,10 +1571,6 @@ stage lists only what blocks that stage.
   instructions (open below). L116 also forbids ad-hoc pauses to ask about
   mechanics (APPENDIX D.3).
 
-- Whether the after-each-plan review hooks `SubagentStop` or `PreToolUse` on
-  `SubagentHandback`: the observed `bm-executor` handed back through a
-  `SubagentHandback` tool call, logged by `PreToolUse` a second before
-  `SubagentStop` (APPENDIX D.2). Not decided.
 - Whether OpenSpec runs its own agents (its docs don't say). Deferred until
   the owner starts using it.
 - How the `SessionStart` block behaves in sessions that never touch code (it
