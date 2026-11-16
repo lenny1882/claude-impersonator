@@ -773,6 +773,11 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   A principle with 2 blocks the owner judged wrong drops back to "ask"
   until the owner approves it again; the reviewer stops blocking on it, and the
   rest of the model stays at its level.
+- The reviewer's miss rate: each review session shows
+  10 random reviews that found nothing, with their diffs and the principles
+  checked, for the owner to mark whether each should have been blocked. The owner's
+  marks and the phase-audit finds give a miss rate with a 95% range on the
+  review page.
   the sweep, logging review blocks) follows the points above.
 
 ### 4.9 Extracting decisions
@@ -1578,8 +1583,6 @@ stage lists only what blocks that stage.
 
 - Whether OpenSpec runs its own agents (its docs don't say). Deferred until
   the owner starts using it.
-- How logged reviews that found nothing are used to estimate what the
-  reviewer misses.
 - How the owner adds or adjusts a principle directly. The principles file is
   generated, so it needs a pipeline input, like the voice guide.
 - Sessions this machine's hooks don't reach: claude.ai cloud sessions and
