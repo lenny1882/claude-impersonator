@@ -490,6 +490,26 @@ is a `voice-decision-pipeline` output (§5).
 | `SubagentStart` block | advisory | every subagent, plugin and workflow agents included (agents that never decide can be skipped by type; which ones, Explore included, is open — §8.3). Observed firing for workflow agents and for a GSD plugin agent (`gsd:bm-executor`; saved hook log, APPENDIX D.2). That the block's context reaches the agent is not tested for either — §8.3 |
 | `SessionStart` block (instead of a CLAUDE.md section, so subagents don't get it twice) | advisory | the main session, every session (not just GSD repos, because Claude's recommendations in ordinary sessions follow the model — §4.1) |
 
+Gates:
+
+- Marked paths: a default list (CI and deploy config such as
+  `bitbucket-pipelines.yml` and `serverless*.yml`, infrastructure-as-code
+  such as Terraform, database migrations, `.env` files), plus a small file
+  at a repo's root that adds paths or takes defaults off.
+- Patterns per stack (manifest files and install commands for JS/TS, Dart,
+  Go and PHP; the two commit-command patterns §7 says must both match) are
+  taken at build time from what the repos on this machine use. Switching
+  test frameworks is a new test dependency in a manifest or a new test
+  config file (`jest.config.*`, `vitest.config.*` and the like). The full
+  list goes in the gates' config and the owner reviews it before the gates go
+  live.
+- A gate that times out blocks the call: a 30-second limit, which covers
+  the embedding model's cold start, and every timeout is logged.
+- A wrong block is overridden through the question the denial parks: "allow
+  this one" becomes an asked entry so the retry passes; "this rule is
+  wrong" also flags the pattern or marked path for the next review session.
+  Both are logged as false blocks. There is no allow command.
+
 Fallback: if tests show a particular agent ignoring the `SubagentStart`
 block, that agent alone moves to a `PreToolUse` hook on the Agent tool that
 appends the block to its prompt.
@@ -1419,8 +1439,7 @@ stage lists only what blocks that stage.
 26. Lookup: see §4.3.
 27. Extraction weighting: see §4.9.
 28. Approved entries and plan comments: see §4.8 and §4.10.
-29. Gates: marked paths, per-stack patterns, test-framework switch, timeout
-    behaviour, overriding a false block (§8.3).
+29. Gates: see §4.4.
 30. Reviewers: hook type and model, what happens on a problem and on
     repeated blocks, the pre-filter, `asyncRewake`, plan files as
     decisions, un-anonymised diffs (§8.3).
@@ -1461,14 +1480,6 @@ stage lists only what blocks that stage.
   estimate assumes the cheap background tier).
 - Which model makes the held-back decision predictions and which runs the
   decision judge.
-- Which paths count as "marked paths" for the path gate.
-- The gate patterns per stack (manifest files and install commands for
-  JS/TS, Dart, Go, PHP); the exact `bm-sdk query commit…` and `git commit`
-  patterns (§7 says both must match); and what tool call counts as switching
-  test frameworks (e.g. a new test dependency in a manifest, a new test
-  config file such as `jest.config.*`/`vitest.config.*`) — not defined.
-- Whether the gates are configured so a timed-out gate blocks the call
-  (by default a `PreToolUse` timeout lets it through, §7).
 - Whether a phase-end audit (diff against decision log, unlogged items to the
   question record without blocking) is built, or the reviewer is enough.
   GSD's own milestone-level audit in `autonomous` (§7) is not that audit.
@@ -1520,7 +1531,6 @@ stage lists only what blocks that stage.
 - What happens when the reviewer keeps blocking: Claude Code caps
   continuations at 8; whether the reviewer then parks a question. (A prompt
   hook's `"impossible": true` lets the stop go ahead, APPENDIX D.1.)
-- How the owner overrides a false block ("allow anyway") without a workaround.
 - Whether a local pre-filter limits the end-of-turn and after-plan reviews to
   changes that touch structure (new or moved files, large diffs), to cut
   cost.
