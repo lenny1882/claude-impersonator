@@ -610,7 +610,7 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   The owner is told it was already answered. The owner changes an answer on
   purpose in `/questions`: not yet picked up, the new
   answer replaces it; picked up by a session still running, that session is
-  told on its next turn; picked up by a run that has ended, `/questions`
+  sent the change the same way; picked up by a run that has ended, `/questions`
   marks it changed after use for the owner to decide what to redo. The
   decision log keeps both answers.
 - One session command, `/questions`, lists every question, open and
@@ -618,11 +618,16 @@ infrastructure skip and `ExitPlanMode`; each new tool costs one adapter
   an open question picked there is put to the owner as a multiple-choice prompt
   in whichever session the owner is in, and the answer goes to the question record
   for the waiting work.
-- Waiting work resumes through a background wait: the
-  parking session runs `question-store wait <id>` as a background command,
-  which exits when the answer is recorded, and Claude Code re-invokes the
-  session with it. If the session has closed, `/questions` lists the
-  question as answered with nothing waiting, with its session link.
+- Waiting work resumes by message: at park time the
+  question record keeps the session's `CLAUDE_CODE_MESSAGING_SOCKET` and
+  `CLAUDE_CODE_MESSAGING_TOKEN`; when the answer is recorded,
+  `question-store` posts it to that socket, and an idle session starts a
+  new turn with it (Claude Code's cross-session messaging, 2.1.224 or
+  later). Nothing runs while waiting. A session in bypass-permissions mode
+  holds the message for approval. If the session has closed, `/questions`
+  lists the question as answered with nothing waiting, with its session
+  link; the owner reopens it, and nothing runs `claude -p --resume` on its
+  own.
 - The session that parks a question sends its push, with Claude Code's
   push notification tool. No session runs only to
   deliver questions.
