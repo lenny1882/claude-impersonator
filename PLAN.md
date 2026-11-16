@@ -1572,8 +1572,6 @@ stage lists only what blocks that stage.
 
 ### 8.1 Sources and corpus
 
-- The exact Bitbucket repos (to be picked when run; rule set apart from the
-  pre-2019 rule in §1).
 
 ### 8.2 Voice
 
@@ -1673,8 +1671,10 @@ stage lists only what blocks that stage.
   directory holding the sample (`{temp_dir}/profile-sample.jsonl`, the file
   to anonymise) and the analysis (the agent's `<analysis>` JSON block), so
   both must be copied to the pipeline's state before cleanup.
-- Whether pipeline rebuilds (folding in new transcripts, PRs and GSD
-  records) are run by hand in review sessions or scheduled automatically.
+- Pipeline rebuilds are run by hand: the review page
+  shows when enough new material has built up, with the command, and the owner
+  runs it in their own shell; a failing leak check stops it before anything
+  is sent.
 - Running costs not estimated in §6: the 300–600-token block
   in every session (`SessionStart`) and every subagent launch
   (`SubagentStart`), lookup results at each decision, gate denial reasons,
