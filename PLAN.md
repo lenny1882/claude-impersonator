@@ -598,6 +598,8 @@ recommendation can be reconsidered once that review is done.
     repos and files such as `~/.claude` are covered; a shell-made change
     outside a git repo is not. OpenSpec's open points wait until the owner
     starts using it.
+  - Once a build is delivered the reviewer blocks, at trust level 0 too
+    with no build it skips (§5).
   - A skipped agent's decision is still caught if it ends up in code; one
     that reaches the owner only as a recommendation is not.
   - Each `claude -p` call carries about 46k tokens of Claude Code's own
@@ -1483,7 +1485,7 @@ stage lists only what blocks that stage.
 31. Coverage: settled in §4.4 and §4.5; the
     `SubagentStart` delivery test is a build task (§8.3). Other machines: §5 (Builds on
     every machine.
-32. Behaviour before the model passes validation (§8.3).
+32. Before validation: settled in §4.5 and §5.
 33. Build task, not a question: search every available transcript for a
     dependable marker of Claude's recommendations (§4.5).
 34. The remaining §8.3 items, mostly checks rather than choices.
@@ -1553,9 +1555,6 @@ stage lists only what blocks that stage.
   the owner starts using it.
 - How the `SessionStart` block behaves in sessions that never touch code (it
   fires in every session; behaviour not decided).
-- What the gates and reviewers do before the decision model exists or while
-  it's at trust level 0: live from the start, or only once the model passes
-  validation.
 - How the owner adds or adjusts a principle directly. The principles file is
   generated, so it needs a pipeline input, like the voice guide.
 - Sessions this machine's hooks don't reach: claude.ai cloud sessions and
