@@ -42,8 +42,11 @@ MODELS = {
 
 RETRIES = 3
 TIMEOUT = 900
+# Claude Code words a limit several ways: "Claude AI usage limit reached",
+# "You've hit your 5-hour limit", "weekly limit". Matched in lower case.
 LIMIT_WORDS = ("usage limit", "rate limit", "limit reached", "limit will reset",
-               "out of extra usage", "credit balance")
+               "out of extra usage", "credit balance", "hit your", "-hour limit",
+               "weekly limit")
 
 
 class UsageLimit(Exception):

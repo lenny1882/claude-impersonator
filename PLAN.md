@@ -1193,11 +1193,11 @@ fire on several events.
   keeps the count found when it was made, and a term found more times
   later stops sending again. The build's own leak check honours the marks
   by term. Refusals name kinds and counts, never a term.
-  To fix in the pipeline: `model.py` recognises a usage limit by fixed
-  phrases, and Claude Code's "You've hit your 5-hour limit" is not one of
-  them. A pass that reaches that limit retries the batch three times and
-  stops with a traceback, not cleanly with exit 6. Finished batches are
-  kept either way, and the same command resumes.
+  Usage limits: `model.py` recognises a limit by fixed
+  phrases, Claude Code's "You've hit your 5-hour limit" among them.
+  The phrases cover the 5-hour and
+  weekly limits, which stop the pass cleanly with exit 6. Finished batches
+  are kept either way, and the same command resumes.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.

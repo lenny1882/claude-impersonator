@@ -12,7 +12,8 @@ The stand-in claude answers by the JSON schema it is given: labels (a "?"
 makes "ask", else "status"; the second model also adds "thank" to messages
 holding "thanks", so the two disagree there), guide rules, a draft, judge
 scores (the draft made with 5 exemplars scores best). FAKE_CLAUDE_LIMIT=<n>
-makes the n-th call and after answer with a usage limit; calls are counted
+makes the n-th call and after answer with a usage limit (worded as
+FAKE_CLAUDE_LIMIT_TEXT when set); calls are counted
 in FAKE_CLAUDE_COUNT (a file).
 """
 
@@ -114,7 +115,7 @@ if cf:
     open(cf, "w").write(str(n))
 lim = int(os.environ.get("FAKE_CLAUDE_LIMIT") or 0)
 if lim and n >= lim:
-    print(json.dumps({"type": "result", "is_error": True, "result": "Claude AI usage limit reached|1700000000"}))
+    print(json.dumps({"type": "result", "is_error": True, "result": os.environ.get("FAKE_CLAUDE_LIMIT_TEXT") or "Claude AI usage limit reached|1700000000"}))
     sys.exit(1)
 props = schema.get("properties", {})
 if "items" in props:

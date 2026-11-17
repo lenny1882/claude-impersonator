@@ -778,6 +778,19 @@ FAKE_CLAUDE_LIMIT=3 vv label > "$TMP/vlabel1.out" 2>&1; rc=$?
 [ $rc = 6 ] && grep -q "usage limit after 40 items" "$TMP/vlabel1.out" \
   && ok "a usage limit stops the pass cleanly (exit 6) after the finished batches" \
   || no "a usage limit stops the pass cleanly (exit 6) after the finished batches" "exit $rc: $(tail -2 "$TMP/vlabel1.out")"
+for t in "You've hit your 5-hour limit · resets 4am (UTC)" "You've hit your weekly limit · resets Mon 9am"; do
+  echo 0 > "$FAKE_CLAUDE_COUNT"
+  FAKE_CLAUDE_LIMIT=1 FAKE_CLAUDE_LIMIT_TEXT="$t" VDP_CLAUDE="$VBIN/claude" vpy > "$TMP/vlimit.out" 2>&1 <<'PYEOF'
+from vdp import model
+try:
+    model.call("labeller", "s", "p", {"type": "object"}, log=print)
+except model.UsageLimit:
+    print("stopped")
+PYEOF
+  name="\"${t%% ·*}\" stops the pass as a usage limit, with no retry"
+  [ "$(cat "$TMP/vlimit.out")" = stopped ] && [ "$(cat "$FAKE_CLAUDE_COUNT")" = 1 ] \
+    && ok "$name" || no "$name" "$(cat "$FAKE_CLAUDE_COUNT") calls: $(cat "$TMP/vlimit.out")"
+done
 check "the stopped pass kept its two finished batches" test "$(wc -l < "$VST/labels/labeller.jsonl")" = 40
 check "the rerun resumes after them and labels every voice item" \
   bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice label | grep -q '50 of 90 items to send' && test \$(wc -l < '$VST/labels/labeller.jsonl') = 90"
