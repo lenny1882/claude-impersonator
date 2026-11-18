@@ -990,6 +990,14 @@ vpost(){ curl -s -w '\n%{http_code}' -X POST -H 'Content-Type: application/json'
 check "the review home links the voice build" bash -c "curl -sf '$VURL' | grep -q \"href='/voice'\""
 for pg in voice voice/labels voice/disagree voice/pairs voice/judge voice/report; do
   check "the $pg page serves" bash -c "curl -sf '$VURL$pg' | grep -q '<h1>'"
+  # Every button that takes a pressed state has a style for it, so a click shows.
+  check "every pressable button on /$pg shows when pressed" bash -c "curl -sf '$VURL$pg' | '$PY' -c '
+import re,sys
+h=sys.stdin.read()
+styled=set(re.findall(r\"button\\.([\\w-]+)\\[aria-pressed=true\\]\",h))
+bad=[c for c in re.findall(r\"<button class=(\\x27[^\\x27]*\\x27|\\S+)[^>]*aria-pressed\",h)
+     if not styled & set(c.strip(\"\\x27\").split())]
+sys.exit(1 if bad else 0)'"
 done
 P1=$(jq -r '.pairs[0].pair' "$VST/validation/pairs.json")
 check "a pick is saved at once and tells which side was real" \

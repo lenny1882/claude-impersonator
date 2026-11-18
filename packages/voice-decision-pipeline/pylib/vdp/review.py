@@ -49,6 +49,8 @@ padding:6px 8px;text-align:left;vertical-align:top}th{color:var(--muted);font-we
 margin:6px 0;font:14px/1.45 ui-monospace,monospace}mark{background:var(--mark);color:var(--markfg);
 border-radius:3px;padding:0 2px}button{font:inherit;padding:5px 12px;border-radius:6px;
 border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button.v[aria-pressed=true],button.p[aria-pressed=true],button.g[aria-pressed=true]{
+background:var(--accent);color:var(--badgefg);border-color:var(--accent)}
 button.keep[aria-pressed=true]{background:var(--ok);color:#fff}
 button.strike[aria-pressed=true]{background:var(--bad);color:#fff}
 details{margin-top:6px}.err{color:var(--bad)}textarea{width:100%;font:inherit}
