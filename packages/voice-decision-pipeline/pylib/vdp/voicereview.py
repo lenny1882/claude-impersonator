@@ -12,6 +12,7 @@ Every answer is written to the state as it is given. Text shown is the
 anonymised copy, the same text that was sent.
 """
 
+import hashlib
 import html
 import json
 
@@ -120,6 +121,15 @@ order; tick the right ones under "correct it" first, and the correction is used 
 labeller's. Each click is saved.</p><table>{''.join(rows)}</table>""")
 
 
+def sides(i):
+    """(model on A, model on B) for a disagreement: a coin toss seeded by the
+    item's id. An item keeps its sides across loads; across the sample each
+    model lands on A about half the time. Grades are saved by
+    model name, so the sides never reach the answers."""
+    swap = hashlib.sha1(f"disagree-sides:{i}".encode()).digest()[0] & 1
+    return ("second", "labeller") if swap else ("labeller", "second")
+
+
 def disagree_page():
     labels.write_disagreements()
     g = state.read_json(labels.disagree_grades_file(), {}) or {}
@@ -134,13 +144,15 @@ def disagree_page():
         pk = a.get("pick", "")
         btn = lambda v, label: (f"<button class=v data-v={v} aria-pressed={'true' if pk == v else 'false'} "
                                 f"onclick=\"dg('{i}','{v}')\">{label}</button>")
+        sa, sb = sides(i)
         rows.append(f"<tr id='i-{i}'><td><div class=meta>{E(it['audience'])}</div>{ctx_block(it)}"
-                    f"<div>A: <b>{E(', '.join(x['labeller']))}</b> · B: <b>{E(', '.join(x['second']))}</b></div>"
+                    f"<div>A: <b>{E(', '.join(x[sa]))}</b> · B: <b>{E(', '.join(x[sb]))}</b></div>"
                     f"<details><summary class=meta>neither: the right labels</summary>{boxes(a.get('purposes') or [])}</details></td>"
-                    f"<td class=act>{btn('labeller', 'A right')}{btn('second', 'B right')}{btn('neither', 'Neither')}</td></tr>")
+                    f"<td class=act>{btn(sa, 'A right')}{btn(sb, 'B right')}{btn('neither', 'Neither')}</td></tr>")
     return _page("Second-model disagreements", f"""<p>A fixed sample of {len(g.get('ids', []))} items
-where the two models' labels differ. A is the labeller, B the second model; which is which doesn't
-matter to the grade. Every disagreement is in <code>labels/disagreements.jsonl</code>.</p>
+where the two models' labels differ. Each item puts the models on A and B by a coin toss.
+Every disagreement is in
+<code>labels/disagreements.jsonl</code>.</p>
 <table>{''.join(rows)}</table>""")
 
 

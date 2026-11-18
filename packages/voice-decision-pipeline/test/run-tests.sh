@@ -805,6 +805,24 @@ from vdp import labels
 r = labels.disagreement_rates()
 assert r["thank"]["differ"] == r["thank"]["either"] > 0 and r["ask"]["differ"] == 0, r
 EOF
+check "the disagreement page puts each model on A or B per item, the same way on every load" vpy <<'EOF'
+import re
+from vdp import labels, state, voicereview
+ids = [f"r{n:04d}" for n in range(200)]
+on_a = [voicereview.sides(i)[0] for i in ids]
+assert 70 < on_a.count("labeller") < 130, on_a.count("labeller")
+assert [voicereview.sides(i)[0] for i in ids] == on_a
+assert all(set(voicereview.sides(i)) == {"labeller", "second"} for i in ids)
+h = voicereview.disagree_page()
+ds = {x["id"]: x for x in state.read_jsonl(state.path("labels", "disagreements.jsonl"))}
+rows = re.findall(r"<tr id='i-([^']+)'>.*?A: <b>([^<]*)</b> · B: <b>([^<]*)</b>.*?"
+                  r"onclick=\"dg\('[^']+','(\w+)'\)\">A right.*?onclick=\"dg\('[^']+','(\w+)'\)\">B right", h, re.S)
+assert rows
+for i, ta, tb, pa, pb in rows:
+    sa, sb = voicereview.sides(i)
+    assert (pa, pb) == (sa, sb), (i, pa, pb)
+    assert ta == ", ".join(ds[i][sa]) and tb == ", ".join(ds[i][sb]), (i, ta, tb)
+EOF
 check "labelling notes in the state change the prompt version, so a rerun is traceable" vpy <<'EOF'
 from vdp import labels
 v = labels.prompt_version()
