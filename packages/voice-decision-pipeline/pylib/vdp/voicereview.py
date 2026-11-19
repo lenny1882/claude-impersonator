@@ -72,6 +72,7 @@ def home_section():
 def overview():
     s = labels.summary()
     c = s["check"]
+    g = labels.disagree_result()
     rates = s["rates"]
     rrows = "".join(f"<tr><td>{p}</td><td>{v['either']}</td><td>{v['differ']}</td><td>{int(v['rate'] * 100)}%</td></tr>"
                     for p, v in sorted(rates.items(), key=lambda x: -x[1]["rate"]))
@@ -84,7 +85,9 @@ def overview():
         "not drawn yet: it is drawn after the first labelling pass." if not c.get("drawn") else
         f"round {c['round']}, {c['answered']} of {c['size']} answered, {c['wrong']} wrong "
         f"({'passed' if c['passed'] else 'over 6 wrong fails' if c['done'] else 'in progress'}).") + f"""</p>
-<p><a href='/voice/disagree'>Disagreements</a>: a fixed sample of {labels.DISAGREE_SAMPLE} to grade.</p>
+<p><a href='/voice/disagree'>Disagreements</a>: """ + (
+        f"round {g['round']}, {g['answered']} of {g['size']} graded." if g.get("drawn") else
+        "not drawn yet: it is drawn once both passes have labelled.") + """</p>
 <table><tr><th>Purpose</th><th>Either model</th><th>Only one</th><th>Rate</th></tr>{rrows}</table>
 <h2>Your rules</h2><p>{len(mine)} rules and {len(jira)} Jira rules in <code>{E(guide.rules_file())}</code>,
 copied word for word as the guide's first section at each build.</p>
@@ -149,8 +152,9 @@ def disagree_page():
                     f"<div>A: <b>{E(', '.join(x[sa]))}</b> · B: <b>{E(', '.join(x[sb]))}</b></div>"
                     f"<details><summary class=meta>neither: the right labels</summary>{boxes(a.get('purposes') or [])}</details></td>"
                     f"<td class=act>{btn(sa, 'A right')}{btn(sb, 'B right')}{btn('neither', 'Neither')}</td></tr>")
-    return _page("Second-model disagreements", f"""<p>A fixed sample of {len(g.get('ids', []))} items
+    return _page("Second-model disagreements", f"""<p>Round {g.get('round', 1)}: a sample of {len(g.get('ids', []))} items
 where the two models' labels differ. Each item puts the models on A and B by a coin toss.
+<code>voice label --new-sample</code> draws a fresh sample from the current disagreements.
 Every disagreement is in
 <code>labels/disagreements.jsonl</code>.</p>
 <table>{''.join(rows)}</table>""")

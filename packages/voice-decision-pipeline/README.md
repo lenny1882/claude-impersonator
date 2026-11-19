@@ -146,8 +146,9 @@ Run in order, each in your own shell (each logs to
    audiences and purposes; more than 6 wrong fails, then the prompt is
    changed through `labelling-notes.md` in the state, the pass rerun with
    `--redo <purposes>` or in full, and `--new-sample` drawn), and 60 of the
-   second model's disagreements to grade. The disagreement rate per purpose
-   is on the same page.
+   second model's disagreements to grade. `--new-sample` draws both samples
+   afresh from the current labels, keeping earlier rounds' answers in their
+   files. The disagreement rate per purpose is on the same page.
 3. `voice holdout`: 10% of each audience held back for validation.
 4. `voice rules` creates `own-rules.md` in the state; each `- ` line is one
    of your rules, its `## Jira` section the Jira guide. `voice guide` writes

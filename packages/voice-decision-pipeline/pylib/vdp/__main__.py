@@ -174,7 +174,7 @@ def cmd_voice(a):
             rc = labels.run("second" if a.second else "labeller",
                             redo=[x for x in (a.redo or "").split(",") if x])
             if not rc and labels.read("labeller") and labels.read("second"):
-                labels.write_disagreements()
+                labels.write_disagreements(new_sample=a.new_sample)
             if not rc and a.new_sample:
                 labels.draw_sample(new=True)
             return rc
@@ -243,7 +243,7 @@ def main(argv=None):
                                     "build", "publish", "status"])
     s.add_argument("--second", action="store_true", help="label: the second model's blind pass")
     s.add_argument("--redo", help="label: send again items either model gave one of these purposes")
-    s.add_argument("--new-sample", action="store_true", help="label: draw a fresh label-check sample")
+    s.add_argument("--new-sample", action="store_true", help="label: draw a fresh label-check sample and disagreement-grade sample")
     s.add_argument("--fresh", action="store_true", help="holdout: draw a fresh holdout (a new validation run)")
     s.add_argument("--limit", type=int, help="validate: only the first N held-back messages")
     s.add_argument("--more", help="pairs: 12 more pairs for this audience")

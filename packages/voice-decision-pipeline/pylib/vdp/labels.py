@@ -20,7 +20,9 @@ Checks:
     pass rerun and a fresh sample drawn (`label --new-sample`).
   - Disagreements: every item where the two passes differ is recorded with
     both label sets (labels/disagreements.jsonl); the rate per purpose is
-    measured over all of them; a fixed sample of 60 comes to the owner to grade.
+    measured over all of them; a sample of 60 comes to the owner to grade,
+    drawn once and drawn afresh from the current disagreements by the same
+    `label --new-sample`.
 
 An item's final purposes are the owner's correction where they made one, else the
 labeller's.
@@ -271,16 +273,39 @@ def disagreement_rates():
             for p in voice.PURPOSES}
 
 
-def write_disagreements():
+def write_disagreements(new_sample=False):
     ds = disagreements()
     state.write_jsonl(state.path("labels", "disagreements.jsonl"), ds)
+    draw_disagree_sample(ds, new=new_sample)
+    return ds
+
+
+def draw_disagree_sample(ds, new=False):
+    """The disagreement-grade sample, drawn once from ds, again only with
+    new=True, as the label check is: each round is seeded by its number and
+    the earlier rounds are kept under "previous"."""
+    cur = state.read_json(disagree_grades_file(), None)
+    if cur and not new:
+        return cur
+    n = (cur or {}).get("round", 1 if cur else 0) + 1
+    rnd = random.Random(f"disagreements-{n}")
+    ids = [d["id"] for d in ds]
+    rnd.shuffle(ids)
+    d = {"round": n, "prompt": prompt_version(), "ids": sorted(ids[:DISAGREE_SAMPLE]), "answers": {}}
+    if cur:
+        prev = {"round": cur.get("round", 1), "prompt": cur.get("prompt"), "ids": cur["ids"], "answers": cur["answers"]}
+        d["previous"] = (cur.get("previous") or []) + [prev]
+    state.write_json(disagree_grades_file(), d)
+    return d
+
+
+def disagree_result():
     g = state.read_json(disagree_grades_file(), None)
     if not g:
-        rnd = random.Random("disagreements-1")
-        ids = [d["id"] for d in ds]
-        rnd.shuffle(ids)
-        state.write_json(disagree_grades_file(), {"ids": sorted(ids[:DISAGREE_SAMPLE]), "answers": {}})
-    return ds
+        return {"drawn": False}
+    ans = [i for i in g["ids"] if i in g["answers"]]
+    return {"drawn": True, "round": g.get("round", 1), "size": len(g["ids"]), "answered": len(ans),
+            "done": len(ans) == len(g["ids"])}
 
 
 def summary():

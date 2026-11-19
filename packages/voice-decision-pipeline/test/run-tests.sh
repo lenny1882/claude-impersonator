@@ -823,6 +823,30 @@ for i, ta, tb, pa, pb in rows:
     assert (pa, pb) == (sa, sb), (i, pa, pb)
     assert ta == ", ".join(ds[i][sa]) and tb == ", ".join(ds[i][sb]), (i, ta, tb)
 EOF
+check "the disagreement-grade sample is kept, and label --new-sample draws it afresh with earlier grades kept" vpy <<'EOF'
+import subprocess, sys, os
+from vdp import labels, state
+f = labels.disagree_grades_file()
+g = state.read_json(f, None)
+old_ids = list(g["ids"])
+assert old_ids, g
+# a file from before rounds were recorded, with one grade in it
+g = {"ids": old_ids, "answers": {old_ids[0]: {"pick": "neither", "purposes": ["other"]}}}
+state.write_json(f, g)
+labels.write_disagreements()
+assert state.read_json(f, None) == g, "drawn once: a plain rebuild keeps the sample"
+assert labels.disagree_result() == {"drawn": True, "round": 1, "size": len(old_ids), "answered": 1, "done": len(old_ids) == 1}
+assert labels.corrections()[old_ids[0]] == ["other"]
+env = dict(os.environ, VDP_CLAUDE=os.path.join(os.path.dirname(os.environ["VDP_STATE"]), "vbin", "claude"))
+subprocess.run([sys.executable, "-m", "vdp", "voice", "label", "--new-sample"], env=env, check=True, capture_output=True)
+d = state.read_json(f, None)
+cur = {x["id"] for x in labels.disagreements()}
+assert d["round"] == 2 and d["answers"] == {} and d["prompt"] == labels.prompt_version(), d
+assert d["ids"] and set(d["ids"]) <= cur and len(d["ids"]) == min(len(cur), labels.DISAGREE_SAMPLE)
+assert d["previous"] == [{"round": 1, "prompt": None, "ids": old_ids, "answers": g["answers"]}]
+assert old_ids[0] not in labels.corrections(), "an earlier round's grade no longer stands in for the labels"
+assert state.read_json(labels.check_file(), None)["prompt"] == labels.prompt_version(), "the label check is drawn too"
+EOF
 check "labelling notes in the state change the prompt version, so a rerun is traceable" vpy <<'EOF'
 from vdp import labels
 v = labels.prompt_version()
