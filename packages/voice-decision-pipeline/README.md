@@ -137,7 +137,11 @@ Run in order, each in your own shell (each logs to
 1. `voice label`: Sonnet 5.5 labels every voice item's purposes, 20 items a
    call, sent anonymised with its context. `voice label --second`: Opus 5.5
    labels them all again, blind. A usage limit stops either cleanly (exit 6)
-   after the last finished batch; the same command resumes.
+   after the last finished batch; the same command resumes. `--redo
+   <purposes>` sends again the items either model gave one of them; the list
+   is fixed the first time it is worked out for that prompt, so the labeller's
+   and the second model's redo send the same items, and a stopped redo skips
+   what it already labelled under the current prompt.
 2. On the review page's Voice build: the label check (120 items spread over
    audiences and purposes; more than 6 wrong fails, then the prompt is
    changed through `labelling-notes.md` in the state, the pass rerun with

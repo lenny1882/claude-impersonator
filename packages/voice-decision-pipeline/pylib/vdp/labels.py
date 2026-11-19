@@ -99,6 +99,20 @@ def read(which):
     return out
 
 
+def redo_set(redo, pv):
+    """The ids a redo of these purposes under prompt pv sends: those either
+    model gave one of them, worked out once and saved, so both passes send
+    the same items even after the first has rewritten its labels."""
+    key = f"{pv}:{','.join(sorted(redo))}"
+    f = state.path("labels", f"redo-{hashlib.sha1(key.encode()).hexdigest()[:12]}.json")
+    saved = state.read_json(f, None)
+    if saved and saved.get("key") == key:
+        return set(saved["ids"])
+    hit = sorted({i for which in PASSES for i, r in read(which).items() if redo & set(r["purposes"])})
+    state.write_json(f, {"key": key, "prompt": pv, "purposes": sorted(redo), "ids": hit})
+    return set(hit)
+
+
 def run(which, redo=(), log=print):
     if which not in PASSES:
         raise SystemExit(f"voice-decision-pipeline: unknown pass {which}")
@@ -106,17 +120,22 @@ def run(which, redo=(), log=print):
     items = voice.load()
     done = read(which)
     redo = set(redo)
+    system = system_prompt()
+    pv = prompt_version()
     if redo:
-        both = {**read("labeller")}
-        other = read("second")
-        hit = {i for src in (both, other) for i, r in src.items() if redo & set(r["purposes"])}
-        todo = [it for it in items if it["id"] in hit]
+        bad = sorted(redo - set(voice.PURPOSES))
+        if bad:
+            raise SystemExit(f"voice-decision-pipeline: unknown purpose {', '.join(bad)}")
+        hit = redo_set(redo, pv)
+        # Items this pass already labelled under the current prompt are done:
+        # a redo stopped at a usage limit resumes instead of starting over.
+        todo = [it for it in items if it["id"] in hit and done.get(it["id"], {}).get("prompt") != pv]
+        log(f"   redo {','.join(sorted(redo))}: {len(hit)} items chosen, "
+            f"{len(hit) - len(todo)} already done in this pass")
     else:
         todo = [it for it in items if it["id"] not in done]
     log(f"== label {which}: {len(todo)} of {len(items)} items to send, "
-        f"{(len(todo) + BATCH - 1) // BATCH} calls, prompt {prompt_version()}")
-    system = system_prompt()
-    pv = prompt_version()
+        f"{(len(todo) + BATCH - 1) // BATCH} calls, prompt {pv}")
     sent = 0
     for i in range(0, len(todo), BATCH):
         chunk = todo[i:i + BATCH]

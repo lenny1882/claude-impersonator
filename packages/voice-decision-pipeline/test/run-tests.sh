@@ -831,6 +831,28 @@ assert labels.prompt_version() != v and "Thanks at the end" in labels.system_pro
 EOF
 check "label --redo sends again only the items either model gave that purpose" \
   bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice label --redo thank | grep -q '== label labeller: 10 of 90 items'"
+check "a redo run again under the same prompt resumes: nothing already redone is sent again" \
+  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice label --redo thank | grep -q '== label labeller: 0 of 90 items'"
+check "the second model's redo sends the same items, though the labeller's redo changed its labels" vpy <<'EOF'
+import json, os
+from vdp import labels
+os.environ["VDP_CLAUDE"] = os.environ.get("VDP_CLAUDE") or os.path.join(os.path.dirname(os.environ["VDP_STATE"]), "vbin", "claude")
+pv = labels.prompt_version()
+redone = [i for i, r in labels.read("labeller").items() if r.get("prompt") == pv]
+assert len(redone) == 10, len(redone)
+with open(labels.labels_file("labeller"), "a") as f:
+    for i in redone:
+        f.write(json.dumps({"id": i, "purposes": ["status"], "prompt": pv, "model": "x"}) + "\n")
+with open(labels.labels_file("second"), "a") as f:
+    for i in redone:
+        f.write(json.dumps({"id": i, "purposes": ["status"], "prompt": "older", "model": "x"}) + "\n")
+out = []
+assert labels.run("second", redo={"thank"}, log=out.append) == 0
+assert any("== label second: 10 of 90 items" in l for l in out), out
+assert {i for i, r in labels.read("second").items() if r.get("prompt") == pv} == set(redone)
+EOF
+check "a redo naming an unknown purpose is refused before anything is sent" \
+  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice label --redo thanks 2>&1 | grep -q 'unknown purpose thanks'"
 check "the label-check sample spreads across audiences, and grading it is a gate" vpy <<'EOF'
 from vdp import labels, voice, voicebuild
 d = labels.draw_sample()
