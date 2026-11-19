@@ -1198,6 +1198,7 @@ fire on several events.
   The phrases cover the 5-hour and
   weekly limits, which stop the pass cleanly with exit 6. Finished batches
   are kept either way, and the same command resumes.
+  Label redo: `voice label --redo` runs in both passes under one prompt.
 - **`question-store`** is separate so other hooks, GSD blockers and future
   tools can ask the owner without depending on `decision-runtime`; its versioned
   interface is park a question / read its answer.
