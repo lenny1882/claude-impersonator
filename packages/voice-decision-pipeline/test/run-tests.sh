@@ -1054,6 +1054,11 @@ vpost(){ curl -s -w '\n%{http_code}' -X POST -H 'Content-Type: application/json'
 check "the review home links the voice build" bash -c "curl -sf '$VURL' | grep -q \"href='/voice'\""
 for pg in voice voice/labels voice/disagree voice/pairs voice/judge voice/report; do
   check "the $pg page serves" bash -c "curl -sf '$VURL$pg' | grep -q '<h1>'"
+  check "/$pg shows values, not template placeholders" bash -c "curl -sf '$VURL$pg' | '$PY' -c '
+import re,sys
+h=re.sub(r\"(?s)<(script|style)\\b.*?</\\1>\",\"\",sys.stdin.read())
+left=re.findall(r\"\\{[A-Za-z_][^{}<>]*\\}\",h)
+sys.exit(\"placeholders: \"+\" \".join(left[:5]) if left else 0)'"
   # Every button that takes a pressed state has a style for it, so a click shows.
   check "every pressable button on /$pg shows when pressed" bash -c "curl -sf '$VURL$pg' | '$PY' -c '
 import re,sys

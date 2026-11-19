@@ -87,7 +87,7 @@ def overview():
         f"({'passed' if c['passed'] else 'over 6 wrong fails' if c['done'] else 'in progress'}).") + f"""</p>
 <p><a href='/voice/disagree'>Disagreements</a>: """ + (
         f"round {g['round']}, {g['answered']} of {g['size']} graded." if g.get("drawn") else
-        "not drawn yet: it is drawn once both passes have labelled.") + """</p>
+        "not drawn yet: it is drawn once both passes have labelled.") + f"""</p>
 <table><tr><th>Purpose</th><th>Either model</th><th>Only one</th><th>Rate</th></tr>{rrows}</table>
 <h2>Your rules</h2><p>{len(mine)} rules and {len(jira)} Jira rules in <code>{E(guide.rules_file())}</code>,
 copied word for word as the guide's first section at each build.</p>
