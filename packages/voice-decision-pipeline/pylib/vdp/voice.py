@@ -30,18 +30,29 @@ ALL_AUDIENCES = CORPUS_AUDIENCES + ("jira",)
 
 # PLAN §3.3: eleven purposes and "other", in this order.
 PURPOSES = {
-    "push-back": "push back / disagree: objects to a proposal, a claim or a plan",
-    "decline": "decline: says no to a request or an invitation",
+    "push-back": ("push back / disagree: objects to or corrects a proposal, a claim or a plan, "
+                  "including stating a limit or requirement that rules out what someone wants. "
+                  "A review comment suggesting a code change is ask, not push-back"),
+    "decline": ("decline: says no to a request, an invitation or an offer of help, "
+                "or puts something off for now"),
     "ask": "ask / request: asks a question or asks someone to do something",
     "chase": "chase / nudge: follows up on something asked before and not yet done",
     "status": "status / update: reports where something stands",
-    "explain": "explain / instruct: explains how something works or how to do it",
+    "explain": ("explain / instruct: explains how something works, how to do it, why, "
+                "or what follows from it, including the instructions or reasons inside a request. "
+                "A report of what happened is status; a personal story is small talk"),
     "approve": "approve / agree: says yes, agrees or signs something off",
-    "own-mistake": "own a mistake / apologise: takes the blame or says sorry",
+    "own-mistake": ("own a mistake / apologise: takes the blame for something or apologises for it. "
+                    "A joking 'sorry' is small talk"),
     "thank": "thank / praise: thanks someone or praises their work",
-    "escalate": "escalate: raises a problem to someone with more authority, or warns of a risk",
-    "small-talk": "small talk / humour: social chat, jokes, greetings with nothing else",
-    "other": "other: none of the above",
+    "escalate": ("escalate: flags that something is wrong and must be dealt with, raises it to "
+                 "someone with more authority, or warns of a risk to the work. Asking a colleague "
+                 "to look at an error is ask; guessing at a cause is explain; venting is small talk"),
+    "small-talk": ("small talk / humour: social chat, jokes, banter, personal stories and venting, "
+                   "alongside other purposes or on their own"),
+    "other": ("other: none of the above. A bare link takes the purpose it serves in the "
+              "conversation (sharing a result is status), and is other only when the "
+              "conversation doesn't show one"),
 }
 CONTEXT_CHARS = 6000
 MAX_CONTEXT = 20
