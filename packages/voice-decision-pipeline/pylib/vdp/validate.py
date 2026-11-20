@@ -13,7 +13,10 @@ Only held-back messages the exemplar pool's rule would keep are drafted,
 scored or paired (counted()); the rest are held back but count for nothing.
 
 Rows carry METHOD; rows written without a brief have none and are ignored,
-so a run resumes only its own method.
+so a run resumes only its own method. KEPT names older methods whose rows
+still count for some audiences: a message there with no METHOD row keeps its
+old drafts, so a drafter change can be validated for one audience alone, and
+'voice pairs --redraw' draws that audience's pairs again from the new drafts.
 
 Exemplars are picked as voice-runtime picks them: the pool narrowed to the
 audience and to any of the purposes, then the closest by similarity to the
@@ -65,6 +68,9 @@ DRAWS = 20000
 # "brief-6": the drafter writes as briefly and loosely as self-01, asks as
 # plainly, and is shown how rarely the guide's quoted words appear.
 METHOD = "brief-6"
+# Audiences listed under a KEPT method keep that method's drafts, pairs and
+# answers; the rest are drafted under METHOD.
+KEPT = {"brief-5": ("project-team", "one-to-one", "technical-team", "senior")}
 PAIRS_PER_AUDIENCE = 12
 WORST, RANDOM = 20, 10
 
@@ -213,9 +219,15 @@ def read_lines(name):
 
 
 def rows(name, run):
-    """A file's rows for this run and METHOD, for held-back messages that count."""
+    """A file's rows for this run and METHOD, for held-back messages that count;
+    for a message with no METHOD row in the file, its rows of a KEPT method
+    that keeps its audience."""
     ok = counted()
-    return [r for r in read_lines(name) if r["run"] == run and r.get("method") == METHOD and r["id"] in ok]
+    aud = _COUNTED["aud"]
+    rs = [r for r in read_lines(name) if r["run"] == run and r["id"] in ok]
+    new = {r["id"] for r in rs if r.get("method") == METHOD}
+    return [r for r in rs if r.get("method") == METHOD
+            or (r["id"] not in new and aud[r["id"]] in KEPT.get(r.get("method"), ()))]
 
 
 _COUNTED = {}
@@ -234,7 +246,8 @@ def counted():
     if _COUNTED.get("stamp") != stamp:
         by_id = {it["id"]: it for it in voice.load()}
         c = pool.config()
-        _COUNTED.update(stamp=stamp, ids={i for i in pool.held() if i in by_id and pool.countable(by_id[i], c)})
+        ids = {i for i in pool.held() if i in by_id and pool.countable(by_id[i], c)}
+        _COUNTED.update(stamp=stamp, ids=ids, aud={i: by_id[i]["audience"] for i in ids})
     return _COUNTED["ids"]
 
 
@@ -418,6 +431,39 @@ def drop_pairs(ids, reason, log=print):
             + ", ".join(p["pair"] for p in cur["pairs"][before:]))
     state.write_json(key_file(), key)
     state.write_json(pairs_file(), cur)
+    return cur
+
+
+def redraw(aud, log=print):
+    """Drop every pair of one audience and draw as many again from its current
+    drafts, after its drafts were written again under a new METHOD. The
+    dropped pairs and their answers stay in the files, marked."""
+    if aud not in voice.CORPUS_AUDIENCES:
+        raise SystemExit(f"voice-decision-pipeline: not an audience: {aud}; "
+                         f"one of {', '.join(voice.CORPUS_AUDIENCES)}")
+    run = run_no()
+    cur = state.read_json(pairs_file(), None)
+    if not cur or cur["run"] != run:
+        raise SystemExit("voice-decision-pipeline: no pairs for this run; run 'voice pairs' first")
+    old = [p["pair"] for p in active(cur) if p["audience"] == aud]
+    if not old:
+        raise SystemExit(f"voice-decision-pipeline: no {aud} pairs to draw again")
+    cur.setdefault("dropped", {})
+    for i in old:
+        cur["dropped"][i] = f"drafted again under {METHOD}"
+    key = state.read_json(key_file(), {}) or {}
+    used = {p["id"] for p in active(cur)}
+    items = {it["id"]: it for it in voice.load()}
+    lab = labels.final()
+    drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run)
+              if r["k"] == cur["k"] and r.get("method") == METHOD}
+    before = len(cur["pairs"])
+    _draw(cur, key, used, items, lab, drafts, aud, len(old))
+    new = [p["pair"] for p in cur["pairs"][before:]]
+    state.write_json(key_file(), key)
+    state.write_json(pairs_file(), cur)
+    log(f"  ok    dropped {len(old)} {aud} pairs, drew {len(new)} from {METHOD} drafts"
+        + (f": {new[0]} to {new[-1]}" if new else ""))
     return cur
 
 

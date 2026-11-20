@@ -66,6 +66,18 @@ voice-runtime status
    use an exclamation mark to that audience, the draft does too. The CLAUDE.md
    rules still govern everything said to the user around the draft.
 
+   Match the length and register of the user's exemplars. Validation's drafts
+   follow the same rules (PLAN §3.7), so this is the kind of draft it
+   passed:
+   - Cut what the conversation already makes clear: softeners, restated
+     context, reasons nobody gave.
+   - Phrase a request as the user's exemplars for this kind of message do, often
+     as an instruction or a bare question.
+   - Leave fragments as fragments.
+   - Use the user's idioms rather than stock phrases.
+   - The guide gives the rate of each typical word it quotes, and most are
+     rare; use one only where the exemplars for this moment do.
+
    Where a tool sets the format, keep the tool's structure and write only the
    wording inside it in the user's voice: the PR description templates in
    `/gsd:ship` and `/bm:ship`, the comment format of `/code-review

@@ -197,7 +197,9 @@ def cmd_voice(a):
             return validate.drafts_and_judge(limit=a.limit)
     if step == "pairs":
         with state.lock():
-            if a.drop:
+            if a.redraw:
+                validate.redraw(a.redraw)
+            elif a.drop:
                 validate.drop_pairs([x for x in a.drop.split(",") if x],
                                     reason="dropped with voice pairs --drop")
             else:
@@ -255,6 +257,7 @@ def main(argv=None):
     s.add_argument("--limit", type=int, help="validate: only the first N held-back messages")
     s.add_argument("--more", help="pairs: 12 more pairs for this audience; holdout: hold back more of it")
     s.add_argument("--count", type=int, default=12, help="holdout --more: how many more to hold back")
+    s.add_argument("--redraw", help="pairs: draw this audience's pairs again from its new drafts")
     s.add_argument("--drop", help="pairs: leave these pairs out of the result and draw as many new ones")
     s.set_defaults(f=cmd_voice)
     a = p.parse_args(argv)

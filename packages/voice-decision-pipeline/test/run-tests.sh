@@ -1176,6 +1176,45 @@ finally:
         open(p, "w").write(t)
     validate.answer("pair", first, pick=was)
 EOF
+check "a kept older method's rows count for its audiences; validate drafts only the rest again, and --redraw draws their pairs again" vpy <<EOF
+import json, os, subprocess, sys
+from vdp import state, validate
+V = lambda n: state.path("validation", n)
+files = [V(n) for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl")] + [validate.pairs_file(), validate.key_file()]
+keep = {p: open(p).read() for p in files}
+try:
+    old = next(iter(validate.KEPT))
+    for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl"):
+        rs = [dict(json.loads(l), method=old) for l in keep[V(n)].splitlines()]
+        open(V(n), "w").write("".join(json.dumps(r) + "\n" for r in rs))
+    aud = validate._COUNTED["aud"] if validate._COUNTED else None
+    validate.counted(); aud = validate._COUNTED["aud"]
+    kept = {i for i, a in aud.items() if a in validate.KEPT[old]}
+    redo = set(aud) - kept
+    assert kept and redo, (len(kept), len(redo))
+    assert {r["id"] for r in validate.rows("judge.jsonl", 1)} == kept
+    env = dict(os.environ, VDP_CLAUDE="$VBIN/claude")
+    out = subprocess.run([sys.executable, "-m", "vdp", "voice", "validate"], env=env, capture_output=True, text=True, check=True).stdout
+    assert f"== validate run 1: {len(redo)} of {len(aud)} " in out, out
+    js = validate.rows("judge.jsonl", 1)
+    assert len(js) == 3 * len(aud) and {r["id"] for r in js if r["method"] == validate.METHOD} == redo
+    pr0 = state.read_json(validate.pairs_file())
+    a = sorted({aud[p["id"]] for p in validate.active(pr0) if p["id"] in redo})[0]
+    mine = [p for p in validate.active(pr0) if p["audience"] == a]
+    others = [p["pair"] for p in validate.active(pr0) if p["audience"] != a]
+    subprocess.run([sys.executable, "-m", "vdp", "voice", "pairs", "--redraw", a], env=env, check=True, capture_output=True)
+    pr = state.read_json(validate.pairs_file())
+    new = [p for p in validate.active(pr) if p["audience"] == a]
+    assert len(new) == len(mine) and not {p["pair"] for p in mine} & {p["pair"] for p in new}
+    assert all(pr["dropped"][p["pair"]] == f"drafted again under {validate.METHOD}" for p in mine)
+    assert [p["pair"] for p in validate.active(pr) if p["audience"] != a] == others
+    assert {p["id"] for p in new} <= redo
+    bad = subprocess.run([sys.executable, "-m", "vdp", "voice", "pairs", "--redraw", "nobody"], env=env, capture_output=True, text=True)
+    assert bad.returncode != 0 and "not an audience" in bad.stderr, bad.stderr
+finally:
+    for p, t in keep.items():
+        open(p, "w").write(t)
+EOF
 check "voice build: guide, exemplars, stats and build.json in a tarball, leak-checked" \
   bash -c "VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice build >/dev/null && t=\$(ls '$VST'/voice/builds/*/build-*.tar) && tar -tf \"\$t\" | sort | tr '\n' ' ' | grep -q 'voice-runtime/build.json voice-runtime/exemplars.json voice-runtime/guide.json voice-runtime/stats.json'"
 check "build.json names the exemplar count and embedding identity" vpy <<'EOF'
