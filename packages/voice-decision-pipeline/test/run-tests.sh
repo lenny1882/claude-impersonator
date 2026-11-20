@@ -1065,6 +1065,20 @@ from vdp import state, validate
 jr = state.read_json(state.path("validation", "judge-review.json"))
 assert jr["k"] == 5 and {x["id"] for x in jr["items"]} == validate.counted() and jr["items"][0]["why"] == "worst", jr
 EOF
+check "the pairs page keeps showing which side was yours for every pair already picked, and only those" vpy <<'EOF'
+import re
+from vdp import state, validate, voicereview
+pr, key = state.read_json(validate.pairs_file()), state.read_json(validate.key_file())
+first = validate.active(pr)[0]["pair"]
+validate.answer("pair", first, pick="cant")
+h = voicereview.pairs_page()
+ans = validate.answers()
+for p in validate.active(pr):
+    shown = re.search(rf"id='c-{p['pair']}'.*?<span class=reveal>(.*?)</span>", h, re.S).group(1)
+    want = voicereview.reveal(key[p["pair"]]) if "pick" in ans.get(p["pair"], {}) else ""
+    assert shown == want, (p["pair"], shown, want)
+assert voicereview.reveal(key[first]) in h
+EOF
 check "the pairs and judge review pages show the judge's 1-5 scale on the page and on each grade button" vpy <<'EOF'
 from vdp import validate, voicereview
 for page in (voicereview.pairs_page(), voicereview.judge_page()):

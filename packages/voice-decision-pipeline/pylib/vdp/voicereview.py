@@ -64,6 +64,12 @@ def grade_title(n):
     return E(f"{n}: {grade_text(n)}", quote=True)
 
 
+def reveal(real):
+    """Which side was the owner's, shown once they have picked (as the pick's own
+    reply shows it), so a reload keeps it."""
+    return "A was yours; B is the draft." if real == "A" else "B was yours; A is the draft." if real == "B" else ""
+
+
 def plabels(ps):
     """Purpose names, comma-separated, each showing its definition on hover."""
     return ", ".join(f"<span class=pl title='{E(labels.purpose_tip(p), quote=True)}'>{E(p)}</span>"
@@ -193,6 +199,7 @@ def pairs_page():
         return _page("Blind pairs", "<p>No pairs yet: run <code>voice-decision-pipeline voice pairs</code> after "
                                     "<code>voice validate</code>.</p>")
     ans = validate.answers(pr["run"])
+    key = state.read_json(validate.key_file(), {}) or {}
     cards = []
     for p in validate.active(pr):
         a = ans.get(p["pair"], {})
@@ -206,7 +213,7 @@ def pairs_page():
                      f"<details><summary class=meta>conversation before</summary><pre>{E(p['context'])}</pre></details>"
                      f"<p><b>A</b></p><pre>{E(shown(p['a']))}</pre><p><b>B</b></p><pre>{E(shown(p['b']))}</pre>"
                      f"<p class=row>{pb('A', 'A is mine')}{pb('B', 'B is mine')}{pb('cant', 'Can’t tell')}</p>"
-                     f"<p class=meta><span class=reveal></span></p>"
+                     f"<p class=meta><span class=reveal>{reveal(key.get(p['pair'])) if pk else ''}</span></p>"
                      f"<p class='row grade'{'' if pk else ' hidden'}>Would you send the draft as is? {gb}</p></div>")
     return _page("Blind pairs", f"""<p>Run {pr['run']}, {len(validate.active(pr))} pairs, drafts made with
 {pr['k']} exemplars. In each, one message is yours and one a draft. Pick yours, or "can't tell";
