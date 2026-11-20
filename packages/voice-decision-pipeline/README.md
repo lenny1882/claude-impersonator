@@ -117,7 +117,7 @@ anonymising map, the mining and batch decisions, the inputs with their
     paths                        where everything lives
 
     voice label [--second] [--redo <purposes>] [--new-sample]
-    voice holdout [--fresh]
+    voice holdout [--fresh | --more <audience> [--count N]]
     voice rules
     voice guide
     voice validate [--limit N]
@@ -149,7 +149,11 @@ Run in order, each in your own shell (each logs to
    second model's disagreements to grade. `--new-sample` draws both samples
    afresh from the current labels, keeping earlier rounds' answers in their
    files. The disagreement rate per purpose is on the same page.
-3. `voice holdout`: 10% of each audience held back for validation.
+3. `voice holdout`: 10% of each audience held back for validation. When an
+   audience runs out of pairs, `voice holdout --more <audience>` holds back
+   12 more (or `--count N`), only from messages that count and that the
+   guide was never shown; then `voice validate` drafts them and `voice
+   pairs --more <audience>` pairs them.
 4. `voice rules` creates `own-rules.md` in the state; each `- ` line is one
    of your rules, its `## Jira` section the Jira guide. `voice guide` writes
    the statistics, the never-say list and the corpus guide (Opus 5.5).

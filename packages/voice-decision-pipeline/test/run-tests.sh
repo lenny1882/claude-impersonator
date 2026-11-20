@@ -1215,6 +1215,31 @@ except SystemExit as e:
     assert "validation run 1 hasn't passed (grades failed)" in str(e), e
 validate.answer("pair", pr["pairs"][0]["pair"], grade=5)
 EOF
+check "voice holdout --more holds back only messages that count and the guide never saw, and validate drafts just those" vpy <<'EOF'
+import os, subprocess, sys
+from vdp import guide, pool, state, validate, voice
+env = dict(os.environ, VDP_CLAUDE=os.path.join(os.path.dirname(os.environ["VDP_STATE"]), "vbin", "claude"))
+run = lambda *a: subprocess.run([sys.executable, "-m", "vdp", "voice", *a], env=env, capture_output=True, text=True)
+shown = guide.shown_ids()
+assert shown and os.path.exists(guide.shown_file())
+items = {it["id"]: it for it in voice.load()}
+before, counted = pool.held(), validate.counted()
+aud = sorted({it["audience"] for it in items.values()})[0]
+# The fixture is small enough that the guide saw every message: say it saw all
+# but three of this audience's, so only those three can be held back.
+free = sorted(i for i in shown if items[i]["audience"] == aud and pool.countable(items[i]))[:3]
+assert free, "fixture has no countable message for the audience"
+state.write_json(guide.shown_file(), {"ids": sorted(shown - set(free))})
+out = run("holdout", "--more", aud, "--count", "2")
+assert out.returncode == 0, out.stderr
+added = pool.held() - before
+assert 0 < len(added) <= 2 and added <= set(free) and all(items[i]["audience"] == aud for i in added), (added, free)
+assert validate.counted() == counted | added
+assert not added & {e["id"] for e in pool.exemplars()}, "held back messages leave the pool"
+out = run("validate")
+assert f"{len(added)} of " in out.stdout, out.stdout
+assert {r["id"] for r in validate.rows("judge.jsonl", validate.run_no())} >= added
+EOF
 RPIDV=$(VDP_STATE="$VST" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp review --port 0 --no-browser > "$TMP/vreview.out" 2>&1 & echo $!)
 for _ in $(seq 50); do grep -q 'http://127' "$TMP/vreview.out" 2>/dev/null && break; sleep 0.1; done
 VURL=$(grep -o 'http://127.0.0.1:[0-9]*/' "$TMP/vreview.out")

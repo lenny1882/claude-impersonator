@@ -58,6 +58,44 @@ def holdout(fresh=False, log=print):
     return d
 
 
+def countable(it, c=None):
+    """Whether a held-back message counts in validation: the pool's own rule,
+    with min_words words still left after code becomes [code] and links
+    [url]."""
+    c = c or config()
+    return keep(it, c) and voice.shown_words(it["text"]) >= c["min_words"]
+
+
+def holdout_more(audience, n, log=print):
+    """Hold back n more of an audience's messages, only as many as needed, when
+    its pairs run out: chosen from messages that would
+    count, were never shown to the guide, and aren't held back already. They
+    leave the exemplar pool; validate then drafts them."""
+    from . import guide
+    cur = state.read_json(holdout_file(), None)
+    if not cur:
+        raise SystemExit("voice-decision-pipeline: no holdout yet; run 'voice holdout' first")
+    shown = guide.shown_ids()
+    held_now = set(cur["ids"])
+    lab = labels.final()
+    c = config()
+    cands = sorted(it["id"] for it in voice.load()
+                   if it["audience"] == audience and it["id"] in lab and it["id"] not in held_now
+                   and it["id"] not in shown and countable(it, c))
+    rnd = random.Random(f"holdout-{cur['run']}-more-{audience}-{len(held_now)}")
+    rnd.shuffle(cands)
+    add = sorted(cands[:n])
+    if not add:
+        raise SystemExit(f"voice-decision-pipeline: no {audience} message left to hold back")
+    cur["ids"] = sorted(held_now | set(add))
+    cur.setdefault("added", []).append({"audience": audience, "ids": add})
+    state.write_json(holdout_file(), cur)
+    log(f"  ok    held back {len(add)} more {audience} messages"
+        + (f" (only {len(add)} left that the guide never saw)" if len(add) < n else "")
+        + f"; run 'voice validate' to draft them, then 'voice pairs --more {audience}'")
+    return add
+
+
 def held():
     return set((state.read_json(holdout_file(), {}) or {}).get("ids", []))
 

@@ -430,7 +430,10 @@ subagent loads the skill is open (§8.2).
   - Blind test: at least 80% sure the overall spotting rate is at most 10%.
   - Each audience: at least 80% sure its spotting rate is at most 25%.
     Between 50% and 80% sure, it gets 12 more pairs and is worked out
-    again; under 50%, it fails.
+    again; under 50%, it fails. An audience whose held-back messages run out
+    holds back only as many more as its next 12 pairs need, from messages
+    that count and that the guide was never shown, so no draft is judged
+    against a message its guide quoted.
   - Grades: at least 80% of drafts at 4 or higher overall, at least 70% in
     each audience, and none at 1.
   - The judge's scores are no gate: they don't run on the owner's scale, so

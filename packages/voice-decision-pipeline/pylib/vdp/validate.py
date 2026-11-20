@@ -222,8 +222,7 @@ def counted():
     if _COUNTED.get("stamp") != stamp:
         by_id = {it["id"]: it for it in voice.load()}
         c = pool.config()
-        _COUNTED.update(stamp=stamp, ids={i for i in pool.held() if i in by_id and pool.keep(by_id[i], c)
-                                          and voice.shown_words(by_id[i]["text"]) >= c["min_words"]})
+        _COUNTED.update(stamp=stamp, ids={i for i in pool.held() if i in by_id and pool.countable(by_id[i], c)})
     return _COUNTED["ids"]
 
 

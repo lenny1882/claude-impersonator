@@ -111,6 +111,47 @@ def fmt_ex(e):
     return (f"(answering: {e['answered'][:300]})\n" if e["answered"] else "") + e["text"]
 
 
+def sample(ex):
+    """The examples the guide's prompts show, drawn by its fixed seed:
+    ({audience: [(purpose, [exemplar])]}, [multi-purpose exemplar])."""
+    rnd = random.Random("guide")
+    by = defaultdict(lambda: defaultdict(list))
+    for e in ex:
+        for p in e["purposes"]:
+            by[e["audience"]][p].append(e)
+    per = {}
+    for aud in voice.CORPUS_AUDIENCES:
+        cells = by.get(aud)
+        if not cells:
+            continue
+        per[aud] = []
+        for p in [p for p in voice.PURPOSES if cells.get(p)]:
+            xs = list(cells[p])
+            rnd.shuffle(xs)
+            per[aud].append((p, len(cells[p]), xs[:PER_PURPOSE]))
+    multi = [e for e in ex if len(e["purposes"]) > 1]
+    rnd.shuffle(multi)
+    return per, multi[:COMBINED]
+
+
+def shown_file():
+    return state.path("voice", "guide-shown.json")
+
+
+def shown_ids(ex=None):
+    """Ids of every message the guide's prompts showed, saved when the guide
+    is written (or, for a guide written before this was kept, worked out once
+    from the pool as it then was and saved): a message the guide saw is never
+    held back later, so no draft is judged against a message its guide quoted."""
+    d = state.read_json(shown_file(), None)
+    if d is None:
+        per, multi = sample(ex if ex is not None else pool.exemplars(voice.load()))
+        ids = sorted({e["id"] for cells in per.values() for _, _, xs in cells for e in xs} | {e["id"] for e in multi})
+        d = {"ids": ids}
+        state.write_json(shown_file(), d)
+    return set(d["ids"])
+
+
 def write(log=print):
     voice.require_sendable()
     items = voice.load()
@@ -119,24 +160,15 @@ def write(log=print):
         raise SystemExit("voice-decision-pipeline: the exemplar pool is empty; run 'voice label' and 'voice holdout' first")
     from . import voicestats
     stats = voicestats.build(items, log=log)
-    rnd = random.Random("guide")
-    by = defaultdict(lambda: defaultdict(list))
-    for e in ex:
-        for p in e["purposes"]:
-            by[e["audience"]][p].append(e)
+    per, multi = sample(ex)
     out = {"audiences": {}}
     for aud in voice.CORPUS_AUDIENCES:
-        cells = by.get(aud)
-        if not cells:
+        if aud not in per:
             log(f"  skip  {aud}: no exemplars")
             continue
-        keys = [p for p in voice.PURPOSES if cells.get(p)]
-        parts = []
-        for p in keys:
-            xs = list(cells[p])
-            rnd.shuffle(xs)
-            parts.append(f"## Purpose: {p} ({voice.PURPOSES[p]}), {len(cells[p])} messages\n\n"
-                         + "\n\n---\n\n".join(fmt_ex(e) for e in xs[:PER_PURPOSE]))
+        keys = [p for p, _, _ in per[aud]]
+        parts = [f"## Purpose: {p} ({voice.PURPOSES[p]}), {n} messages\n\n"
+                 + "\n\n---\n\n".join(fmt_ex(e) for e in xs) for p, n, xs in per[aud]]
         prompt = (f"Audience: {aud}. Statistics of every message self-01 wrote to this audience:\n"
                   f"{json.dumps(stats['audiences'].get(aud, {}))}\n\n" + "\n\n".join(parts) +
                   f"\n\nWrite the rules for this audience as a whole, then the rules for each of "
@@ -149,13 +181,11 @@ def write(log=print):
         out["audiences"][aud] = {"rules": ans["rules"],
                                  "purposes": {p: v for p, v in ans["purposes"].items() if v}}
         log(f"  ok    guide {aud}: {len(ans['rules'])} audience rules, {len(keys)} purposes")
-    multi = [e for e in ex if len(e["purposes"]) > 1]
-    rnd.shuffle(multi)
     summary = json.dumps({a: v["rules"] for a, v in out["audiences"].items()})
     prompt = ("Rules written per audience:\n" + summary + "\n\nMessages carrying several purposes, "
               "each with its purposes in the order they appear:\n\n" +
               "\n\n---\n\n".join(f"[{e['audience']}; {', '.join(e['purposes'])}]\n{fmt_ex(e)}"
-                                 for e in multi[:COMBINED]) +
+                                 for e in multi) +
               "\n\nWrite the rules that hold across every audience, and the rules for how "
               "self-01 combines purposes in one message (what comes first, how they are joined).")
     try:
@@ -165,6 +195,8 @@ def write(log=print):
         return None
     out["general"], out["combinations"] = ans["general"], ans["combinations"]
     state.write_json(state.path("voice", "corpus-guide.json"), out)
+    state.write_json(shown_file(), {"ids": sorted({e["id"] for cells in per.values() for _, _, xs in cells
+                                                   for e in xs} | {e["id"] for e in multi})})
     state.write_json(state.path("voice", "stats.json"), stats)
     log("  ok    guide written to voice/corpus-guide.json")
     return out

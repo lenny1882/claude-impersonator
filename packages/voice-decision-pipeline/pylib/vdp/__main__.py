@@ -180,7 +180,10 @@ def cmd_voice(a):
             return rc
     if step == "holdout":
         with state.lock():
-            pool.holdout(fresh=a.fresh)
+            if a.more:
+                pool.holdout_more(a.more, a.count)
+            else:
+                pool.holdout(fresh=a.fresh)
         return 0
     if step == "rules":
         made = guide.init_rules()
@@ -250,7 +253,8 @@ def main(argv=None):
     s.add_argument("--new-sample", action="store_true", help="label: draw a fresh label-check sample and disagreement-grade sample")
     s.add_argument("--fresh", action="store_true", help="holdout: draw a fresh holdout (a new validation run)")
     s.add_argument("--limit", type=int, help="validate: only the first N held-back messages")
-    s.add_argument("--more", help="pairs: 12 more pairs for this audience")
+    s.add_argument("--more", help="pairs: 12 more pairs for this audience; holdout: hold back more of it")
+    s.add_argument("--count", type=int, default=12, help="holdout --more: how many more to hold back")
     s.add_argument("--drop", help="pairs: leave these pairs out of the result and draw as many new ones")
     s.set_defaults(f=cmd_voice)
     a = p.parse_args(argv)
