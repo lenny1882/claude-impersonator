@@ -91,6 +91,17 @@ def last_words(t, words):
 
 
 PURPOSE_MIN = 10
+# Opening words a draft reaches for (fillers, interjections, greetings): each
+# one's share of the messages it opens is measured, so the drafter can see
+# which self-01 uses and which almost never.
+OPENERS = ("hello", "well", "also", "anyway", "cool", "great", "hey", "hi", "good", "fine",
+           "just", "morning", "nice", "no", "oh", "ok", "okay", "right", "so", "sorry", "sure",
+           "please", "thanks", "yeah", "yep", "yes")
+# Marks a draft reaches for, counted per message.
+MARKS = {"spaced hyphen": re.compile(r"\s-\s"), "en dash": re.compile("\u2013"),
+         "em dash": re.compile("\u2014"), "colon": re.compile(r"(?<![:/\d]):(?=\s)"),
+         "semicolon": re.compile(r";"), "ellipsis": re.compile(r"\.\.\.|\u2026"),
+         "brackets": re.compile(r"\("), "i.e./e.g.": re.compile(r"\b(?:i\.e|e\.g)\.", re.I)}
 
 
 def median(xs):
@@ -131,6 +142,8 @@ def build(items=None, log=print):
             "emoji_per_message": round(sum(len(EMOJI.findall(t)) for t in ts) / n, 3),
             "openings": [[w, c] for w, c in opens.most_common(10) if c >= 3],
             "signoffs": [[w, c] for w, c in signs.most_common(10) if c >= 3],
+            "opener_share": {w: round(sum(1 for t in ts if first_word(t) == w) / n, 3) for w in OPENERS},
+            "marks_per_message": {k: round(sum(len(r.findall(t)) for t in ts) / n, 3) for k, r in MARKS.items()},
             # Length per purpose, where at least PURPOSE_MIN messages carry it.
             "purposes": {p: {"messages": len(xs), "median_words": median(xs), "p90_words": pct(xs, 0.9)}
                          for p, xs in sorted(by_pur[aud].items()) if len(xs) >= PURPOSE_MIN},

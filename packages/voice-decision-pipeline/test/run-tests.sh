@@ -994,6 +994,9 @@ assert f"Measured, to {a} when the purpose is {p}: median {v['median_words']} wo
 it = voice.load()[0]
 assert "nothing more: no question, offer, mention, pleasantry or sign-off" in validate.draft_prompt(it, ["ask"], [], "brief: x")
 assert "an @mention, or their name in the text" in validate.BRIEF_SYSTEM
+s = st["audiences"][a]
+assert set(s["opener_share"]) == set(__import__("vdp.voicestats", fromlist=["x"]).OPENERS) and "em dash" in s["marks_per_message"]
+assert f"Opening words, to {a}:" in txt and f"Marks per message, to {a}:" in txt and "at 0 it is never used" in txt, txt
 EOF
 check "rows from before the brief are ignored: they neither count as done nor score" vpy <<'EOF'
 import json
