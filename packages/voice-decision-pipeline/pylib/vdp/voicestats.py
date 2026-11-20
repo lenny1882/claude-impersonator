@@ -61,13 +61,25 @@ def others():
                 yield prose(r["text"], r.get("tags"))
 
 
+# Words a phrase may not hold: the pseudonyms' kind words
+# ("client-03" reads as "client"), so a phrase is about wording, not who; and
+# the tails a contraction splits into ("don't" reads as "don" "t"), which would
+# make contractions the owner uses look like ones they never write.
+PSEUDONYM_WORDS = {"self", "colleague", "client", "product", "person"}
+CONTRACTION_TAILS = {"s", "t", "m", "re", "ve", "ll", "d"}
+PLACEHOLDER = re.compile(r"\[[a-z_]+(?::[^\]]*)?\]")
+
+
 def ngrams(text, words, lo=2, hi=4):
-    ws = WORD.findall(text.lower())
+    # Emoji names (":slightly_smiling_face:", ":skin-tone-2:") and the
+    # placeholders for removed details ("[email]", "[REDACTED:...]") are not words.
+    t = PLACEHOLDER.sub(" ", EMOJI.sub(" ", text.lower())).replace("\u2019", "'")
+    ws = WORD.findall(t)
     out = set()
     for n in range(lo, hi + 1):
         for i in range(len(ws) - n + 1):
             g = ws[i:i + n]
-            if all(w in words for w in g):
+            if all(w in words and w not in PSEUDONYM_WORDS and w not in CONTRACTION_TAILS for w in g):
                 out.add(" ".join(g))
     return out
 

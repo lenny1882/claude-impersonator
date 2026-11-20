@@ -998,6 +998,12 @@ s = st["audiences"][a]
 assert set(s["opener_share"]) == set(__import__("vdp.voicestats", fromlist=["x"]).OPENERS) and "em dash" in s["marks_per_message"]
 assert f"Opening words, to {a}:" in txt and f"Marks per message, to {a}:" in txt and "at 0 it is never used" in txt, txt
 EOF
+check "never-say phrases hold no pseudonym word, contraction tail, emoji name or placeholder" vpy <<'EOF'
+from vdp import voicestats
+words = {"i", "client", "email", "to", "mail", "care", "don", "slightly", "smiling", "face", "not", "m", "take", "a", "look"}
+g = voicestats.ngrams("I client-03 [email] [email] to :slightly_smiling_face: I'm not ’ don’t care, take a look", words)
+assert g == {"take a", "a look", "take a look", "care take", "care take a", "care take a look"}, g
+EOF
 check "rows from before the brief are ignored: they neither count as done nor score" vpy <<'EOF'
 import json
 from vdp import state, validate

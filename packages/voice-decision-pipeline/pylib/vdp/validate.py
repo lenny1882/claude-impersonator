@@ -46,7 +46,9 @@ COUNTS = (3, 5, 8)
 # "brief-2": the drafter says only what the brief says, lengths per purpose,
 # and the brief says how a message addresses someone.
 # "brief-3": opening words and marks per message as measured.
-METHOD = "brief-3"
+# "brief-4": the never-say list without pseudonym words, contraction tails
+# or emoji names.
+METHOD = "brief-4"
 PAIRS_PER_AUDIENCE = 12
 WORST, RANDOM = 20, 10
 
