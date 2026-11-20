@@ -9,6 +9,9 @@ The judge (Fable 5.2, not the drafting model) sees the brief too,
 compares each draft with the real message and scores it 1 to 5. The count
 with the best mean score is the build's exemplar count.
 
+Only held-back messages the exemplar pool's rule would keep are drafted,
+scored or paired (counted()); the rest are held back but count for nothing.
+
 Rows carry METHOD; rows written without a brief have none and are ignored,
 so a run resumes only its own method.
 
@@ -41,6 +44,7 @@ import time
 from collections import Counter, defaultdict
 
 from . import guide, labels, model, pool, state, voice
+from .index import VOICE_SOURCES
 
 COUNTS = (3, 5, 8)
 # "brief-2": the drafter says only what the brief says, lengths per purpose,
@@ -183,8 +187,27 @@ def read_lines(name):
 
 
 def rows(name, run):
-    """A file's rows for this run and METHOD."""
-    return [r for r in read_lines(name) if r["run"] == run and r.get("method") == METHOD]
+    """A file's rows for this run and METHOD, for held-back messages that count."""
+    ok = counted()
+    return [r for r in read_lines(name) if r["run"] == run and r.get("method") == METHOD and r["id"] in ok]
+
+
+_COUNTED = {}
+
+
+def counted():
+    """The held-back messages validation counts: those the exemplar pool's own
+    rule would keep (at least min_words words, under max_code_share code), so
+    a "^" or a bare link, the same on both sides, scores and pairs nothing
+    Cached per holdout file and corpus change."""
+    hf = pool.holdout_file()
+    stamp = tuple(os.path.getmtime(f) if os.path.exists(f) else 0
+                  for f in [hf] + [state.anon_file(s) for s in VOICE_SOURCES] + [state.path("voice-config.json")])
+    if _COUNTED.get("stamp") != stamp:
+        by_id = {it["id"]: it for it in voice.load()}
+        c = pool.config()
+        _COUNTED.update(stamp=stamp, ids={i for i in pool.held() if i in by_id and pool.keep(by_id[i], c)})
+    return _COUNTED["ids"]
 
 
 def append(name, rows):
@@ -201,7 +224,8 @@ def drafts_and_judge(counts=COUNTS, limit=None, log=print):
     items = voice.load()
     by_id = {it["id"]: it for it in items}
     lab = labels.final()
-    hold = [by_id[i] for i in sorted(pool.held()) if i in by_id and i in lab]
+    ok = counted()
+    hold = [by_id[i] for i in sorted(pool.held()) if i in by_id and i in lab and i in ok]
     if not hold:
         raise SystemExit("voice-decision-pipeline: no holdouts; run 'voice holdout' first")
     if limit:

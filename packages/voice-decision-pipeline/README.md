@@ -156,7 +156,9 @@ Run in order, each in your own shell (each logs to
 5. `voice validate`: for every held-back message, a brief of what it says
    in neutral words (Sonnet 5.5), then drafts from that brief with 3, 5 and 8
    exemplars (Opus 5.5), judged against the real one (Fable 5.2); the best
-   mean score sets the build's exemplar count. Four calls a message;
+   mean score sets the build's exemplar count. Only held-back messages the
+   exemplar pool's own rule would keep (at least 4 words, under half code)
+   are drafted, scored and paired. Four calls a message;
    `--limit N` does the first N, and a later run carries on from there.
 6. `voice pairs`, then on the review page: 60 blind pairs (12 per audience),
    the judge's 20 worst and 10 random drafts, and the report: counts,

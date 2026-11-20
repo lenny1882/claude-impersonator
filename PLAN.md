@@ -393,7 +393,10 @@ subagent loads the skill is open (§8.2).
   (Sonnet 5.5); a draft is then written from the brief, its
   context, audience and purposes by Opus 5.5, the model the owner's sessions
   draft with, as `voice-runtime` drafts once Claude
-  has its content decided first. Validation runs
+  has its content decided first. Only held-back
+  messages the exemplar pool's own rule keeps are drafted, scored and
+  paired: one too short or mostly code says nothing about voice.
+  Validation runs
   again if the drafting model changes.
 - In parallel: the owner sees 60 blind pairs (their real message and the draft,
   shuffled), 12 per audience across the five corpus audiences (not Jira), covering as many of

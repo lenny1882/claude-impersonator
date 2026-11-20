@@ -979,8 +979,17 @@ assert t.startswith("self-01's own rules (these win") and "Combining purposes" i
 j = guide.render(g, {}, "jira", ["status"])
 assert "Jira comments" in j and "Writing to" not in j
 EOF
-check "voice validate drafts each holdout with 3, 5 and 8 exemplars and the judge scores them" \
-  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice validate >/dev/null && test \$(wc -l < '$VST/validation/drafts.jsonl') = 30 && test \$(wc -l < '$VST/validation/judge.jsonl') = 30"
+VDP_STATE="$VST" VDP_CLAUDE="$VBIN/claude" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp voice validate >/dev/null 2>&1
+check "voice validate drafts each counted holdout with 3, 5 and 8 exemplars and the judge scores them" vpy <<'EOF'
+from vdp import pool, state, validate, voice
+items = {it["id"]: it for it in voice.load()}
+ok = validate.counted()
+assert ok and ok < pool.held() and all(pool.keep(items[i]) for i in ok), (len(ok), len(pool.held()))
+assert not any(pool.keep(items[i]) for i in pool.held() - ok), "a held-back message the pool keeps is left out"
+for f in ("drafts.jsonl", "judge.jsonl"):
+    rs = list(state.read_jsonl(state.path("validation", f)))
+    assert len(rs) == 3 * len(ok) and {r["id"] for r in rs} == ok, (f, len(rs), len(ok))
+EOF
 check "drafts used the closest exemplars of the right count, holdouts never among them" vpy <<'EOF'
 import json
 from vdp import pool, state, validate
@@ -993,13 +1002,13 @@ EOF
 check "each holdout gets one brief of what it says, which the drafts and the judge are given" vpy <<'EOF'
 from vdp import state, validate
 bs = list(state.read_jsonl(state.path("validation", "briefs.jsonl")))
-assert len(bs) == 10 and len({b["id"] for b in bs}) == 10, len(bs)
+assert len(bs) == len(validate.counted()) and {b["id"] for b in bs} == validate.counted(), len(bs)
 assert all(b["brief"].startswith("brief: ") and b["method"] == validate.METHOD for b in bs)
 for f in ("drafts.jsonl", "judge.jsonl"):
     assert all(r["method"] == validate.METHOD for r in state.read_jsonl(state.path("validation", f)))
 EOF
 check "a rerun of validate sends nothing more" \
-  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice validate | grep -q '0 of 10 held-back'"
+  bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice validate | grep -q '== validate run 1: 0 of '"
 check "drafts get the length per purpose, are told to add nothing to the brief, and briefs say how someone is addressed" vpy <<'EOF'
 from vdp import guide, state, validate, voice
 st = state.read_json(state.path("voice", "stats.json"))
@@ -1041,10 +1050,18 @@ got = validate.search(ex, m, m[2], "clients", ["ask"], 3)
 assert [e["id"] for e in got] == ["0", "2", "1"] or [e["id"] for e in got][0] == "0", got
 assert all(e["audience"] == "clients" for e in got)
 EOF
-check "voice pairs makes 2 blind pairs per audience here (12 where there are enough), the key apart" \
-  bash -c "VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice pairs >/dev/null && jq -e '.k==5 and (.pairs|length)==10' '$VST/validation/pairs.json' >/dev/null && jq -e 'length==10' '$VST/validation/pairs-key.json' >/dev/null && ! grep -q '\"real\"' '$VST/validation/pairs.json'"
-check "the judge review lists the worst and random drafts once per run" \
-  jq -e '.k==5 and (.items|length)==10 and (.items[0].why=="worst")' "$VST/validation/judge-review.json"
+VDP_STATE="$VST" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp voice pairs >/dev/null 2>&1
+check "voice pairs pairs every counted holdout here (12 per audience where there are enough), the key apart" vpy <<'EOF'
+from vdp import state, validate
+pr, key = state.read_json(validate.pairs_file()), state.read_json(validate.key_file())
+assert pr["k"] == 5 and {p["id"] for p in pr["pairs"]} == validate.counted() and len(key) == len(pr["pairs"]), pr
+assert '"real"' not in open(validate.pairs_file()).read()
+EOF
+check "the judge review lists the worst and random drafts once per run, counted holdouts only" vpy <<'EOF'
+from vdp import state, validate
+jr = state.read_json(state.path("validation", "judge-review.json"))
+assert jr["k"] == 5 and {x["id"] for x in jr["items"]} == validate.counted() and jr["items"][0]["why"] == "worst", jr
+EOF
 check "the pass is worked out from the owner's answers: picks, grades and the per-audience rule" vpy <<'EOF'
 from vdp import state, validate
 pr = state.read_json(validate.pairs_file())
@@ -1054,13 +1071,14 @@ for i, p in enumerate(pr["pairs"]):
     validate.answer("pair", p["pair"], pick=pick, audience=p["audience"], purposes=p["purposes"])
     validate.answer("pair", p["pair"], grade=4, audience=p["audience"], purposes=p["purposes"])
 r = validate.report()
-assert r["answered"] == 10 and r["counts"]["all"] == {"cant": 5, "wrong": 5}, r["counts"]
+n = len(pr["pairs"])
+assert r["answered"] == n and r["counts"]["all"] == {"cant": n // 2, "wrong": n - n // 2}, r["counts"]
 assert r["blind_ok"] and r["grades_ok"] and r["passed"] and not r["more_pairs_for"], r
 for p in pr["pairs"]:
     validate.answer("pair", p["pair"], pick=key[p["pair"]])
 r = validate.report()
 assert not r["blind_ok"] and not r["passed"] and len(r["more_pairs_for"]) == 0, r
-assert r["counts"]["aud:clients"]["right"] == 2
+assert r["counts"]["aud:clients"]["right"] == sum(1 for p in pr["pairs"] if p["audience"] == "clients")
 lines = [l for l in open(validate.answers_file())]
 assert all(set(__import__("json").loads(l)) <= {"run", "kind", "ref", "ts", "pick", "grade", "audience", "purposes"} for l in lines)
 for p in pr["pairs"]:
@@ -1078,6 +1096,7 @@ keep = {p: open(p).read() for p in (f, k)}
 try:
     before = validate.report()
     first = validate.active(state.read_json(f))[0]["pair"]
+    was = validate.answers()[first]["pick"]
     validate.answer("pair", first, pick="cant")
     subprocess.run([sys.executable, "-m", "vdp", "voice", "pairs", "--drop", first], check=True, capture_output=True)
     pr = state.read_json(f)
@@ -1091,7 +1110,7 @@ try:
 finally:
     for p, t in keep.items():
         open(p, "w").write(t)
-    validate.answer("pair", first, pick=state.read_json(k)[first])
+    validate.answer("pair", first, pick=was)
 EOF
 check "voice build: guide, exemplars, stats and build.json in a tarball, leak-checked" \
   bash -c "VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice build >/dev/null && t=\$(ls '$VST'/voice/builds/*/build-*.tar) && tar -tf \"\$t\" | sort | tr '\n' ' ' | grep -q 'voice-runtime/build.json voice-runtime/exemplars.json voice-runtime/guide.json voice-runtime/stats.json'"
