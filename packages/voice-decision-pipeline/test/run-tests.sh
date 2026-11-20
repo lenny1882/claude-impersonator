@@ -983,6 +983,18 @@ for f in ("drafts.jsonl", "judge.jsonl"):
 EOF
 check "a rerun of validate sends nothing more" \
   bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice validate | grep -q '0 of 10 held-back'"
+check "drafts get the length per purpose, are told to add nothing to the brief, and briefs say how someone is addressed" vpy <<'EOF'
+from vdp import guide, state, validate, voice
+st = state.read_json(state.path("voice", "stats.json"))
+cells = [(a, p, v) for a, s in st["audiences"].items() for p, v in s.get("purposes", {}).items()]
+assert cells and all(v["messages"] >= 10 for _, _, v in cells), cells
+a, p, v = cells[0]
+txt = guide.render(guide.assemble("validation"), st, a, [p])
+assert f"Measured, to {a} when the purpose is {p}: median {v['median_words']} words" in txt, txt
+it = voice.load()[0]
+assert "nothing more: no question, offer, mention, pleasantry or sign-off" in validate.draft_prompt(it, ["ask"], [], "brief: x")
+assert "an @mention, or their name in the text" in validate.BRIEF_SYSTEM
+EOF
 check "rows from before the brief are ignored: they neither count as done nor score" vpy <<'EOF'
 import json
 from vdp import state, validate

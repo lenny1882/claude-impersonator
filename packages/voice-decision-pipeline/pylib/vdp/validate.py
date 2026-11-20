@@ -43,7 +43,9 @@ from collections import Counter, defaultdict
 from . import guide, labels, model, pool, state, voice
 
 COUNTS = (3, 5, 8)
-METHOD = "brief"
+# "brief-2": the drafter says only what the brief says, lengths per purpose,
+# and the brief says how a message addresses someone.
+METHOD = "brief-2"
 PAIRS_PER_AUDIENCE = 12
 WORST, RANDOM = 20, 10
 
@@ -64,8 +66,9 @@ message has them. List each point the message makes, in the order it makes them,
 note per line, in plain neutral words of your own: facts, questions, requests, decisions,
 names, numbers, dates. Never quote or echo its wording, and say nothing about its length,
 tone, punctuation, capitalisation, emoji or sign-off; where it greets, jokes or thanks, say
-so in a few words of your own ("a greeting", "a joke about the train being late"). Add nothing
-the message doesn't say."""
+so in a few words of your own ("a greeting", "a joke about the train being late"). Where it
+addresses someone, say how: an @mention, or their name in the text; where it names no one,
+say nothing about who it is for. Add nothing the message doesn't say."""
 
 BRIEF_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["brief"],
                 "properties": {"brief": {"type": "string"}}}
@@ -168,7 +171,8 @@ def draft_prompt(it, purposes, exs, brief):
     return (f"Examples of messages self-01 wrote to this audience:\n\n{shown}\n\n"
             f"Conversation so far ({'Bitbucket pull request' if it['source'] == 'bitbucket' else 'Slack'}):\n{ctx}\n\n"
             f"What the message has to say (a brief, not its wording):\n{brief}\n\n"
-            f"Write self-01's next message, saying what the brief says in self-01's own words. "
+            f"Write self-01's next message, saying what the brief says in self-01's own words, and "
+            f"nothing more: no question, offer, mention, pleasantry or sign-off the brief doesn't list. "
             f"Audience: {it['audience']}. Purposes, in order: {', '.join(purposes)}.")
 
 
@@ -190,9 +194,12 @@ def append(name, rows):
 def drafts_and_judge(counts=COUNTS, limit=None, log=print):
     import numpy as np
     voice.require_sendable()
+    from . import voicestats
     g = guide.assemble("validation")
-    stats = state.read_json(state.path("voice", "stats.json"), {}) or {}
     items = voice.load()
+    # Measured afresh, so the lengths per purpose follow the current labels.
+    stats = voicestats.build(items, log=log)
+    state.write_json(state.path("voice", "stats.json"), stats)
     by_id = {it["id"]: it for it in items}
     lab = labels.final()
     hold = [by_id[i] for i in sorted(pool.held()) if i in by_id and i in lab]

@@ -208,6 +208,11 @@ def render(g, stats, audience, purposes):
                    f"{int(st['full_stop_end'] * 100)}% end with a full stop; "
                    f"{st['exclamation_per_message']} exclamation marks and "
                    f"{st['emoji_per_message']} emoji per message.")
+        for p in purposes:
+            sp = st.get("purposes", {}).get(p)
+            if sp:
+                out.append(f"Measured, to {audience} when the purpose is {p}: median {sp['median_words']} "
+                           f"words (90% under {sp['p90_words']}), over {sp['messages']} messages.")
     ns = [x["phrase"] for x in (stats or {}).get("never_say", [])]
     if ns:
         out.append("self-01 never or almost never writes: " + "; ".join(f'"{p}"' for p in ns[:80]))

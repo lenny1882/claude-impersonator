@@ -90,6 +90,9 @@ def last_words(t, words):
     return tail if tail in words else None
 
 
+PURPOSE_MIN = 10
+
+
 def median(xs):
     xs = sorted(xs)
     return xs[len(xs) // 2] if xs else 0
@@ -101,11 +104,18 @@ def pct(xs, q):
 
 
 def build(items=None, log=print):
+    from . import labels
     items = items or voice.load()
     words = dictionary()
+    final = labels.final()
     by_aud = defaultdict(list)
+    by_pur = defaultdict(lambda: defaultdict(list))
     for it in items:
-        by_aud[it["audience"]].append(prose(it["text"], it["tags"]).strip())
+        t = prose(it["text"], it["tags"]).strip()
+        by_aud[it["audience"]].append(t)
+        if t:
+            for p in final.get(it["id"], []):
+                by_pur[it["audience"]][p].append(voice.words(t))
     auds = {}
     for aud, ts in sorted(by_aud.items()):
         ts = [t for t in ts if t]
@@ -121,6 +131,9 @@ def build(items=None, log=print):
             "emoji_per_message": round(sum(len(EMOJI.findall(t)) for t in ts) / n, 3),
             "openings": [[w, c] for w, c in opens.most_common(10) if c >= 3],
             "signoffs": [[w, c] for w, c in signs.most_common(10) if c >= 3],
+            # Length per purpose, where at least PURPOSE_MIN messages carry it.
+            "purposes": {p: {"messages": len(xs), "median_words": median(xs), "p90_words": pct(xs, 0.9)}
+                         for p, xs in sorted(by_pur[aud].items()) if len(xs) >= PURPOSE_MIN},
         }
     mine = [prose(it["text"], it["tags"]).lower() for it in items]
     alltext = " ".join(mine)
