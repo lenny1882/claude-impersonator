@@ -197,8 +197,10 @@ _COUNTED = {}
 
 def counted():
     """The held-back messages validation counts: those the exemplar pool's own
-    rule would keep (at least min_words words, under max_code_share code), so
-    a "^" or a bare link, the same on both sides, scores and pairs nothing
+    rule would keep (at least min_words words, under max_code_share code),
+    with at least min_words words left after code becomes [code] and links
+    and [url], as the pairs page shows them; so a "^" or a link, the same on
+    both sides, scores and pairs nothing
     Cached per holdout file and corpus change."""
     hf = pool.holdout_file()
     stamp = tuple(os.path.getmtime(f) if os.path.exists(f) else 0
@@ -206,7 +208,8 @@ def counted():
     if _COUNTED.get("stamp") != stamp:
         by_id = {it["id"]: it for it in voice.load()}
         c = pool.config()
-        _COUNTED.update(stamp=stamp, ids={i for i in pool.held() if i in by_id and pool.keep(by_id[i], c)})
+        _COUNTED.update(stamp=stamp, ids={i for i in pool.held() if i in by_id and pool.keep(by_id[i], c)
+                                          and voice.shown_words(by_id[i]["text"]) >= c["min_words"]})
     return _COUNTED["ids"]
 
 

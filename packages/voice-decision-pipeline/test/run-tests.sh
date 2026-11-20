@@ -881,6 +881,9 @@ from vdp.voicereview import shown
 real = "see <[url]|the test page> or <[url]>, run `make dev`:\n```\nx=1\n```\n<!here> <@colleague-05>"
 draft = "see [url] or [url], run [code]:\n[code]\n@here @colleague-05"
 assert shown(real) == shown(draft) == draft, (shown(real), shown(draft))
+from vdp import voice
+assert voice.shown_words("<[url]|a long label of many words here>") == 0
+assert voice.shown_words("see <[url]|this> before we ship it") == 5
 EOF
 check "labelling notes in the state change the prompt version, so a rerun is traceable" vpy <<'EOF'
 from vdp import labels

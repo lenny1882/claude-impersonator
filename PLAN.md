@@ -394,8 +394,9 @@ subagent loads the skill is open (§8.2).
   context, audience and purposes by Opus 5.5, the model the owner's sessions
   draft with, as `voice-runtime` drafts once Claude
   has its content decided first. Only held-back
-  messages the exemplar pool's own rule keeps are drafted, scored and
-  paired: one too short or mostly code says nothing about voice.
+  messages the exemplar pool's own rule keeps, with 4 words still left
+  once links and code are hidden, are drafted, scored and paired: one too
+  short, mostly code or only a link says nothing about voice.
   Validation runs
   again if the drafting model changes.
 - In parallel: the owner sees 60 blind pairs (their real message and the draft,

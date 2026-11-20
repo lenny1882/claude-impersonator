@@ -47,26 +47,7 @@ def _page(title, body):
     return page(title, f"{TIP_CSS}<script>{JS}</script><p class=meta><a href='/voice'>Voice build</a></p>" + body)
 
 
-FENCE = re.compile(r"```.*?```", re.S)
-INLINE = re.compile(r"`[^`\n]+`")
-SLACK_LINK = re.compile(r"<(\[url\]|https?://[^|>]+)(?:\|([^>]*))?>")
-SLACK_SPECIAL = re.compile(r"<!(here|channel|everyone)(?:\|[^>]*)?>")
-SLACK_MENTION = re.compile(r"<([@#])([^|>]+)(?:\|([^>]*))?>")
-CODE_RUN = re.compile(r"\[code\](?:\s*\[code\])+")
-
-
-def shown(text):
-    """A message as both sides of a blind pair show it: code as [code], as
-    the drafter was shown it, every link as [url], and Slack's mention markup
-    as the words it displays, so neither side gives itself away by format."""
-    t = FENCE.sub("[code]", text or "")
-    t = INLINE.sub("[code]", t)
-    # Every link shows as [url], labelled or not: the drafter writes a bare
-    # [url], so a label would mark the real side.
-    t = SLACK_LINK.sub("[url]", t)
-    t = SLACK_SPECIAL.sub(lambda m: "@" + m.group(1), t)
-    t = SLACK_MENTION.sub(lambda m: m.group(1) + (m.group(3) or m.group(2)), t)
-    return CODE_RUN.sub("[code]", t)
+shown = voice.shown
 
 
 def plabels(ps):
