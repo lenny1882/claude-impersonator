@@ -208,18 +208,6 @@ def render(g, stats, audience, purposes):
                    f"{int(st['full_stop_end'] * 100)}% end with a full stop; "
                    f"{st['exclamation_per_message']} exclamation marks and "
                    f"{st['emoji_per_message']} emoji per message.")
-        if st.get("opener_share"):
-            used = sorted(((v, w) for w, v in st["opener_share"].items() if v >= 0.01), reverse=True)
-            rare = sorted(w for w, v in st["opener_share"].items() if v < 0.005)
-            out.append(f"Opening words, to {audience}: " +
-                       ("; ".join(f'"{w}" opens {round(v * 100)}% of messages' for v, w in used) or "none is common") +
-                       (". Almost never (under 0.5%): " + ", ".join(f'"{w}"' for w in rare) if rare else "") +
-                       ". Most messages open straight on the point.")
-        if st.get("marks_per_message"):
-            out.append(f"Marks per message, to {audience}: " +
-                       ", ".join(f"{k} {v}" for k, v in st["marks_per_message"].items()) +
-                       f"; emoji {st['emoji_per_message']}. Use a mark or an emoji no more often than "
-                       "this: one at 0.05 per message is in 1 message in 20; at 0 it is never used.")
         for p in purposes:
             sp = st.get("purposes", {}).get(p)
             if sp:
