@@ -153,9 +153,11 @@ Run in order, each in your own shell (each logs to
 4. `voice rules` creates `own-rules.md` in the state; each `- ` line is one
    of your rules, its `## Jira` section the Jira guide. `voice guide` writes
    the statistics, the never-say list and the corpus guide (Opus 5.5).
-5. `voice validate`: every held-back message drafted with 3, 5 and 8
-   exemplars (Opus 5.5) and judged against the real one (Fable 5.2); the
-   best mean score sets the build's exemplar count.
+5. `voice validate`: for every held-back message, a brief of what it says
+   in neutral words (Sonnet 5.5), then drafts from that brief with 3, 5 and 8
+   exemplars (Opus 5.5), judged against the real one (Fable 5.2); the best
+   mean score sets the build's exemplar count. Four calls a message;
+   `--limit N` does the first N, and a later run carries on from there.
 6. `voice pairs`, then on the review page: 60 blind pairs (12 per audience),
    the judge's 20 worst and 10 random drafts, and the report: counts,
    spotting rate with its 95% range, confidence the pass holds.

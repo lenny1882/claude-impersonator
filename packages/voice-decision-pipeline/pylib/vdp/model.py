@@ -34,6 +34,10 @@ MODELS = {
     "second": "claude-opus-5-5",
     "drafter": "claude-opus-5-5",
     "judge": "claude-fable-5-2",
+    # The brief of what a held-back message says, written before it is drafted,
+    # by a model other than the drafter, so the drafter never
+    # sees its own model's reading of the real message.
+    "brief": "claude-sonnet-5-5",
     # The guide is written by the drafting model: the one
     # the owner's sessions draft with, so its rules are read by the model that
     # wrote them.

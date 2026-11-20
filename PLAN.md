@@ -388,10 +388,13 @@ subagent loads the skill is open (§8.2).
 ### 3.7 Validation
 
 - 10% of messages are held back from the exemplar pool;
-  later runs draw a fresh holdout (§4.11). For each, a draft is written from
-  its context, audience and purposes only, by Opus 5.5, the model the owner's
-  sessions draft with; validation runs again if that
-  model changes.
+  later runs draw a fresh holdout (§4.11). For each, a brief of what the
+  message says is written first, in neutral words and none of its own
+  (Sonnet 5.5); a draft is then written from the brief, its
+  context, audience and purposes by Opus 5.5, the model the owner's sessions
+  draft with, as `voice-runtime` drafts once Claude
+  has its content decided first. Validation runs
+  again if the drafting model changes.
 - In parallel: the owner sees 60 blind pairs (their real message and the draft,
   shuffled), 12 per audience across the five corpus audiences (not Jira), covering as many of
   the 11 purposes as each audience's held-back messages allow. For
@@ -402,7 +405,8 @@ subagent loads the skill is open (§8.2).
   holds pair ids and answers only, the key staying in the pipeline's
   state; each answer is written there as it is given). A
   model judge, Fable 5.2 (not the drafting model),
-  compares every draft with the real message and scores it.
+  compares every draft with the real message and scores it, mostly on voice,
+  given the same brief.
   The owner's graded pairs also show where the judge disagrees with them, which
   is how the judge's scores on the other ~1,700 drafts are trusted. On top
   of the pairs, the owner also reviews the judge's 20 worst-scored drafts and

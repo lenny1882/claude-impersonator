@@ -969,12 +969,33 @@ import json
 from vdp import pool, state, validate
 held = pool.held()
 for r in state.read_jsonl(state.path("validation", "drafts.jsonl")):
-    assert r["text"] == f"draft with {r['k']} examples", r
+    assert r["text"] == f"draft with {r['k']} examples from a brief", r
     assert len(r["exemplars"]) == r["k"] and not held & set(r["exemplars"])
 assert validate.best_count() == 5
 EOF
+check "each holdout gets one brief of what it says, which the drafts and the judge are given" vpy <<'EOF'
+from vdp import state, validate
+bs = list(state.read_jsonl(state.path("validation", "briefs.jsonl")))
+assert len(bs) == 10 and len({b["id"] for b in bs}) == 10, len(bs)
+assert all(b["brief"].startswith("brief: ") and b["method"] == validate.METHOD for b in bs)
+for f in ("drafts.jsonl", "judge.jsonl"):
+    assert all(r["method"] == validate.METHOD for r in state.read_jsonl(state.path("validation", f)))
+EOF
 check "a rerun of validate sends nothing more" \
   bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice validate | grep -q '0 of 10 held-back'"
+check "rows from before the brief are ignored: they neither count as done nor score" vpy <<'EOF'
+import json
+from vdp import state, validate
+d, j = state.path("validation", "drafts.jsonl"), state.path("validation", "judge.jsonl")
+keep = {f: open(f).read() for f in (d, j)}
+held = sorted({r["id"] for r in state.read_jsonl(j)})
+with open(j, "a") as f:
+    for i in held:
+        f.write(json.dumps({"run": validate.run_no(), "id": i, "k": 8, "score": 5, "reason": "old"}) + "\n")
+assert validate.best_count() == 5, validate.best_count()
+for f, t in keep.items():
+    open(f, "w").write(t)
+EOF
 check "the exemplar search fills a thin cell from the same audience" vpy <<'EOF'
 import numpy as np
 from vdp import validate

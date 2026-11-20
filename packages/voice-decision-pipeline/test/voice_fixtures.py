@@ -132,11 +132,14 @@ elif "purposes" in props and "rules" in props:
            "purposes": {k: [f"for {k}: say it plainly"] for k in props["purposes"]["required"]}}
 elif "general" in props:
     ans = {"general": ["write in lower case at the start"], "combinations": ["news before the objection"]}
+elif "brief" in props:
+    ans = {"brief": "brief: " + prompt.split("The message:\n")[1].split("\n\nWrite its brief")[0][:40]}
 elif "text" in props:
     k = prompt.split("Examples of messages")[1].count("---") + 1
-    ans = {"text": f"draft with {k} examples"}
+    ans = {"text": f"draft with {k} examples" + (" from a brief" if "\nbrief: " in prompt else "")}
 elif "scores" in props:
     ds = re.findall(r"Draft (\d+):\ndraft with (\d+) examples", prompt)
+    assert "The brief the drafts were written from:\nbrief: " in prompt
     ans = {"scores": [{"draft": int(d), "score": 4 if k == "5" else 3, "reason": "fake"} for d, k in ds]}
 else:
     ans = {}

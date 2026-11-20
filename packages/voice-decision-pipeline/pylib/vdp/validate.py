@@ -1,10 +1,16 @@
 """Voice validation (PLAN §3.5, §3.7).
 
-For every held-back message, drafts are written from its context, audience
-and purposes only, by the drafting model (Opus 5.5), with 3, 5 and 8
-exemplars; the judge (Fable 5.2, not the drafting model) compares each with
-the real message and scores it 1 to 5. The count with the best mean score is
-the build's exemplar count.
+For every held-back message, a brief of what it says, in neutral words and
+none of its own (Sonnet 5.5), is written first. Drafts are
+written from the brief, the context, the audience and the purposes by the
+drafting model (Opus 5.5), with 3, 5 and 8 exemplars, as voice-runtime
+drafts from a brief.
+The judge (Fable 5.2, not the drafting model) sees the brief too,
+compares each draft with the real message and scores it 1 to 5. The count
+with the best mean score is the build's exemplar count.
+
+Rows carry METHOD; rows written without a brief have none and are ignored,
+so a run resumes only its own method.
 
 Exemplars are picked as voice-runtime picks them: the pool narrowed to the
 audience and to any of the purposes, then the closest by similarity to the
@@ -37,6 +43,7 @@ from collections import Counter, defaultdict
 from . import guide, labels, model, pool, state, voice
 
 COUNTS = (3, 5, 8)
+METHOD = "brief"
 PAIRS_PER_AUDIENCE = 12
 WORST, RANDOM = 20, 10
 
@@ -50,11 +57,25 @@ self-01 would paste code. Reply with the message text only: no preamble, no quot
 DRAFT_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["text"],
                 "properties": {"text": {"type": "string"}}}
 
+BRIEF_SYSTEM = """You write the brief for one message: what it says, never how it says it. The
+writer is self-01; names are pseudonyms (colleague-07, client-03, product-04); keep them.
+[url], [email], [code] and [REDACTED:...] stand for removed details; keep them where the
+message has them. List each point the message makes, in the order it makes them, one short
+note per line, in plain neutral words of your own: facts, questions, requests, decisions,
+names, numbers, dates. Never quote or echo its wording, and say nothing about its length,
+tone, punctuation, capitalisation, emoji or sign-off; where it greets, jokes or thanks, say
+so in a few words of your own ("a greeting", "a joke about the train being late"). Add nothing
+the message doesn't say."""
+
+BRIEF_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["brief"],
+                "properties": {"brief": {"type": "string"}}}
+
 JUDGE_SYSTEM = """You judge drafts written in one person's voice. The person is self-01; names
-are pseudonyms. You see the conversation, the message self-01 really wrote next, and several
-drafts written for the same moment without seeing it. Score each draft 1 to 5 for how far
-self-01 would send it as is, judged against the real message: voice (wording, length, tone,
-punctuation, capitalisation) and whether it does what the real message does.
+are pseudonyms. You see the conversation, the message self-01 really wrote next, a brief of
+what that message says, and several drafts written from the brief without seeing the
+message. Score each draft 1 to 5 for how far self-01 would send it as is, judged against the
+real message: mostly voice (wording, length, tone, punctuation, capitalisation), and whether
+it says what the brief says, nothing dropped or added.
 5: indistinguishable from self-01's own. 4: sendable as is or with a trivial edit.
 3: content right, needs rewording. 2: voice or content wrong. 1: of no use."""
 
@@ -134,18 +155,30 @@ def situation(it):
 
 # -- drafting and judging -----------------------------------------------------
 
-def draft_prompt(it, purposes, exs):
+def brief_prompt(it):
+    ctx = voice.render_context(it["before"], 2000) or "(no earlier messages)"
+    return (f"Conversation before it:\n{ctx}\n\nThe message:\n{voice.without_code(it['text'], it.get('tags') or [])}"
+            f"\n\nWrite its brief.")
+
+
+def draft_prompt(it, purposes, exs, brief):
     ctx = voice.render_context(it["before"], 4000) or "(no earlier messages)"
     shown = "\n\n---\n\n".join(
         (f"(answering: {e['answered'][:300]})\n" if e["answered"] else "") + e["text"] for e in exs)
     return (f"Examples of messages self-01 wrote to this audience:\n\n{shown}\n\n"
             f"Conversation so far ({'Bitbucket pull request' if it['source'] == 'bitbucket' else 'Slack'}):\n{ctx}\n\n"
-            f"Write self-01's next message. Audience: {it['audience']}. Purposes, in order: "
-            f"{', '.join(purposes)}.")
+            f"What the message has to say (a brief, not its wording):\n{brief}\n\n"
+            f"Write self-01's next message, saying what the brief says in self-01's own words. "
+            f"Audience: {it['audience']}. Purposes, in order: {', '.join(purposes)}.")
 
 
 def read_lines(name):
     return list(state.read_jsonl(vdir(name)))
+
+
+def rows(name, run):
+    """A file's rows for this run and METHOD."""
+    return [r for r in read_lines(name) if r["run"] == run and r.get("method") == METHOD]
 
 
 def append(name, rows):
@@ -171,8 +204,9 @@ def drafts_and_judge(counts=COUNTS, limit=None, log=print):
     m = exemplar_vectors(ex, log=log)
     el = _el()
     run = run_no()
-    have = {(r["id"], r["k"]) for r in read_lines("drafts.jsonl") if r["run"] == run}
-    judged = {r["id"] for r in read_lines("judge.jsonl") if r["run"] == run}
+    have = {(r["id"], r["k"]) for r in rows("drafts.jsonl", run)}
+    judged = {r["id"] for r in rows("judge.jsonl", run)}
+    briefs = {r["id"]: r["brief"] for r in rows("briefs.jsonl", run)}
     todo = [it for it in hold if it["id"] not in judged]
     log(f"== validate run {run}: {len(todo)} of {len(hold)} held-back messages to draft and judge, "
         f"counts {list(counts)}")
@@ -181,19 +215,24 @@ def drafts_and_judge(counts=COUNTS, limit=None, log=print):
         ps = lab[it["id"]]
         system = DRAFT_SYSTEM + guide.render(g, stats, it["audience"], ps)
         try:
+            if it["id"] not in briefs:
+                ans = model.call("brief", BRIEF_SYSTEM, brief_prompt(it), BRIEF_SCHEMA, log=log)
+                briefs[it["id"]] = ans["brief"]
+                append("briefs.jsonl", [{"run": run, "method": METHOD, "id": it["id"], "brief": ans["brief"]}])
+            brief = briefs[it["id"]]
             for k in counts:
                 if (it["id"], k) in have:
                     continue
                 exs = search(ex, m, np.asarray(qv, "float32"), it["audience"], ps, k)
-                ans = model.call("drafter", system, draft_prompt(it, ps, exs), DRAFT_SCHEMA, log=log)
-                append("drafts.jsonl", [{"run": run, "id": it["id"], "k": k, "text": ans["text"],
+                ans = model.call("drafter", system, draft_prompt(it, ps, exs, brief), DRAFT_SCHEMA, log=log)
+                append("drafts.jsonl", [{"run": run, "method": METHOD, "id": it["id"], "k": k, "text": ans["text"],
                                          "exemplars": [e["id"] for e in exs]}])
                 have.add((it["id"], k))
-            ds = {r["k"]: r["text"] for r in read_lines("drafts.jsonl")
-                  if r["run"] == run and r["id"] == it["id"]}
+            ds = {r["k"]: r["text"] for r in rows("drafts.jsonl", run) if r["id"] == it["id"]}
             ks = [k for k in counts if k in ds]
             jp = (f"Conversation:\n{voice.render_context(it['before'], 4000) or '(none)'}\n\n"
-                  f"The message self-01 really wrote:\n{it['text']}\n\n" +
+                  f"The message self-01 really wrote:\n{it['text']}\n\n"
+                  f"The brief the drafts were written from:\n{brief}\n\n" +
                   "\n\n".join(f"Draft {i}:\n{ds[k]}" for i, k in enumerate(ks, 1)) +
                   f"\n\nScore drafts 1 to {len(ks)}.")
             ans = model.call("judge", JUDGE_SYSTEM, jp, JUDGE_SCHEMA, log=log)
@@ -204,7 +243,7 @@ def drafts_and_judge(counts=COUNTS, limit=None, log=print):
             log(f"  skip  {it['id']}: {e}")
             continue
         sc = {x["draft"]: x for x in ans["scores"]}
-        append("judge.jsonl", [{"run": run, "id": it["id"], "k": k, "score": sc[i]["score"],
+        append("judge.jsonl", [{"run": run, "method": METHOD, "id": it["id"], "k": k, "score": sc[i]["score"],
                                 "reason": sc[i]["reason"]} for i, k in enumerate(ks, 1) if i in sc])
         if n % 25 == 0 or n == len(todo):
             log(f"  {n}/{len(todo)} judged")
@@ -215,9 +254,8 @@ def drafts_and_judge(counts=COUNTS, limit=None, log=print):
 def scores(run=None):
     run = run_no() if run is None else run
     out = defaultdict(list)
-    for r in read_lines("judge.jsonl"):
-        if r["run"] == run:
-            out[r["k"]].append(r["score"])
+    for r in rows("judge.jsonl", run):
+        out[r["k"]].append(r["score"])
     return out
 
 
@@ -258,7 +296,7 @@ def make_pairs(audience=None, log=print):
     used = {p["id"] for p in cur["pairs"]}
     items = {it["id"]: it for it in voice.load()}
     lab = labels.final()
-    drafts = {r["id"]: r["text"] for r in read_lines("drafts.jsonl") if r["run"] == run and r["k"] == k}
+    drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run) if r["k"] == k}
     rnd = random.Random(f"pairs-{run}-{len(cur['pairs'])}")
     for aud in ([audience] if audience else voice.CORPUS_AUDIENCES):
         pool_ = {i: (aud, lab[i]) for i in drafts if i in items and items[i]["audience"] == aud
@@ -288,13 +326,13 @@ def judge_review(log=print):
     if cur and cur["run"] == run:
         return cur
     k = best_count(run)
-    rows = [r for r in read_lines("judge.jsonl") if r["run"] == run and r["k"] == k]
-    rows.sort(key=lambda r: (r["score"], r["id"]))
-    worst = rows[:WORST]
-    rest = rows[WORST:]
+    js = [r for r in rows("judge.jsonl", run) if r["k"] == k]
+    js.sort(key=lambda r: (r["score"], r["id"]))
+    worst = js[:WORST]
+    rest = js[WORST:]
     random.Random(f"judge-review-{run}").shuffle(rest)
     items = {it["id"]: it for it in voice.load()}
-    drafts = {r["id"]: r["text"] for r in read_lines("drafts.jsonl") if r["run"] == run and r["k"] == k}
+    drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run) if r["k"] == k}
     cur = {"run": run, "k": k, "items": [
         {"id": r["id"], "why": w, "score": r["score"], "reason": r["reason"],
          "audience": items[r["id"]]["audience"], "real": items[r["id"]]["text"],
