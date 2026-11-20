@@ -1079,6 +1079,22 @@ for p in validate.active(pr):
     assert shown == want, (p["pair"], shown, want)
 assert voicereview.reveal(key[first]) in h
 EOF
+check "the pairs and judge review pages have audience tabs, a next-unanswered button, and mark what each card still needs" vpy <<'EOF'
+import re
+from vdp import state, validate, voicereview
+pr = state.read_json(validate.pairs_file())
+ans = validate.answers()
+h = voicereview.pairs_page()
+assert "onclick=\"vnext()\"" in h and "data-tab=''" in h
+for a in {p["audience"] for p in validate.active(pr)}:
+    assert f"data-tab='{a}'" in h and f"data-left='{a}'" in h, a
+for p in validate.active(pr):
+    have = re.search(rf"id='c-{p['pair']}' data-aud='[^']+' data-need='pick grade' data-have='([^']*)'", h).group(1).split()
+    a = ans.get(p["pair"], {})
+    assert set(have) == {k for k in ("pick", "grade") if a.get(k)}, (p["pair"], have, a)
+j = voicereview.judge_page()
+assert "onclick=\"vnext()\"" in j and j.count("data-need='grade'") == len(validate.judge_review()["items"])
+EOF
 check "the pairs and judge review pages show the judge's 1-5 scale on the page and on each grade button" vpy <<'EOF'
 from vdp import validate, voicereview
 for page in (voicereview.pairs_page(), voicereview.judge_page()):

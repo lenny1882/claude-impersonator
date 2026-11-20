@@ -31,10 +31,22 @@ function dg(id,pick){const tr=document.getElementById('i-'+id);
 const ps=[...tr.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);
 vpost('/api/voice/disagree',{id,pick,purposes:pick==='neither'?ps:[]}).then(()=>{
 for(const b of tr.querySelectorAll('button.v'))b.setAttribute('aria-pressed',b.dataset.v===pick?'true':'false')})}
-function pick(pair,p){vpost('/api/voice/pair',{pair,pick:p}).then(t=>{const c=document.getElementById('c-'+pair);
+function vdone(c){const have=(c.dataset.have||'').split(' ');return (c.dataset.need||'').split(' ').every(k=>!k||have.includes(k))}
+function vhave(c,k){const h=new Set((c.dataset.have||'').split(' ').filter(Boolean));h.add(k);c.dataset.have=[...h].join(' ');vcount()}
+let VT='';
+function vcards(){return [...document.querySelectorAll('.card[data-aud]')]}
+function vcount(){const cs=vcards();for(const el of document.querySelectorAll('[data-left]')){const a=el.dataset.left;
+el.textContent=cs.filter(c=>(!a||c.dataset.aud===a)&&!vdone(c)).length}}
+function vtab(a){VT=a;for(const c of vcards())c.hidden=!!a&&c.dataset.aud!==a;
+for(const b of document.querySelectorAll('.tab[data-tab]'))b.classList.toggle('on',b.dataset.tab===a);
+history.replaceState(null,'','#'+(a||'all'));window.scrollTo(0,0);vcount()}
+function vnext(){const cs=vcards().filter(c=>!c.hidden&&!vdone(c));if(!cs.length)return;
+const below=cs.find(c=>c.getBoundingClientRect().top>80);(below||cs[0]).scrollIntoView({behavior:'smooth',block:'start'})}
+window.addEventListener('DOMContentLoaded',()=>{if(!vcards().length)return;const h=location.hash.slice(1);vtab(h&&h!=='all'?h:'')});
+function pick(pair,p){vpost('/api/voice/pair',{pair,pick:p}).then(t=>{const c=document.getElementById('c-'+pair);vhave(c,'pick');
 const r=JSON.parse(t);c.querySelector('.reveal').textContent=r.real==='A'?'A was yours; B is the draft.':'B was yours; A is the draft.';
 c.querySelector('.grade').hidden=false;for(const b of c.querySelectorAll('button.p'))b.setAttribute('aria-pressed',b.dataset.p===p?'true':'false')})}
-function grade(kind,ref,g){vpost('/api/voice/'+kind,{ref,grade:g}).then(()=>{const c=document.getElementById('c-'+ref);
+function grade(kind,ref,g){vpost('/api/voice/'+kind,{ref,grade:g}).then(()=>{const c=document.getElementById('c-'+ref);vhave(c,'grade');
 for(const b of c.querySelectorAll('button.g'))b.setAttribute('aria-pressed',b.dataset.g==String(g)?'true':'false')})}
 """
 
@@ -68,6 +80,16 @@ def reveal(real):
     """Which side was the owner's, shown once they have picked (as the pick's own
     reply shows it), so a reload keeps it."""
     return "A was yours; B is the draft." if real == "A" else "B was yours; A is the draft." if real == "B" else ""
+
+
+def voice_nav(items):
+    """Tabs for All and each audience, each with how many are left, and a
+    button to the next one not yet answered: the Mining page's pattern."""
+    auds = [a for a in voice.CORPUS_AUDIENCES if any(x == a for x in items)]
+    tabs = [("", "All")] + [(a, a) for a in auds]
+    return ("<nav class=tabs>" + "".join(
+        f"<button class=tab data-tab='{a}' onclick=\"vtab('{a}')\">{E(label)} <span class=n data-left='{a}'></span></button>"
+        for a, label in tabs) + "<button onclick=\"vnext()\">Next unanswered ↓</button></nav>")
 
 
 def plabels(ps):
@@ -208,7 +230,9 @@ def pairs_page():
                                f"onclick=\"pick('{p['pair']}','{v}')\">{label}</button>")
         gb = "".join(f"<button class=g data-g={n} aria-pressed={'true' if gr == n else 'false'} "
                      f"title='{grade_title(n)}' onclick=\"grade('pair-grade','{p['pair']}',{n})\">{n}</button>" for n in range(1, 6))
-        cards.append(f"<div class=card id='c-{p['pair']}'><div class=meta>{p['pair']} · {E(p['audience'])} · "
+        have = " ".join(k for k, v in (("pick", pk), ("grade", gr)) if v)
+        cards.append(f"<div class=card id='c-{p['pair']}' data-aud='{E(p['audience'])}' data-need='pick grade' "
+                     f"data-have='{have}'><div class=meta>{p['pair']} · {E(p['audience'])} · "
                      f"{plabels(p['purposes'])}</div>"
                      f"<details><summary class=meta>conversation before</summary><pre>{E(p['context'])}</pre></details>"
                      f"<p><b>A</b></p><pre>{E(shown(p['a']))}</pre><p><b>B</b></p><pre>{E(shown(p['b']))}</pre>"
@@ -219,7 +243,8 @@ def pairs_page():
 {pr['k']} exemplars. In each, one message is yours and one a draft. Pick yours, or "can't tell";
 then grade the draft 1 to 5, on the scale the judge uses (each button shows its meaning on hover):</p>
 {scale()}<p>Every answer is saved as you give it, so you can stop and come back; a new grade
-replaces the old one.</p>{''.join(cards)}""")
+replaces the old one. The number on each tab is how many are left there.</p>
+{voice_nav([p['audience'] for p in validate.active(pr)])}{''.join(cards)}""")
 
 
 def judge_page():
@@ -230,7 +255,8 @@ def judge_page():
         gr = ans.get(x["id"], {}).get("grade")
         gb = "".join(f"<button class=g data-g={n} aria-pressed={'true' if gr == n else 'false'} "
                      f"title='{grade_title(n)}' onclick=\"grade('judge-review','{x['id']}',{n})\">{n}</button>" for n in range(1, 6))
-        cards.append(f"<div class=card id='c-{x['id']}'><div class=meta>{x['why']} · {E(x['audience'])} · "
+        cards.append(f"<div class=card id='c-{x['id']}' data-aud='{E(x['audience'])}' data-need='grade' "
+                     f"data-have='{'grade' if gr else ''}'><div class=meta>{x['why']} · {E(x['audience'])} · "
                      f"judge {x['score']}: {E(x['reason'])}</div>"
                      f"<details><summary class=meta>conversation before</summary><pre>{E(x['context'])}</pre></details>"
                      f"<p><b>Yours</b></p><pre>{E(shown(x['real']))}</pre><p><b>Draft</b></p><pre>{E(shown(x['draft']))}</pre>"
@@ -238,7 +264,7 @@ def judge_page():
     return _page("Judge review", f"""<p>The judge's {validate.WORST} worst-scored drafts and
 {validate.RANDOM} random others from run {jr['run']}, each beside your real message. Your grade
 shows where the judge and you differ, on the judge's own scale (each button shows its meaning on
-hover):</p>{scale()}{''.join(cards)}""")
+hover):</p>{scale()}{voice_nav([x['audience'] for x in jr['items']])}{''.join(cards)}""")
 
 
 def report_page():
