@@ -307,23 +307,65 @@ def make_pairs(audience=None, log=print):
     items = {it["id"]: it for it in voice.load()}
     lab = labels.final()
     drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run) if r["k"] == k}
-    rnd = random.Random(f"pairs-{run}-{len(cur['pairs'])}")
     for aud in ([audience] if audience else voice.CORPUS_AUDIENCES):
-        pool_ = {i: (aud, lab[i]) for i in drafts if i in items and items[i]["audience"] == aud
-                 and i not in used}
-        for i in labels.spread_sample(pool_, PAIRS_PER_AUDIENCE, seed=f"pairs-{run}-{aud}-{len(used)}"):
-            it = items[i]
-            real_a = rnd.random() < 0.5
-            pid = f"p{len(cur['pairs']) + 1:03d}"
-            cur["pairs"].append({"pair": pid, "id": i, "audience": aud, "purposes": lab[i],
-                                 "context": voice.render_context(it["before"], 3000),
-                                 "a": it["text"] if real_a else drafts[i],
-                                 "b": drafts[i] if real_a else it["text"]})
-            key[pid] = "A" if real_a else "B"
-            used.add(i)
+        _draw(cur, key, used, items, lab, drafts, aud, PAIRS_PER_AUDIENCE)
     state.write_json(key_file(), key)
     state.write_json(pairs_file(), cur)
-    log(f"  ok    {len(cur['pairs'])} blind pairs (exemplar count {cur['k']})")
+    log(f"  ok    {len(active(cur))} blind pairs (exemplar count {cur['k']})")
+    return cur
+
+
+def _draw(cur, key, used, items, lab, drafts, aud, n):
+    """Add n pairs for aud from drafts not yet in any pair, dropped ones included."""
+    run = cur["run"]
+    rnd = random.Random(f"pairs-{run}-{len(cur['pairs'])}")
+    pool_ = {i: (aud, lab[i]) for i in drafts if i in items and items[i]["audience"] == aud
+             and i not in used}
+    for i in labels.spread_sample(pool_, n, seed=f"pairs-{run}-{aud}-{len(used)}"):
+        it = items[i]
+        real_a = rnd.random() < 0.5
+        pid = f"p{len(cur['pairs']) + 1:03d}"
+        cur["pairs"].append({"pair": pid, "id": i, "audience": aud, "purposes": lab[i],
+                             "context": voice.render_context(it["before"], 3000),
+                             "a": it["text"] if real_a else drafts[i],
+                             "b": drafts[i] if real_a else it["text"]})
+        key[pid] = "A" if real_a else "B"
+        used.add(i)
+
+
+def active(pr):
+    """The pairs that count: all but those dropped."""
+    gone = set((pr or {}).get("dropped", {}))
+    return [p for p in (pr or {}).get("pairs", []) if p["pair"] not in gone]
+
+
+def drop_pairs(ids, reason, log=print):
+    """Drop pairs from the result (an answer the page's format gave away, for
+    one) and draw as many new pairs for the same audiences in their place.
+    Dropped pairs and their answers stay in the files, marked."""
+    run = run_no()
+    cur = state.read_json(pairs_file(), None)
+    if not cur or cur["run"] != run:
+        raise SystemExit("voice-decision-pipeline: no pairs for this run; run 'voice pairs' first")
+    by = {p["pair"]: p for p in active(cur)}
+    bad = [i for i in ids if i not in by]
+    if bad:
+        raise SystemExit(f"voice-decision-pipeline: not a pair in use: {', '.join(bad)}")
+    cur.setdefault("dropped", {})
+    for i in ids:
+        cur["dropped"][i] = reason
+    key = state.read_json(key_file(), {}) or {}
+    used = {p["id"] for p in cur["pairs"]}
+    items = {it["id"]: it for it in voice.load()}
+    lab = labels.final()
+    drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run) if r["k"] == cur["k"]}
+    for aud, n in sorted(Counter(by[i]["audience"] for i in ids).items()):
+        before = len(cur["pairs"])
+        _draw(cur, key, used, items, lab, drafts, aud, n)
+        log(f"  ok    dropped {n} {aud} pair{'s' if n > 1 else ''}, drew "
+            + ", ".join(p["pair"] for p in cur["pairs"][before:]))
+    state.write_json(key_file(), key)
+    state.write_json(pairs_file(), cur)
     return cur
 
 
@@ -390,14 +432,15 @@ def report(run=None):
     key = state.read_json(key_file(), {}) or {}
     ans = answers(run)
     per = {"all": Counter()}
-    for p in pr["pairs"]:
+    for p in active(pr):
         a = ans.get(p["pair"])
         if not a or "pick" not in a:
             continue
         res = "cant" if a["pick"] == "cant" else ("right" if a["pick"] == key[p["pair"]] else "wrong")
         for k in ("all", "aud:" + p["audience"]) + tuple("pur:" + x for x in p["purposes"]):
             per.setdefault(k, Counter())[res] += 1
-    grades = [a["grade"] for a in ans.values() if a.get("grade")]
+    live = {p["pair"] for p in active(pr)}
+    grades = [a["grade"] for r, a in ans.items() if r in live and a.get("grade")]
     c = per["all"]
     n = sum(c.values())
     rnd = random.Random(f"report-{run}-{n}")
@@ -406,9 +449,9 @@ def report(run=None):
     blind_ok = n > 0 and c["right"] - c["wrong"] <= 0.1 * n
     grades_ok = bool(grades) and sum(1 for x in grades if x >= 4) >= 0.8 * len(grades) and 1 not in grades
     more = [k[4:] for k, v in per.items() if k.startswith("aud:") and v["right"] - v["wrong"] >= 3]
-    done = n == len(pr["pairs"]) and len(grades) == len(pr["pairs"])
+    done = n == len(active(pr)) and len(grades) == len(active(pr))
     return {
-        "run": run, "k": pr["k"], "pairs": len(pr["pairs"]), "answered": n, "graded": len(grades),
+        "run": run, "k": pr["k"], "pairs": len(active(pr)), "dropped": sorted(pr.get("dropped", {})), "answered": n, "graded": len(grades),
         "counts": {k: dict(v) for k, v in per.items()},
         "spotting": {"estimate": round((c["right"] - c["wrong"]) / n, 3) if n else None,
                      "low": round(spot[int(0.025 * len(spot))], 3), "high": round(spot[int(0.975 * len(spot))], 3)},
@@ -416,6 +459,6 @@ def report(run=None):
         "grades": dict(Counter(grades)), "blind_ok": blind_ok, "grades_ok": grades_ok,
         "more_pairs_for": more, "done": done,
         "passed": done and blind_ok and grades_ok and not more,
-        "right_pairs": [p["pair"] for p in pr["pairs"]
+        "right_pairs": [p["pair"] for p in active(pr)
                         if ans.get(p["pair"], {}).get("pick") == key.get(p["pair"])],
     }

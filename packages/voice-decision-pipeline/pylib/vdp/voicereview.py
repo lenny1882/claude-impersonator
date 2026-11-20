@@ -199,7 +199,7 @@ def pairs_page():
                                     "<code>voice validate</code>.</p>")
     ans = validate.answers(pr["run"])
     cards = []
-    for p in pr["pairs"]:
+    for p in validate.active(pr):
         a = ans.get(p["pair"], {})
         pk, gr = a.get("pick", ""), a.get("grade")
         pb = lambda v, label: (f"<button class=p data-p={v} aria-pressed={'true' if pk == v else 'false'} "
@@ -213,7 +213,7 @@ def pairs_page():
                      f"<p class=row>{pb('A', 'A is mine')}{pb('B', 'B is mine')}{pb('cant', 'Can’t tell')}</p>"
                      f"<p class=meta><span class=reveal></span></p>"
                      f"<p class='row grade'{'' if pk else ' hidden'}>Would you send the draft as is? {gb}</p></div>")
-    return _page("Blind pairs", f"""<p>Run {pr['run']}, {len(pr['pairs'])} pairs, drafts made with
+    return _page("Blind pairs", f"""<p>Run {pr['run']}, {len(validate.active(pr))} pairs, drafts made with
 {pr['k']} exemplars. In each, one message is yours and one a draft. Pick yours, or "can't tell";
 then grade the draft 1 to 5 for "would send as is". Every answer is saved as you give it, so you
 can stop and come back.</p>{''.join(cards)}""")

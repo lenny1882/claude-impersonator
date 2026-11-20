@@ -121,7 +121,7 @@ anonymising map, the mining and batch decisions, the inputs with their
     voice rules
     voice guide
     voice validate [--limit N]
-    voice pairs [--more <audience>]
+    voice pairs [--more <audience> | --drop <pair,...>]
     voice build
     voice publish
     voice status
@@ -161,6 +161,9 @@ Run in order, each in your own shell (each logs to
 6. `voice pairs`, then on the review page: 60 blind pairs (12 per audience),
    the judge's 20 worst and 10 random drafts, and the report: counts,
    spotting rate with its 95% range, confidence the pass holds.
+   `voice pairs --drop p002,p010` leaves those pairs out of the result and
+   draws as many new ones for the same audiences; the dropped pairs and their
+   answers stay in the files, marked.
 7. `voice build`: guide.json, exemplars.json, stats.json and build.json in a
    tarball in the state; the leak check reads them first and stops on any
    real name. `voice publish` sends it through `builds-sync` once the label

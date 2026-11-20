@@ -1070,6 +1070,29 @@ assert not validate.report()["grades_ok"]
 validate.answer("pair", pr["pairs"][0]["pair"], grade=5)
 assert validate.report()["passed"]
 EOF
+check "voice pairs --drop leaves pairs out of the result and the page, keeping them in the files" vpy <<'EOF'
+import os, shutil, subprocess, sys
+from vdp import state, validate, voicereview
+f, k = validate.pairs_file(), validate.key_file()
+keep = {p: open(p).read() for p in (f, k)}
+try:
+    before = validate.report()
+    first = validate.active(state.read_json(f))[0]["pair"]
+    validate.answer("pair", first, pick="cant")
+    subprocess.run([sys.executable, "-m", "vdp", "voice", "pairs", "--drop", first], check=True, capture_output=True)
+    pr = state.read_json(f)
+    assert first in pr["dropped"] and any(p["pair"] == first for p in pr["pairs"]), pr.get("dropped")
+    assert first not in {p["pair"] for p in validate.active(pr)}
+    r = validate.report()
+    assert r["dropped"] == [first] and r["pairs"] == len(validate.active(pr)) and r["answered"] == before["answered"] - 1, (r, before)
+    assert f"id='c-{first}'" not in voicereview.pairs_page()
+    out = subprocess.run([sys.executable, "-m", "vdp", "voice", "pairs", "--drop", first], capture_output=True, text=True)
+    assert out.returncode != 0 and "not a pair in use" in out.stderr, out.stderr
+finally:
+    for p, t in keep.items():
+        open(p, "w").write(t)
+    validate.answer("pair", first, pick=state.read_json(k)[first])
+EOF
 check "voice build: guide, exemplars, stats and build.json in a tarball, leak-checked" \
   bash -c "VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice build >/dev/null && t=\$(ls '$VST'/voice/builds/*/build-*.tar) && tar -tf \"\$t\" | sort | tr '\n' ' ' | grep -q 'voice-runtime/build.json voice-runtime/exemplars.json voice-runtime/guide.json voice-runtime/stats.json'"
 check "build.json names the exemplar count and embedding identity" vpy <<'EOF'

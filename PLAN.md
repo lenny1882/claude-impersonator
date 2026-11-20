@@ -403,7 +403,11 @@ subagent loads the skill is open (§8.2).
   review page saves progress between sittings;
   The progress file
   holds pair ids and answers only, the key staying in the pipeline's
-  state; each answer is written there as it is given). A
+  state; each answer is written there as it is given). Both sides of a
+  pair show code as `[code]` and every link as `[url]`, so neither gives
+  itself away by format. A pair whose answer was given away anyway can be
+  dropped from the result and replaced by a new one for the same audience.
+  A
   model judge, Fable 5.2 (not the drafting model),
   compares every draft with the real message and scores it, mostly on voice,
   given the same brief.
