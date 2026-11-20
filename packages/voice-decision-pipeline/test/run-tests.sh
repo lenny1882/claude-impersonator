@@ -815,13 +815,31 @@ assert [voicereview.sides(i)[0] for i in ids] == on_a
 assert all(set(voicereview.sides(i)) == {"labeller", "second"} for i in ids)
 h = voicereview.disagree_page()
 ds = {x["id"]: x for x in state.read_jsonl(state.path("labels", "disagreements.jsonl"))}
-rows = re.findall(r"<tr id='i-([^']+)'>.*?A: <b>([^<]*)</b> · B: <b>([^<]*)</b>.*?"
+rows = re.findall(r"<tr id='i-([^']+)'>.*?A: <b>(.*?)</b> · B: <b>(.*?)</b>.*?"
                   r"onclick=\"dg\('[^']+','(\w+)'\)\">A right.*?onclick=\"dg\('[^']+','(\w+)'\)\">B right", h, re.S)
 assert rows
 for i, ta, tb, pa, pb in rows:
     sa, sb = voicereview.sides(i)
     assert (pa, pb) == (sa, sb), (i, pa, pb)
+    ta, tb = re.sub(r"<[^>]+>", "", ta), re.sub(r"<[^>]+>", "", tb)
     assert ta == ", ".join(ds[i][sa]) and tb == ", ".join(ds[i][sb]), (i, ta, tb)
+EOF
+check "purpose names on the voice pages show their definition, and any labelling note naming them, on hover" vpy <<'EOF'
+import html, re
+from vdp import labels, voice, voicereview
+with open(labels.notes_file(), "a") as f:
+    f.write("\n- A one-word reply that accepts what was said is approve.\n")
+tips = lambda h: {n: html.unescape(t) for t, n in re.findall(r"<span class=pl title='([^']*)'>([\w-]+)</span>", h)}
+for h in (voicereview.labels_page(), voicereview.disagree_page(), voicereview.overview()):
+    t = tips(h)
+    assert t, "no purpose tooltips"
+    for n, tip in t.items():
+        assert tip.split("\n")[0] == voice.PURPOSES[n], (n, tip)
+    assert not re.search(r"<input type=checkbox[^>]*>\s*<span class=pl", h), "checkboxes carry no tooltip"
+t = labels.purpose_tip("approve")
+assert t.endswith("A one-word reply that accepts what was said is approve."), t
+assert "one-word reply" not in labels.purpose_tip("ask")
+assert set(tips(voicereview.overview())) == set(voice.PURPOSES)
 EOF
 check "the disagreement-grade sample is kept, and label --new-sample draws it afresh with earlier grades kept" vpy <<'EOF'
 import subprocess, sys, os

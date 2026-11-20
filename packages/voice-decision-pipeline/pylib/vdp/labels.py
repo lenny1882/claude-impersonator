@@ -31,6 +31,7 @@ labeller's.
 import hashlib
 import json
 import random
+import re
 from collections import Counter, defaultdict
 
 from . import model, state, voice
@@ -68,12 +69,24 @@ they appear in the message. A message can carry several. Use "other" only when n
 {lines}
 
 Label the message itself, not the context; the context only shows what it answers."""
+    n = notes()
+    return base + (f"\n\nFurther notes:\n{n}" if n else "")
+
+
+def notes():
     try:
         with open(notes_file(), encoding="utf-8") as f:
-            notes = f.read().strip()
+            return f.read().strip()
     except FileNotFoundError:
-        notes = ""
-    return base + (f"\n\nFurther notes:\n{notes}" if notes else "")
+        return ""
+
+
+def purpose_tip(p):
+    """A purpose's definition as the models are given it, plus each line of
+    labelling-notes.md that names the purpose as a whole word."""
+    lines = [l.strip().lstrip("-").strip() for l in notes().splitlines()]
+    pat = re.compile(rf"(?<![\w-]){re.escape(p)}(?![\w-])")
+    return "\n".join([voice.PURPOSES[p]] + [l for l in lines if l and pat.search(l)])
 
 
 def prompt_version():

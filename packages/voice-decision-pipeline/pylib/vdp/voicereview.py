@@ -38,9 +38,18 @@ for(const b of c.querySelectorAll('button.g'))b.setAttribute('aria-pressed',b.da
 """
 
 
+TIP_CSS = "<style>.pl{text-decoration:underline dotted;text-underline-offset:2px;cursor:help}</style>"
+
+
 def _page(title, body):
     from .review import page
-    return page(title, f"<script>{JS}</script><p class=meta><a href='/voice'>Voice build</a></p>" + body)
+    return page(title, f"{TIP_CSS}<script>{JS}</script><p class=meta><a href='/voice'>Voice build</a></p>" + body)
+
+
+def plabels(ps):
+    """Purpose names, comma-separated, each showing its definition on hover."""
+    return ", ".join(f"<span class=pl title='{E(labels.purpose_tip(p), quote=True)}'>{E(p)}</span>"
+                     if p in voice.PURPOSES else E(p) for p in ps)
 
 
 def boxes(chosen):
@@ -74,7 +83,7 @@ def overview():
     c = s["check"]
     g = labels.disagree_result()
     rates = s["rates"]
-    rrows = "".join(f"<tr><td>{p}</td><td>{v['either']}</td><td>{v['differ']}</td><td>{int(v['rate'] * 100)}%</td></tr>"
+    rrows = "".join(f"<tr><td>{plabels([p])}</td><td>{v['either']}</td><td>{v['differ']}</td><td>{int(v['rate'] * 100)}%</td></tr>"
                     for p, v in sorted(rates.items(), key=lambda x: -x[1]["rate"]))
     mine, jira = guide.own_rules()
     bt, _ = voicebuild.newest()
@@ -111,7 +120,7 @@ def labels_page():
         got = lab.get(i, {}).get("purposes", [])
         v = a.get("verdict", "")
         rows.append(f"<tr id='i-{i}'><td><div class=meta>{E(it['audience'])}</div>{ctx_block(it)}"
-                    f"<div>labels: <b>{E(', '.join(got))}</b></div>"
+                    f"<div>labels: <b>{plabels(got)}</b></div>"
                     f"<details><summary class=meta>correct it</summary>{boxes(a.get('purposes') or got)}</details></td>"
                     f"<td class=act><button class='v keep' data-v=right aria-pressed={'true' if v == 'right' else 'false'} "
                     f"onclick=\"lc('{i}','right')\">Right</button><button class='v strike' data-v=wrong "
@@ -149,7 +158,7 @@ def disagree_page():
                                 f"onclick=\"dg('{i}','{v}')\">{label}</button>")
         sa, sb = sides(i)
         rows.append(f"<tr id='i-{i}'><td><div class=meta>{E(it['audience'])}</div>{ctx_block(it)}"
-                    f"<div>A: <b>{E(', '.join(x[sa]))}</b> · B: <b>{E(', '.join(x[sb]))}</b></div>"
+                    f"<div>A: <b>{plabels(x[sa])}</b> · B: <b>{plabels(x[sb])}</b></div>"
                     f"<details><summary class=meta>neither: the right labels</summary>{boxes(a.get('purposes') or [])}</details></td>"
                     f"<td class=act>{btn(sa, 'A right')}{btn(sb, 'B right')}{btn('neither', 'Neither')}</td></tr>")
     return _page("Second-model disagreements", f"""<p>Round {g.get('round', 1)}: a sample of {len(g.get('ids', []))} items
@@ -175,7 +184,7 @@ def pairs_page():
         gb = "".join(f"<button class=g data-g={n} aria-pressed={'true' if gr == n else 'false'} "
                      f"onclick=\"grade('pair-grade','{p['pair']}',{n})\">{n}</button>" for n in range(1, 6))
         cards.append(f"<div class=card id='c-{p['pair']}'><div class=meta>{p['pair']} · {E(p['audience'])} · "
-                     f"{E(', '.join(p['purposes']))}</div>"
+                     f"{plabels(p['purposes'])}</div>"
                      f"<details><summary class=meta>conversation before</summary><pre>{E(p['context'])}</pre></details>"
                      f"<p><b>A</b></p><pre>{E(p['a'])}</pre><p><b>B</b></p><pre>{E(p['b'])}</pre>"
                      f"<p class=row>{pb('A', 'A is mine')}{pb('B', 'B is mine')}{pb('cant', 'Can’t tell')}</p>"
