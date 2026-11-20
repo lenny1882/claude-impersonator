@@ -791,6 +791,17 @@ PYEOF
   [ "$(cat "$TMP/vlimit.out")" = stopped ] && [ "$(cat "$FAKE_CLAUDE_COUNT")" = 1 ] \
     && ok "$name" || no "$name" "$(cat "$FAKE_CLAUDE_COUNT") calls: $(cat "$TMP/vlimit.out")"
 done
+check "an answer whose own text mentions a rate limit is an answer, not a usage limit" vpy <<'PYEOF'
+import json, os
+from vdp import model
+exe = os.path.join(os.path.dirname(os.environ["VDP_STATE"]), "claude-says-limit")
+with open(exe, "w") as f:
+    f.write("#!/bin/sh\ncat >/dev/null\necho '" + json.dumps({"type": "result", "is_error": False,
+            "result": "the rate limit on dev should be 250", "structured_output": {"brief": "restore the rate limit to 250"}}) + "'\n")
+os.chmod(exe, 0o755)
+os.environ["VDP_CLAUDE"] = exe
+assert model.call("brief", "s", "p", {"type": "object", "properties": {"brief": {"type": "string"}}}) == {"brief": "restore the rate limit to 250"}
+PYEOF
 check "the stopped pass kept its two finished batches" test "$(wc -l < "$VST/labels/labeller.jsonl")" = 40
 check "the rerun resumes after them and labels every voice item" \
   bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice label | grep -q '50 of 90 items to send' && test \$(wc -l < '$VST/labels/labeller.jsonl') = 90"

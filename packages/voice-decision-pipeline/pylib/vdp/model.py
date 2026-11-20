@@ -122,14 +122,15 @@ def call(role, system, prompt, schema, log=print):
         except ValueError:
             d = {"is_error": True, "result": (out or p.stderr or "")[-400:]}
         msg = str(d.get("result") or p.stderr or "")
-        if any(w in msg.lower() for w in LIMIT_WORDS):
-            raise UsageLimit(msg.strip()[:300])
+        # An answer is read first: its own text can hold the limit words.
         if not d.get("is_error") and d.get("structured_output") is not None:
             try:
                 return _check(schema, d["structured_output"])
             except ValueError as e:
                 last = f"answer didn't match the schema: {e}"
         else:
+            if any(w in msg.lower() for w in LIMIT_WORDS):
+                raise UsageLimit(msg.strip()[:300])
             last = (d.get("terminal_reason") or "error") + ": " + msg.strip()[:300]
         log(f"  retry {role} call {attempt}/{RETRIES}: {last}")
         time.sleep(min(30, 2 ** attempt))
