@@ -257,21 +257,10 @@ def pseudonym_terms(text, amap):
     return out
 
 
-def leaks_page():
-    from .anonmap import Map
-    lr = leaks.load()
-    if not lr or not lr["hits"]:
-        return page("Leak check", f"<p>{leak_line()}</p>")
-    amap = Map.load()
-
-    def behind(text):
-        pts = pseudonym_terms(text, amap)
-        return (f"<div class=meta>{' · '.join(f'{html.escape(p)} is <b>{html.escape(t)}</b>' for p, t in pts)}"
-                f"</div>" if pts else "")
+def leak_rows(report, open_, marks, endpoint, behind):
+    """One row per term of a leak report, with its clear or undo button."""
     rows = []
-    open_ = {t["term"] for t in leaks.outstanding(lr)}
-    marks = leaks.cleared()
-    for t in lr["terms"]:
+    for t in report["terms"]:
         ex = "".join(f"<div class=meta>{html.escape(e['source'])} · {html.escape(e['id'])}</div>"
                      f"<pre>{html.escape(e['text'])}</pre>{behind(e['text'])}" for e in t["examples"])
         term = html.escape(t["term"])
@@ -279,15 +268,33 @@ def leaks_page():
             again = (f" · cleared at {marks[t['term']]['count']}×, found more since"
                      if t["term"] in marks else "")
             act = (f"<button class=strike data-term='{term}' onclick=\"if(confirm('Clear this term by hand? "
-                   f"Nothing will stop on it until it is found more times than now.'))post('/api/leak-clear',"
+                   f"Nothing will stop on it until it is found more times than now.'))post('{endpoint}',"
                    f"{{term:this.dataset.term,cleared:true}}).then(()=>location.reload())\">Cleared by hand</button>")
-        else:
+        elif t["term"] in marks:
             again = f" · <b>cleared by hand</b> {html.escape(marks[t['term']]['at'])}"
-            act = (f"<button data-term='{term}' onclick=\"post('/api/leak-clear',{{term:this.dataset.term,"
+            act = (f"<button data-term='{term}' onclick=\"post('{endpoint}',{{term:this.dataset.term,"
                    f"cleared:false}}).then(()=>location.reload())\">Undo</button>")
+        else:
+            again, act = " · cleared by hand in the copies' check above", ""
         rows.append(f"<tr><td><b>{term}</b><div class=meta>{html.escape(t['kind'])}"
                     f" · {t['count']}×{again}</div>{ex}</td><td class=act>{act}</td></tr>")
-    return page("Leak check", f"""
+    return "".join(rows)
+
+
+def leaks_page():
+    from .anonmap import Map
+    lr = leaks.load()
+    br = leaks.load_build()
+    amap = Map.load()
+
+    def behind(text):
+        pts = pseudonym_terms(text, amap)
+        return (f"<div class=meta>{' · '.join(f'{html.escape(p)} is <b>{html.escape(t)}</b>' for p, t in pts)}"
+                f"</div>" if pts else "")
+    if not lr or not lr["hits"]:
+        copies = f"<p>{leak_line()}</p>"
+    else:
+        copies = f"""
 <p>Each term below is a real name, handle, email or client name the pipeline knows,
 found in what is sent of the anonymised copies after <code>anonymise</code>. Each is a place the
 replacement missed. Under each snippet, every pseudonym in it is named with the real term behind
@@ -295,7 +302,23 @@ it, from the map on this machine. Fix the cause, or strike the person with <code
 then run <code>anonymise</code> again. A hit that isn't a leak (an iOS app-group identifier read
 as the host <code>group.com</code>) can be marked cleared by hand. Nothing is sent while any term
 is neither fixed nor cleared, and a cleared term found more times later is outstanding again.</p>
-<table><tr><th>Term, kind, where it was found</th><th></th></tr>{''.join(rows)}</table>""")
+<table><tr><th>Term, kind, where it was found</th><th></th></tr>{leak_rows(
+            lr, {t["term"] for t in leaks.outstanding(lr)}, leaks.cleared(), "/api/leak-clear", behind)}</table>"""
+    if not br or not br["terms"]:
+        built = "<p>No build has been stopped by the leak check.</p>" if br is None else \
+            f"<p>The last build's check found none of {br['terms_checked']} terms.</p>"
+    else:
+        built = f"""
+<p>Each term below was found in the last <code>voice build</code>'s files, which hold the guide
+model's rules, the statistics and the exemplars. A word the anonymiser replaced in every case, but
+which is also an ordinary word the guide model writes, is found here though nothing leaked: the
+model never saw the word in the copies. Look at each snippet; clear it by hand if it isn't a name,
+or fix the cause if it is. A term cleared here is cleared for builds only, never for the copies,
+and a later build that finds it more times stops on it again.</p>
+<table><tr><th>Term, kind, built file</th><th></th></tr>{leak_rows(
+            br, {t["term"] for t in leaks.outstanding_built(br)}, leaks.build_cleared(),
+            "/api/build-leak-clear", behind)}</table>"""
+    return page("Leak check", f"<h2>The anonymised copies</h2>{copies}<h2>The last build</h2>{built}")
 
 
 def names_page():
@@ -627,6 +650,12 @@ class Handler(BaseHTTPRequestHandler):
                 if t is None:
                     raise ValueError("not a term in the leak report")
                 leaks.set_cleared(t["term"], bool(body.get("cleared")), t["count"])
+            elif p == "/api/build-leak-clear":
+                lr = leaks.load_build() or {}
+                t = {x["term"]: x for x in lr.get("terms", [])}.get(body["term"])
+                if t is None:
+                    raise ValueError("not a term in the build's leak report")
+                leaks.set_build_cleared(t["term"], bool(body.get("cleared")), t["count"])
             elif p == "/api/stop":
                 batches.stop(body["source"])
             else:

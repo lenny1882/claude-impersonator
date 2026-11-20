@@ -246,6 +246,44 @@ def set_cleared(term, on, count=0):
     state.write_json(cleared_file(), c)
 
 
+def build_report_file():
+    return state.path("voice", "build-leak-report.json")
+
+
+def load_build():
+    return state.read_json(build_report_file(), None)
+
+
+def build_cleared_file():
+    return state.path("voice", "build-leak-cleared.json")
+
+
+def build_cleared():
+    """{term: {"count", "at"}}: hits in a build the owner marked cleared on the
+    leak page. Kept apart from the copies' clearances, so clearing a word
+    the guide model wrote never hides that word found in the copies."""
+    return state.read_json(build_cleared_file(), {}) or {}
+
+
+def set_build_cleared(term, on, count=0):
+    import time
+    c = build_cleared()
+    if on:
+        c[term] = {"count": count, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    else:
+        c.pop(term, None)
+    state.write_json(build_cleared_file(), c)
+
+
+def outstanding_built(report):
+    """The build report's terms not cleared by hand: cleared in the copies'
+    check (by term), or in the build's at no fewer hits than now (a later
+    build that finds it more often holds places the owner hasn't seen)."""
+    c, b = cleared(), build_cleared()
+    return [t for t in (report or {}).get("terms", [])
+            if t["term"] not in c and not (t["term"] in b and t["count"] <= b[t["term"]]["count"])]
+
+
 def outstanding(report, by_count=True):
     """The report's terms not cleared by hand. A term found more times than
     when it was cleared is outstanding again: the new places weren't seen.

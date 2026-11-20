@@ -1316,6 +1316,25 @@ assert len(glob.glob(state.path("voice", "builds", "*"))) == before
 s = open(p).read().replace("- Copy Robin Madeup and zarnwick on client mail.\n", "")
 open(p, "w").write(s)
 EOF
+check "the build searches everything but embedding-lib's identity, and counts never-say phrases under self" vpy <<'EOF'
+from vdp import leaks, state, voicebuild
+st = state.read_json(state.path("voice", "stats.json"))
+old = {**st, "never_say": [{("count" if k == "self" else k): v for k, v in x.items()} for x in st["never_say"]]}
+state.write_json(state.path("voice", "stats.json"), old)
+seen = {}
+real = leaks.scan_built
+def spy(files, d, amap):
+    seen.update(files)
+    return real(files, d, amap)
+leaks.scan_built = spy
+try:
+    voicebuild.build(log=lambda *a: None)
+finally:
+    leaks.scan_built = real
+    state.write_json(state.path("voice", "stats.json"), st)
+assert "embedding_identity" not in seen["build.json"] and "validation" in seen["build.json"], seen["build.json"].keys()
+assert all("self" in x and "count" not in x for x in seen["stats.json"]["never_say"]), seen["stats.json"]["never_say"][:2]
+EOF
 check "publish goes through builds-sync's library once the gates pass" vpy <<'EOF'
 import os, sys, json
 from vdp import state, validate, voicebuild
@@ -1409,6 +1428,26 @@ check "clearing a term not in the report is refused" \
   test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"term":"nothing.example","cleared":true}' "${VURL}api/leak-clear")" = 400
 check "Undo takes the mark off" \
   bash -c "curl -sf -X POST -H 'Content-Type: application/json' -d '{\"term\":\"group.com\",\"cleared\":false}' '${VURL}api/leak-clear' >/dev/null && jq -e '.==({})' '$VST/leak-cleared.json' >/dev/null"
+cp "$VST/voice/build-leak-report.json" "$VST/build-leak-report.clean.json"
+cat > "$VST/voice/build-leak-report.json" <<'EOF'
+{"terms_checked": 3, "hits": 2, "terms": [{"term": "zarnwick", "kind": "client", "count": 2, "examples": [{"source": "build", "id": "guide.json", "text": "say zarnwick plainly"}]}]}
+EOF
+check "the leak page shows the last build's terms with their own clear button" \
+  bash -c "curl -sf '${VURL}leaks' | grep -q 'The last build' && curl -sf '${VURL}leaks' | grep -q 'api/build-leak-clear'"
+check "clearing a build term is saved for builds only, with its count" \
+  bash -c "curl -sf -X POST -H 'Content-Type: application/json' -d '{\"term\":\"zarnwick\",\"cleared\":true}' '${VURL}api/build-leak-clear' >/dev/null && jq -e '.zarnwick.count==2' '$VST/voice/build-leak-cleared.json' >/dev/null && jq -e '.==({})' '$VST/leak-cleared.json' >/dev/null"
+check "a build term can't be cleared in the copies' check, nor a copies' term in the build's" \
+  bash -c "test \$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{\"term\":\"zarnwick\",\"cleared\":true}' '${VURL}api/leak-clear') = 400 && test \$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{\"term\":\"group.com\",\"cleared\":true}' '${VURL}api/build-leak-clear') = 400"
+check "a build term cleared at 2 hits is outstanding again at 3, and Undo takes the mark off" vpy <<'EOF'
+from vdp import leaks
+r = leaks.load_build()
+assert leaks.outstanding_built(r) == []
+r["terms"][0]["count"] = 3
+assert [t["term"] for t in leaks.outstanding_built(r)] == ["zarnwick"]
+leaks.set_build_cleared("zarnwick", False)
+assert leaks.build_cleared() == {}
+EOF
+cp "$VST/build-leak-report.clean.json" "$VST/voice/build-leak-report.json"
 cp "$VST/leak-report.clean.json" "$VST/leak-report.json"
 check "the voice pages refuse a cross-origin POST" \
   test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Origin: http://evil.example' -d '{}' "${VURL}api/voice/pair")" = 403

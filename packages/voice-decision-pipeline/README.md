@@ -187,7 +187,12 @@ Run in order, each in your own shell (each logs to
    <audience>` draws the batch.
 7. `voice build`: guide.json, exemplars.json, stats.json and build.json in a
    tarball in the state; the leak check reads them first and stops on any
-   real name. `voice publish` sends it through `builds-sync` once the label
+   real name, all but build.json's `embedding_identity` (embedding-lib's
+   own description of its model). Its terms are on the review page's leak
+   check under "The last build": a word the anonymiser replaced in every
+   case that the guide model writes as an ordinary word is cleared there by
+   hand, for builds only, and a later build that finds it more times stops
+   again. `voice publish` sends it through `builds-sync` once the label
    check and the validation run have passed.
 
 Each call turns off tools, settings, MCP servers and slash commands, so it
@@ -220,7 +225,7 @@ files 600), never backed up:
 | `holdouts.json` | the held-back items and the validation run |
 | `own-rules.md` | your own rules, first in the guide |
 | `struck-rules.md` | corpus rules and never-say phrases you struck, left out of validation and builds |
-| `voice/` | the corpus guide, statistics, builds and the build leak report |
+| `voice/` | the corpus guide, statistics, builds, the build leak report and the build terms you cleared |
 | `validation/` | drafts, judge scores, blind pairs and their key, the judge review |
 | `validation-answers.jsonl` | every answer you give on the validation pages, as you give it |
 

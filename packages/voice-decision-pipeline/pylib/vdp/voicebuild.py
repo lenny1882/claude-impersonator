@@ -36,6 +36,10 @@ def build(log=print):
     stats = state.read_json(state.path("voice", "stats.json"), None)
     if stats is None:
         raise SystemExit("voice-decision-pipeline: no statistics yet; run 'voice guide'")
+    # Older statistics files count each never-say phrase under
+    # an older field name, which the leak check reads as a handle.
+    stats = {**stats, "never_say": [{(k if k in ("phrase", "reference", "reference_count") else "self"): v for k, v in x.items()}
+                                    for x in stats.get("never_say", [])]}
     sm = guide.struck_summary(stats)
     stats, _ = guide.strike_stats(stats)
     ex = pool.exemplars()
@@ -54,16 +58,23 @@ def build(log=print):
                        "embedding_identity": ident, "exemplar_count": k,
                        "validation": validate.report()},
     }
-    lr = leaks.scan_built(files, inputs.load(), Map.load())
-    state.write_json(state.path("voice", "build-leak-report.json"), lr)
-    # A term cleared by hand on the leak page is cleared here too (PLAN §5).
-    out_ = leaks.outstanding(lr, by_count=False)
+    # embedding_identity is embedding-lib's description of its model, not
+    # the corpus's words, so it isn't searched (as ids and source names
+    # aren't in the copies); everything else in build.json is.
+    searched = {**files, "build.json": {k: v for k, v in files["build.json"].items()
+                                        if k != "embedding_identity"}}
+    lr = leaks.scan_built(searched, inputs.load(), Map.load())
+    state.write_json(leaks.build_report_file(), lr)
+    # A term cleared by hand on the leak page, in the copies' check or the
+    # build's, is cleared here too (PLAN §5).
+    out_ = leaks.outstanding_built(lr)
     if out_:
         for t in out_[:10]:
             log(f"  leak  {t['kind']}: {t['count']}x in {', '.join(sorted({e['id'] for e in t['examples']}))}")
         raise SystemExit(f"voice-decision-pipeline: the leak check found {len(out_)} terms "
                          f"{sum(t['count'] for t in out_)} times in the built files; nothing was written "
-                         "(voice/build-leak-report.json)")
+                         "(voice/build-leak-report.json); look at each on the review page's leak check, "
+                         "and fix it or clear it by hand there")
     out = builds_dir(bt, f"build-{bt}.tar")
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tf:
