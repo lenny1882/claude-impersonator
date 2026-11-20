@@ -422,15 +422,19 @@ subagent loads the skill is open (§8.2).
   of the pairs, the owner also reviews the judge's 20 worst-scored drafts and
   10 random ones each validation run.
 - Pass:
-  - Blind test: right picks minus wrong picks no more than 10% of pairs (6
-    of 60); "can't tell" counts as neither. With drafts that can't be told
-    apart, every pick is a coin toss, so a perfect model passes about 4 runs
-    in 5. (A bar above chance, 50%, would mean a perfect model almost never
-    passes.)
-  - Grades: at least 80% of drafts at 4 or higher, and none at 1.
-  - The pass is overall. Results are reported per audience; an audience
-    where right picks beat wrong picks by 3 or more gets more pairs from
-    that audience before the result stands.
+  every gate must pass
+  on its own; none is weighed against another. The spotting rate is right
+  picks minus wrong picks as a share of pairs ("can't tell" counts as
+  neither). How sure a rate is comes from a Dirichlet over the right, wrong
+  and can't-tell counts, so the number of pairs behind it counts.
+  - Blind test: at least 80% sure the overall spotting rate is at most 10%.
+  - Each audience: at least 80% sure its spotting rate is at most 25%.
+    Between 50% and 80% sure, it gets 12 more pairs and is worked out
+    again; under 50%, it fails.
+  - Grades: at least 80% of drafts at 4 or higher overall, at least 70% in
+    each audience, and none at 1.
+  - The judge's scores are no gate: they don't run on the owner's scale, so
+    they guide where to look, not whether it passes.
 - Tracking and report: every answer is stored with the pair, its
   audience and purposes, the answer, the grade and the time, across sittings
   and validation runs. After the test the page shows the counts (right,

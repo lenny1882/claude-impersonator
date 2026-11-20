@@ -100,6 +100,7 @@ def gates():
         why = "not done" if not r.get("done") else (
             "blind test failed" if not r.get("blind_ok") else
             "grades failed" if not r.get("grades_ok") else
+            f"failed for {', '.join(r['failed_audiences'])}" if r.get("failed_audiences") else
             f"more pairs needed for {', '.join(r['more_pairs_for'])}")
         out.append(f"validation run {r.get('run')} hasn't passed ({why})")
     return out

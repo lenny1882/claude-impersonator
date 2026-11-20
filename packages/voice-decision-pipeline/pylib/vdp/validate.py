@@ -30,11 +30,18 @@ given; pairs.json holds the pairs and pairs-key.json which side is real,
 both in the state. On top of the pairs the owner reviews the judge's 20
 worst-scored drafts and 10 random ones.
 
-Pass: right picks minus wrong picks no more than 10% of
-pairs ("can't tell" counts as neither); at least 80% of drafts graded 4 or
-higher and none at 1. Overall, reported per audience; an audience where
-right picks beat wrong picks by 3 or more gets 12 more pairs before the
-result stands.
+Pass rule: every
+gate on its own, none weighed against another. The spotting rate is right
+picks minus wrong picks over pairs ("can't tell" counts as neither); how sure
+a rate is comes from a Dirichlet over the right, wrong and can't-tell counts,
+so it takes the number of pairs into account:
+  - blind test: at least SURE that the overall spotting rate is at most
+    OVERALL_BAR;
+  - each audience: at least SURE that its spotting rate is at most
+    AUDIENCE_BAR; between UNSURE and SURE it gets 12 more pairs, under UNSURE
+    it fails;
+  - grades: at least GRADES_ALL of drafts at 4 or higher, at least
+    GRADES_AUDIENCE in each audience, and none at 1.
 """
 
 import json
@@ -47,6 +54,10 @@ from . import guide, labels, model, pool, state, voice
 from .index import VOICE_SOURCES
 
 COUNTS = (3, 5, 8)
+OVERALL_BAR, AUDIENCE_BAR = 0.10, 0.25
+SURE, UNSURE = 0.80, 0.50
+GRADES_ALL, GRADES_AUDIENCE = 0.80, 0.70
+DRAWS = 20000
 # "brief-2": the drafter says only what the brief says, lengths per purpose,
 # and the brief says how a message addresses someone.
 # "brief-5": the never-say list without pseudonym words, contraction tails,
@@ -454,6 +465,13 @@ def _dirichlet(rnd, a):
     return [x / s for x in xs]
 
 
+def _spot_draws(c, seed):
+    """Draws of the spotting rate (right minus wrong share) for counts c."""
+    rnd = random.Random(seed)
+    return sorted(r - w for r, w, _ in (_dirichlet(rnd, [1 + c.get("right", 0), 1 + c.get("wrong", 0),
+                                                          1 + c.get("cant", 0)]) for _ in range(DRAWS)))
+
+
 def report(run=None):
     run = run_no() if run is None else run
     pr = state.read_json(pairs_file(), None)
@@ -469,26 +487,41 @@ def report(run=None):
         res = "cant" if a["pick"] == "cant" else ("right" if a["pick"] == key[p["pair"]] else "wrong")
         for k in ("all", "aud:" + p["audience"]) + tuple("pur:" + x for x in p["purposes"]):
             per.setdefault(k, Counter())[res] += 1
-    live = {p["pair"] for p in active(pr)}
+    live = {p["pair"]: p for p in active(pr)}
     grades = [a["grade"] for r, a in ans.items() if r in live and a.get("grade")]
+    by_aud = {}
+    for r, a in ans.items():
+        if r in live and a.get("grade"):
+            by_aud.setdefault(live[r]["audience"], []).append(a["grade"])
     c = per["all"]
     n = sum(c.values())
-    rnd = random.Random(f"report-{run}-{n}")
-    draws = [_dirichlet(rnd, [1 + c["right"], 1 + c["wrong"], 1 + c["cant"]]) for _ in range(4000)]
-    spot = sorted(r - w for r, w, _ in draws)
-    blind_ok = n > 0 and c["right"] - c["wrong"] <= 0.1 * n
-    grades_ok = bool(grades) and sum(1 for x in grades if x >= 4) >= 0.8 * len(grades) and 1 not in grades
-    more = [k[4:] for k, v in per.items() if k.startswith("aud:") and v["right"] - v["wrong"] >= 3]
+    spot = _spot_draws(c, f"report-{run}-{n}")
+    sure = round(sum(1 for s in spot if s <= OVERALL_BAR) / len(spot), 3)
+    blind_ok = n > 0 and sure >= SURE
+    share4 = lambda xs: sum(1 for x in xs if x >= 4) / len(xs) if xs else 0.0
+    grades_aud = {a: round(share4(xs), 3) for a, xs in sorted(by_aud.items())}
+    grades_ok = (bool(grades) and share4(grades) >= GRADES_ALL and 1 not in grades
+                 and all(v >= GRADES_AUDIENCE for v in grades_aud.values()))
+    audiences = {}
+    for k, v in sorted(per.items()):
+        if k.startswith("aud:"):
+            m = sum(v.values())
+            ds = _spot_draws(v, f"report-{run}-{k}-{m}")
+            p = round(sum(1 for s in ds if s <= AUDIENCE_BAR) / len(ds), 3)
+            audiences[k[4:]] = {"pairs": m, "sure": p, "grades_4_up": grades_aud.get(k[4:]),
+                                "state": "ok" if p >= SURE else "more" if p >= UNSURE else "failed"}
+    more = [a for a, v in audiences.items() if v["state"] == "more"]
+    failed = [a for a, v in audiences.items() if v["state"] == "failed"]
     done = n == len(active(pr)) and len(grades) == len(active(pr))
     return {
         "run": run, "k": pr["k"], "pairs": len(active(pr)), "dropped": sorted(pr.get("dropped", {})), "answered": n, "graded": len(grades),
         "counts": {k: dict(v) for k, v in per.items()},
         "spotting": {"estimate": round((c["right"] - c["wrong"]) / n, 3) if n else None,
                      "low": round(spot[int(0.025 * len(spot))], 3), "high": round(spot[int(0.975 * len(spot))], 3)},
-        "confidence_pass_holds": round(sum(1 for s in spot if s <= 0.1) / len(spot), 3),
-        "grades": dict(Counter(grades)), "blind_ok": blind_ok, "grades_ok": grades_ok,
-        "more_pairs_for": more, "done": done,
-        "passed": done and blind_ok and grades_ok and not more,
+        "confidence_pass_holds": sure, "audiences": audiences,
+        "grades": dict(Counter(grades)), "grades_4_up": round(share4(grades), 3), "blind_ok": blind_ok,
+        "grades_ok": grades_ok, "more_pairs_for": more, "failed_audiences": failed, "done": done,
+        "passed": done and blind_ok and grades_ok and not more and not failed,
         "right_pairs": [p["pair"] for p in active(pr)
                         if ans.get(p["pair"], {}).get("pick") == key.get(p["pair"])],
     }

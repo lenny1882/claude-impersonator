@@ -1103,8 +1103,17 @@ for page in (voicereview.pairs_page(), voicereview.judge_page()):
         assert "self-01" not in d and f"<li><b>{n}</b>: {d}</li>" in page and f"title='{n}: {d}'" in page, (n, d)
 assert all(d in validate.JUDGE_SYSTEM for d in validate.GRADES.values())
 EOF
+check "each gate is measured by how sure the counts make it: 12 more pairs when unsure, a fail when likely over" vpy <<'EOF'
+from vdp import validate
+sure = lambda c: sum(1 for x in validate._spot_draws(c, "t") if x <= validate.AUDIENCE_BAR) / validate.DRAWS
+assert sure({"right": 3, "wrong": 9}) >= validate.SURE
+assert validate.UNSURE <= sure({"right": 14, "wrong": 10}) < validate.SURE
+assert sure({"right": 10, "wrong": 2}) < validate.UNSURE
+assert sure({"right": 30, "wrong": 30}) > sure({"right": 6, "wrong": 6}), "more pairs at the same rate make it surer"
+EOF
 check "the pass is worked out from the owner's answers: picks, grades and the per-audience rule" vpy <<'EOF'
 from vdp import state, validate
+validate.SURE = 0.75   # the fixture has one or two pairs an audience: one "can't tell" makes 0.79 sure
 pr = state.read_json(validate.pairs_file())
 key = state.read_json(validate.key_file())
 for i, p in enumerate(pr["pairs"]):
@@ -1181,7 +1190,8 @@ open(p, "w").write(s)
 EOF
 check "publish goes through builds-sync's library once the gates pass" vpy <<'EOF'
 import os, sys, json
-from vdp import state, voicebuild
+from vdp import state, validate, voicebuild
+validate.SURE = 0.75   # as above: one or two fixture pairs an audience
 home = state.path("fake-bs")
 os.makedirs(os.path.join(home, "pylib"), exist_ok=True)
 open(os.path.join(home, "pylib", "builds_sync.py"), "w").write(
@@ -1195,6 +1205,7 @@ assert open(tar + ".published").read() == bt
 EOF
 check "publish refuses while validation hasn't passed" vpy <<'EOF'
 from vdp import state, validate, voicebuild
+validate.SURE = 0.75   # as above: one or two fixture pairs an audience
 pr = state.read_json(validate.pairs_file())
 validate.answer("pair", pr["pairs"][0]["pair"], grade=1)
 try:

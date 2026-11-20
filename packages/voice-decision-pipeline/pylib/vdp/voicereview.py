@@ -285,12 +285,19 @@ def report_page():
     return _page("Validation report", f"""
 <p>Run {r['run']}: {r['answered']} of {r['pairs']} pairs answered, {r['graded']} graded.
 {'<b>Passed.</b>' if r['passed'] else '<b>Not passed yet.</b>'}
-Blind test {'within' if r['blind_ok'] else 'over'} the bar (right minus wrong at most 10% of pairs);
-grades {'meet' if r['grades_ok'] else 'miss'} the bar (80% at 4 or higher, none at 1).
-{f'More pairs needed for {E(more)}: run <code>voice pairs --more &lt;audience&gt;</code>.' if more else ''}</p>
+Blind test {'passes' if r['blind_ok'] else 'fails'}: {int(r['confidence_pass_holds'] * 100)}% sure the
+spotting rate is at most {int(validate.OVERALL_BAR * 100)}% (needs {int(validate.SURE * 100)}%).
+Grades {'pass' if r['grades_ok'] else 'fail'}: {int(r.get('grades_4_up', 0) * 100)}% at 4 or higher (needs
+{int(validate.GRADES_ALL * 100)}%, and {int(validate.GRADES_AUDIENCE * 100)}% in each audience), none at 1.
+{f'More pairs needed for {E(more)}: run <code>voice pairs --more &lt;audience&gt;</code>.' if more else ''}
+{f'<b>Failed for {E(", ".join(r["failed_audiences"]))}.</b>' if r.get('failed_audiences') else ''}</p>
+<table><tr><th>Audience</th><th>Pairs</th><th>Sure spotting ≤ {int(validate.AUDIENCE_BAR * 100)}%</th>
+<th>Grades at 4+</th><th>State</th></tr>{''.join(
+    f"<tr><td>{E(a)}</td><td>{v['pairs']}</td><td>{int(v['sure'] * 100)}%</td>"
+    f"<td>{'—' if v['grades_4_up'] is None else str(int(v['grades_4_up'] * 100)) + '%'}</td><td>{v['state']}</td></tr>"
+    for a, v in r.get('audiences', {}).items())}</table>
 <p>You spot drafts in {sp['estimate'] if sp['estimate'] is not None else '—'} of pairs beyond chance
-(95% range {sp['low']} to {sp['high']}); confidence the pass holds on a fresh test:
-{int(r['confidence_pass_holds'] * 100)}%, worked out from your answers alone.</p>
+(95% range {sp['low']} to {sp['high']}), worked out from your answers alone.</p>
 <p>Grades: {E(json.dumps(r['grades']))}</p>
 <table><tr><th>Group</th><th>Right</th><th>Wrong</th><th>Can't tell</th></tr>{rows}</table>
 <h2>Pairs you got right</h2>{right or '<p class=meta>none</p>'}""")
