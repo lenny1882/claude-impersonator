@@ -1,9 +1,9 @@
 """voice-runtime: the guide loader and exemplar search for drafts in the owner's
-voice (PLAN §3.5, §3.6), and the record of every draft and the version the owner
+voice (PLAN §3.5, §3.6), and the record of every draft and the version they
 approved (§3.8).
 
 Why it exists. A draft in someone's voice needs two things a model can't
-carry between sessions: the rules of how the owner writes to each audience, and a
+carry between sessions: the rules of how they write to each audience, and a
 few real messages close to the one being written. Rules alone give flat
 drafts; examples alone carry over phrasing tied to old clients (§3.5). The
 pipeline builds both on one machine, builds-sync carries them to every
@@ -23,7 +23,7 @@ Three things it must never do, each of which fails silently if simplified:
   by name (§5 "Migration").
 
 A refusal exits 3 with one line; the skill then tells the owner the voice model
-is unavailable and why, and offers a draft marked as not in the owner's voice (§5
+is unavailable and why, and offers a draft marked as not in their voice (§5
 "After a refusal").
 
 Runs on embedding-lib's venv Python (3.14) for `install-build` and `search`,

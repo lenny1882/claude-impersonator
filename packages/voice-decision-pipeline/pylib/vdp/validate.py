@@ -4,8 +4,7 @@ For every held-back message, a brief of what it says, in neutral words and
 none of its own (Sonnet 5.5), is written first. Drafts are
 written from the brief, the context, the audience and the purposes by the
 drafting model (Opus 5.5), with 3, 5 and 8 exemplars, as voice-runtime
-drafts from a brief.
-The judge (Fable 5.2, not the drafting model) sees the brief too,
+drafts from a brief. The judge (Fable 5.2, not the drafting model) sees the brief too,
 compares each draft with the real message and scores it 1 to 5. The count
 with the best mean score is the build's exemplar count.
 
@@ -31,7 +30,7 @@ The owner then sees blind pairs (their message and the best count's draft,
 shuffled): 12 per audience across the five corpus audiences, spread across
 the purposes. Each answer is written to validation-answers.jsonl as it is
 given; pairs.json holds the pairs and pairs-key.json which side is real,
-both in the state. On top of the pairs the owner reviews the judge's 20
+both in the state. On top of the pairs they review the judge's 20
 worst-scored drafts and 10 random ones.
 
 Pass rule: every
@@ -239,7 +238,7 @@ def counted():
     rule would keep (at least min_words words, under max_code_share code),
     with at least min_words words left after code becomes [code] and links
     and [url], as the pairs page shows them; so a "^" or a link, the same on
-    both sides, scores and pairs nothing
+    both sides, scores and pairs nothing.
     Cached per holdout file and corpus change."""
     hf = pool.holdout_file()
     stamp = tuple(os.path.getmtime(f) if os.path.exists(f) else 0
@@ -447,8 +446,7 @@ def redraw(aud, log=print):
     """After an audience's drafts are written again under a new METHOD: drop
     every pair of it still in use and draw a fresh batch of
     PAIRS_PER_AUDIENCE, never more, only from messages never in any pair, so
-    the owner never judges a message whose real side they have seen.
-    With fewer than a batch of those, it draws none and holds back as
+    the owner never judges a message whose real side they have seen. With fewer than a batch of those, it draws none and holds back as
     many more as the batch needs; 'voice validate' drafts them and
     'voice pairs --more' draws the batch. Dropped pairs and their answers
     stay in the files, marked with why."""

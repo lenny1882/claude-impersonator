@@ -1,18 +1,16 @@
 # claude-impersonator
 
-The packages that build and use two models made from one person's own writing
-and decisions: a voice model, so Claude can draft Slack messages, PR
-descriptions and review comments and Jira comments in their voice for their
+The packages that build and use two models made from one person's own
+writing and decisions: a voice model, so Claude can draft Slack messages, PR
+descriptions, review comments and Jira comments in their voice for their
 approval, and a decision model, so orchestrators and agents can settle some
-technical questions the way they would and ask them about the rest. They share one
-repo because they share one data format and one embedding environment, and
-are built in one order; the plan is `PLAN.md`, the evidence behind it
-`APPENDIX.md`. No data is ever committed here: each package keeps its data in
-its own state on the machine it runs on, and the tests use made-up fixtures.
+technical questions the way they would and ask them about the rest. The
+requirements are in `PLAN.md`. No data is committed here: each package keeps
+its data in its own state on the machine it runs on, and the tests use
+made-up fixtures.
 
 Every package under `packages/` is versioned, released and installed on its
-own. A fault in one says nothing about another, so each can be fixed and
-shipped without touching the rest.
+own.
 
 ## Packages
 

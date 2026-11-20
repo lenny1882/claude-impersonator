@@ -1,7 +1,7 @@
 """Claude Code transcripts -> corpus/transcripts.jsonl (PLAN §2.1).
 
 Technical decisions only, never voice. Each record is one prompt the owner
-typed, with the text of Claude's reply before it (usually what the owner was
+typed, with the text of Claude's reply before it (usually what they were
 correcting), a one-line summary of each tool call in between, the project
 and the date. AskUserQuestion answers are records of their own, since each
 is a decision stated outright.

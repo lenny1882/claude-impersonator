@@ -24,6 +24,7 @@ from .anonmap import Map
 
 FILES = ("guide.json", "exemplars.json", "stats.json", "build.json")
 DEFAULT_COUNT = 5
+NEVER_SAY_KEYS = ("phrase", "self", "reference", "reference_count")
 
 
 def builds_dir(*p):
@@ -36,9 +37,9 @@ def build(log=print):
     stats = state.read_json(state.path("voice", "stats.json"), None)
     if stats is None:
         raise SystemExit("voice-decision-pipeline: no statistics yet; run 'voice guide'")
-    # Older statistics files count each never-say phrase under
-    # an older field name, which the leak check reads as a handle.
-    stats = {**stats, "never_say": [{(k if k in ("phrase", "reference", "reference_count") else "self"): v for k, v in x.items()}
+    # A never-say entry's count field is "self"; an older stats.json gave it
+    # another name, which is read as "self".
+    stats = {**stats, "never_say": [{(k if k in NEVER_SAY_KEYS else "self"): v for k, v in x.items()}
                                     for x in stats.get("never_say", [])]}
     sm = guide.struck_summary(stats)
     stats, _ = guide.strike_stats(stats)
@@ -109,7 +110,7 @@ def gates():
     out = []
     c = labels.check_result()
     if not c.get("passed"):
-        out.append("Your label check hasn't passed" + (
+        out.append("your label check hasn't passed" + (
             f" ({c['wrong']} wrong of {c['answered']} answered, {c['size']} drawn)" if c.get("drawn") else " (not drawn)"))
     r = validate.report()
     if not r.get("passed"):

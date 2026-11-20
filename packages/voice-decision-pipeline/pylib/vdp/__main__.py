@@ -89,7 +89,7 @@ def cmd_pick_repos(a):
         d["bitbucket_repos"] = [x for x in d["bitbucket_repos"] if x != r]
     inputs.save(d)
     print(f"  ok    Bitbucket repos: {', '.join(d['bitbucket_repos']) or 'none'}; "
-          f"Your account: {', '.join(d.get('bitbucket_me') or []) or 'not set'}")
+          f"your Bitbucket account: {', '.join(d.get('bitbucket_me') or []) or 'not set'}")
 
 
 def cmd_anonymise(a):

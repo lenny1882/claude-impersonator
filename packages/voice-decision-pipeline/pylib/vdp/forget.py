@@ -4,8 +4,7 @@ Removes the person's or conversation's records from the corpus, the
 anonymised copies and the corpus index, and adds them to the struck lists in
 the inputs, so later extractions skip them. The person's anonymising-map
 entry is kept, so mentions of them in other people's messages are still
-replaced and their pseudonym number never passes to someone else.
-Records that only mention them stay; their names in those are
+replaced and their pseudonym number never passes to someone else. Records that only mention them stay; their names in those are
 replaced as before.
 """
 

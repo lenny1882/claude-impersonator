@@ -4,13 +4,11 @@ Carries voice and decision builds, and the live records the runtimes write,
 between machines through one private git repo in which every file is
 encrypted with `age`.
 
-The corpus is built on one machine only, but the runtimes run on every
-machine, and the evidence they write (drafts and their approved versions, the
-decision log, answered questions) has to come back to the machine that builds.
-Copying files by hand loses records, and anything plaintext that reaches a
-repo is in its history on every clone for good. So one package owns the
-clone, the key, `age` and every pull, commit and push; the pipeline and the
-runtimes go through its library and never touch the repo themselves.
+Builds go from the building machine to every machine; the records the
+runtimes write (drafts and their approved versions, the decision log,
+answered questions) come back. This package owns the clone, the key, `age`
+and every pull, commit and push; the pipeline and the runtimes go through its
+library and never touch the repo themselves.
 
 Part of [claude-impersonator](https://github.com/lenny1882/claude-impersonator), which holds several packages
 that are each versioned, released and installed on their own.

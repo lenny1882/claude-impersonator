@@ -88,7 +88,7 @@ def own_rules():
     return out.get("main", []), out.get("jira", [])
 
 
-# -- rules the owner struck ---------------------------------------------------
+# -- rules the owner struck ----------------------------------
 #
 # A rule the guide model wrote that the owner doesn't want, or a phrase on the
 # never-say list, is listed in struck-rules.md in the state. assemble() and
@@ -340,7 +340,7 @@ def write(log=print):
 
 def assemble(build_time):
     """guide.json for a build: the owner's rules first, then the corpus guide
-    without the rules the owner struck."""
+    without the rules they struck."""
     cg = state.read_json(state.path("voice", "corpus-guide.json"), None)
     if cg is None:
         raise SystemExit("voice-decision-pipeline: no guide written yet; run 'voice guide'")
@@ -398,8 +398,7 @@ def render(g, stats, audience, purposes):
     rare = sorted({q for r in shown_rules for q in quoted(r) if q in rates and rates[q] < RARE_QUOTED},
                   key=lambda q: (rates[q], q))
     if rare:
-        out.append(f"Share of self-01's messages to {audience} holding each word quoted in the rules above ("
-                   "messages): " + ", ".join(f'"{q}" {rates[q]:.1%}' for q in rare) +
+        out.append(f"Share of self-01's messages to {audience} holding each word quoted in the rules above: " + ", ".join(f'"{q}" {rates[q]:.1%}' for q in rare) +
                    ". Most messages use none of them: use one only where the examples for this message do "
                    "(a word the brief needs is always fine).")
     ns = [x["phrase"] for x in (stats or {}).get("never_say", [])]

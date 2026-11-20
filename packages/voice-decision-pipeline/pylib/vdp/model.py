@@ -10,8 +10,8 @@ Each call turns off what a session would add: tools, settings files, MCP
 servers, slash commands and session files (`--tools ""`, `--setting-sources
 ""`, `--strict-mcp-config`, `--disable-slash-commands`,
 `--no-session-persistence`), and gives its own short system prompt. That
-leaves about 1,100 tokens of Claude Code's own overhead per call (against
-a full session's context). The answer comes back as
+leaves about 1,100 tokens of Claude Code's own overhead per call (measured),
+against a full session's context. The answer comes back as
 structured output against the caller's JSON schema (`--json-schema`), and
 is checked against the same schema here before it is used.
 
@@ -35,7 +35,7 @@ MODELS = {
     "drafter": "claude-opus-5-5",
     "judge": "claude-fable-5-2",
     # The brief of what a held-back message says, written before it is drafted,
-    # by a model other than the drafter, so the drafter never
+    # by a model that isn't the drafter, so the drafter never
     # sees its own model's reading of the real message.
     "brief": "claude-sonnet-5-5",
     # The guide is written by the drafting model: the one

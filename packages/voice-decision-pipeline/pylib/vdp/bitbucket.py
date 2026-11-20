@@ -2,10 +2,9 @@
 
 Only the repos picked with `pick-repos`; a repo whose updated_on is earlier
 than CUTOFF is skipped. In each, the PRs the owner
-authored, commented on or approved, approvals without a comment included.
-a PR they were only added to as a reviewer is left out.
-Which PRs those are is read from the PR list, and only
-they are fetched. Each comment
+authored, commented on or approved, approvals without a comment included;
+a PR they were only added to as a reviewer is left out. Which PRs those
+are is read from the PR list, and only they are fetched. Each comment
 keeps its PR title, description and thread; inline comments also keep the
 code under them, which needs `read:repository` on the token (PLAN §9).
 
@@ -109,7 +108,7 @@ def acted(p, me_ids):
 
 def involved(pr, me_ids):
     """The owner authored the PR, or commented on or approved it. Decided from the
-    PR list's fields, so PRs the owner wasn't in are never fetched one by one."""
+    PR list's fields, so PRs they weren't in are never fetched one by one."""
     return is_me(pr.get("author"), me_ids) or any(
         acted(p, me_ids) for p in pr.get("participants") or [])
 

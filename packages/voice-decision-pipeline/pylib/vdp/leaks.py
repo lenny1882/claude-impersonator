@@ -12,8 +12,7 @@ is a place the replacement missed. So is any URL whose host isn't on the
 public list (urls.py), the host standing as the term, unless the host holds
 one of the pipeline's pseudonyms: a public host whose label is a kept product
 or a client spelling ("docs.stripe.com" with Stripe kept) is sent with the
-pseudonym inside it ("docs.product-04.com"), and that is accepted.
-Only a public URL keeps its host at all; a private one became
+pseudonym inside it ("docs.product-04.com"), and that is accepted. Only a public URL keeps its host at all; a private one became
 [url] whole, so a pseudonym in a host means the replacement worked. A client
 identifier added by hand on the review page is searched for from 2
 characters.

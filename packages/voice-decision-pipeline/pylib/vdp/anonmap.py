@@ -9,8 +9,7 @@ number never passes to someone else.
 
 Pseudonyms carry a role tag: colleague-07, client-contact-02, client-03,
 product-04, person-05 (a name spaCy found that no list knew), and self-01
-for the owner (role-tagged pseudonyms, one per person across
-every source).
+for the owner: role-tagged pseudonyms, one per person across every source.
 """
 
 from . import SCHEMA_VERSION, state

@@ -14,7 +14,7 @@ a purpose the two models disagree on too often. `label --redo <purpose,...>`
 sends again the items either model gave one of those purposes.
 
 Checks:
-  - The owner's sample: 120 labeller-labelled items spread across audiences and
+  - the owner's sample: 120 labeller-labelled items spread across audiences and
     purposes, each marked right or wrong (and corrected) on the review page.
     Over 6 wrong of 120 fails: the prompt is changed, the
     pass rerun and a fresh sample drawn (`label --new-sample`).
@@ -178,7 +178,7 @@ def run(which, redo=(), log=print):
     return 0
 
 
-# -- the owner's checks ------------------------------------------------------
+# -- the owner's checks ----------------------------------------------------------
 
 def check_file():
     return state.path("label-check.json")

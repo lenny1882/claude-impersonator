@@ -7,8 +7,7 @@ drafted against in validation. Each validation run draws a fresh holdout
 of every run are kept.
 
 The pool: every other labelled voice item, minus messages of 3 words or
-fewer and messages at least 50% code or logs by characters.
-Both thresholds are config values in the state (voice-config.json);
+fewer and messages at least 50% code or logs by characters. Both thresholds are config values in the state (voice-config.json);
 changing them changes the pool only. A kept exemplar's code and log spans
 become [code], in it and in the message it answers.
 Dropped messages still count in the statistics (voicestats).

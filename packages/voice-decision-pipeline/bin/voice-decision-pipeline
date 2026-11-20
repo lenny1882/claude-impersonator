@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # voice-decision-pipeline — builds the corpus the voice and decision models
-# are made from GSD records, Claude Code transcripts, Bitbucket PRs and Slack
-# records, credentials redacted, anonymised copies, review batches, and the
-# corpus embedding index.
+# are made from. Sources: GSD records, Claude Code transcripts, Bitbucket
+# PRs, Slack. Outputs: the records with credentials redacted, anonymised
+# copies, review batches, and the corpus embedding index.
 #
 # Why it exists. Everything sent to the Anthropic API to build the models
 # has to be anonymised first, by local scripts, with the owner approving the

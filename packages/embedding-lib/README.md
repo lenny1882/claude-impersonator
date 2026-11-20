@@ -4,15 +4,11 @@ Pinned, local text embeddings for the voice and decision models:
 `BAAI/bge-base-en-v1.5` on CPU PyTorch, in an environment the package
 downloads and owns, on a bundled Python 3.14.
 
-The voice model finds exemplar messages by meaning: the pipeline embeds the
-corpus once, and `voice-runtime` embeds each draft's context and searches
-that index. If the two embeddings come from different setups — another
-model, another library version, another Python — the search still returns
-results, just wrong ones, with no error. The machines this runs on don't
-share a system Python (each has its own version, and those
-change), so the package brings its own and pins everything, and
-each index records exactly which setup built it so a consumer can refuse one
-that doesn't match.
+The pipeline embeds the corpus with it and `voice-runtime` embeds each
+draft's context with it, so both use exactly the same model, library
+versions and Python. The package brings its own Python and pins everything;
+`identity()` describes the setup, each index stores it, and a consumer
+refuses an index whose identity doesn't match its own.
 
 Part of [claude-impersonator](https://github.com/lenny1882/claude-impersonator), which holds several packages
 that are each versioned, released and installed on their own.
@@ -97,7 +93,7 @@ Reads this package's line in `versions.txt`, so pre-releases, and releases of
 the other packages in the repo, are never offered. A release that changes the
 bundled Python or the lock rebuilds the environment at install, and changes
 `identity()`, so the pipeline re-embeds before the runtimes use the index
-again (PLAN §5).
+again.
 
 ## Uninstall
 

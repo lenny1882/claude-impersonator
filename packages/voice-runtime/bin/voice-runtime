@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # voice-runtime — the voice guide and exemplar search for drafts in the owner's
-# voice, and the record of each draft and the version the owner approved.
+# voice, and the record of each draft and the version they approved.
 #
 # Why it exists. A drafting session needs the guide cells for one audience
 # and its purposes, and the few closest real messages, from a build the

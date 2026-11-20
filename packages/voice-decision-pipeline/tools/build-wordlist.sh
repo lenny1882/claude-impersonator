@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds pylib/vdp/data/words.txt, the English word list Mining uses to tell
-# an ordinary word from a name (PLAN §2.3: SCOWL alone).
+# an ordinary word from a name (PLAN §2.3; SCOWL alone).
 #
 # Source: the SCOWL word lists Debian and Ubuntu ship as wbritish and
 # wamerican (/usr/share/dict/british-english and american-english). Only

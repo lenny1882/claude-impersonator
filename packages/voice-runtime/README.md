@@ -4,15 +4,11 @@ The voice guide and exemplar search Claude uses to draft Slack messages, PR
 descriptions, PR review comments and Jira comments in your voice, and the
 record of each draft and the version you approved.
 
-A draft in someone's voice needs their rules for that audience and a few of their
-real messages close to the one being written; rules alone give flat drafts,
-examples alone carry over old clients' phrasing (PLAN §3.5). Both are built
-once by `voice-decision-pipeline` and carried to every machine by
-`builds-sync`. Read by hand in a session, they fail without any error: an
-index embedded by a different embedding setup returns nonsense neighbours, a
-half-installed build mixes two builds, and a changed file format is read as
-the old one. This package does the reading, refuses each of those, and keeps
-the drafts the next build learns from (§3.8).
+The guide and exemplars are built by `voice-decision-pipeline` and carried
+to every machine by `builds-sync`. This package installs a build, refuses
+one it can't read correctly (an index embedded by a different embedding
+setup, a half-installed build, a file format it doesn't know), and records
+the drafts the next build uses.
 
 Needs [`embedding-lib`](../embedding-lib/) installed and set up first, for
 `install-build` and `search`; the rest runs without it.
@@ -140,7 +136,7 @@ and fall back to the system `python3` (3.8 or later) when embedding-lib is
 missing, so the guide still loads.
 
 **Uninstall** refuses while `drafts.jsonl` exists, unless `--keep-state`:
-the drafts are evidence no build can regenerate (PLAN §5).
+no build can regenerate the drafts.
 
 ## Tests
 

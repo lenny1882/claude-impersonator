@@ -8,14 +8,10 @@ purpose labels, the voice guide, statistics and never-say list, exemplars,
 validation against held-back messages, and a leak-checked build that
 `builds-sync` carries to every machine's `voice-runtime`.
 
-Everything sent to the Anthropic API to build the models has to be anonymised
-first, by local scripts, and nothing from a source may go until its first
-batch has been read and approved. Done by hand in a session, real names leak:
-a subagent that reads the export carries them into its prompt. This package
-is the only thing that reads the sources, keeps the real-name corpus local,
-and writes the anonymised copy that the voice passes send. Only the `voice`
-steps send anything, and only anonymised text, through `claude -p` on your
-own login, after each source's first batch is approved.
+This package is the only thing that reads the sources. The real-name corpus
+stays local; only the anonymised copy is sent, by the `voice` steps alone,
+through `claude -p` on your own login, and only from a source whose first
+review batch you have approved.
 
 Part of [claude-impersonator](https://github.com/lenny1882/claude-impersonator), which holds several packages
 that are each versioned, released and installed on their own.
@@ -187,12 +183,11 @@ Run in order, each in your own shell (each logs to
    <audience>` draws the batch.
 7. `voice build`: guide.json, exemplars.json, stats.json and build.json in a
    tarball in the state; the leak check reads them first and stops on any
-   real name, all but build.json's `embedding_identity` (embedding-lib's
-   own description of its model). Its terms are on the review page's leak
-   check under "The last build": a word the anonymiser replaced in every
-   case that the guide model writes as an ordinary word is cleared there by
-   hand, for builds only, and a later build that finds it more times stops
-   again. `voice publish` sends it through `builds-sync` once the label
+   real name, all but build.json's `embedding_identity`. The terms it finds
+   are listed on the review page's leak check under "The last build", each
+   with the built file and a snippet. Clearing a term there lets the next
+   build through it for builds only, not for the anonymised copies; a later
+   build that finds it more times stops again. `voice publish` sends it through `builds-sync` once the label
    check and the validation run have passed.
 
 Each call turns off tools, settings, MCP servers and slash commands, so it
@@ -211,7 +206,7 @@ files 600), never backed up:
 | `anonymising-map.json` | append-only: real id, aliases, role, pseudonym, origin |
 | `mining-candidates.json`, `mining-decisions.json` | candidate names and your keep or strike |
 | `added-clients.json` | clients added by hand, with their other spellings and identifiers |
-| `name-candidates.json`, `name-decisions.json` | single words only spaCy took for a name, with counts; your name or not a name |
+| `name-candidates.json`, `name-decisions.json` | single words only spaCy took for a name, with counts; your name or not-a-name decisions |
 | `batches/`, `review-state.json` | drawn batches; per-source approvals and stops |
 | `index/` | `vectors.npy`, `ids.json`, `identity.json` |
 | `leak-report.json` | real names the leak check found in the anonymised copies, with where |

@@ -239,8 +239,7 @@ def leak_line():
 
 def pseudonym_terms(text, amap):
     """[(pseudonym, real term)] for every pseudonym in text, in order of
-    first appearance, read from the map on this machine, so
-    a pseudonymised host on the leak page can be traced to its term.
+    first appearance, read from the map on this machine, so a pseudonymised host on the leak page can be traced to its term.
     The real term is the entry's first alias, else its real id."""
     by_p = {e["pseudonym"].lower(): e for e in amap.entries if e.get("pseudonym")}
     if not by_p:
@@ -365,7 +364,7 @@ as spaCy tagged it. <span id=left>{left}</span> undecided. Each click is saved.<
 
 MINING_SECTIONS = (("hand", "Check by hand"), ("keep", "Suggested keep"),
                    ("strike", "Suggested strike"))
-# Not a suggestion: terms decided in an earlier run that this run didn't list
+# Not a suggestion: terms decided in an earlier run that this run didn't list.
 # Shown apart from Decided, each with its decision.
 EARLIER = ("earlier", "Earlier runs")
 
@@ -458,7 +457,7 @@ more clients' conversations, and fragments that can't be a name, are left off.</
 
 def mapping_rows():
     """The Slack conversations the owner assigns by hand (PLAN §3.2): kept, not
-    struck, no settled audience, and not the owner's self-DM; plus any already
+    struck, no settled audience, and not their self-DM; plus any already
     assigned here, so a choice can be changed."""
     from .anonymise import slack_meta, slack_users
     d = inputs.load()

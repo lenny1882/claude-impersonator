@@ -1,7 +1,7 @@
 """Review batches of anonymised items, per source (PLAN §2.3).
 
 Before anything from a source is sent, the owner reviews batches of 50
-anonymised items from it, every replacement highlighted, until the owner says
+anonymised items from it, every replacement highlighted, until they say
 stop. Batches are drawn per source (Slack, Bitbucket, transcripts, GSD
 records; imported transcripts count as transcripts), and nothing from a
 source is sent until its own first batch is approved; "stop" applies per

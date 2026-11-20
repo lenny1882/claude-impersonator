@@ -1070,7 +1070,7 @@ st = voicestats.build(items, log=lambda *a: None)
 aud = sorted(st["quoted"])[0]
 assert st["quoted"][aud]["splendid tidings"] == 0.0
 txt = guide.render(guide.assemble("validation"), st, aud, ["thank"])
-assert f"Share of self-01's messages to {aud} holding each word quoted in the rules above" in txt and '"splendid tidings" 0.0%' in txt, txt
+assert f"Share of self-01's messages to {aud} holding each word quoted in the rules above: " in txt and '"splendid tidings" 0.0%' in txt, txt
 assert "as few words as self-01 would" in validate.DRAFT_SYSTEM and "plain instruction" in validate.DRAFT_SYSTEM
 EOF
 check "never-say phrases hold no pseudonym word, contraction tail, emoji name or placeholder" vpy <<'EOF'

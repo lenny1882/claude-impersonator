@@ -72,7 +72,7 @@ verify_probe() {
 
 # Live files can't be rebuilt from the sources: the anonymising map (whose
 # numbers must never be reused), the owner's mining and batch decisions, and the
-# inputs with the owner's forget and pick-repos changes. Uninstall refuses while any
+# inputs with their forget and pick-repos changes. Uninstall refuses while any
 # exists, unless --keep-state, so nothing is removed.
 # Then the sandbox exclusion is taken out: uninstall.sh's own settings step
 # only knows about hooks, and a stale entry would let any later program of
