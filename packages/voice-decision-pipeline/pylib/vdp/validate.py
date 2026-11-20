@@ -197,9 +197,6 @@ def drafts_and_judge(counts=COUNTS, limit=None, log=print):
     from . import voicestats
     g = guide.assemble("validation")
     items = voice.load()
-    # Measured afresh, so the lengths per purpose follow the current labels.
-    stats = voicestats.build(items, log=log)
-    state.write_json(state.path("voice", "stats.json"), stats)
     by_id = {it["id"]: it for it in items}
     lab = labels.final()
     hold = [by_id[i] for i in sorted(pool.held()) if i in by_id and i in lab]
@@ -207,6 +204,10 @@ def drafts_and_judge(counts=COUNTS, limit=None, log=print):
         raise SystemExit("voice-decision-pipeline: no holdouts; run 'voice holdout' first")
     if limit:
         hold = hold[:limit]
+    # Measured afresh, so the lengths per purpose follow the current labels;
+    # after the holdout check, so a refused run leaves stats.json as it was.
+    stats = voicestats.build(items, log=log)
+    state.write_json(state.path("voice", "stats.json"), stats)
     ex = pool.exemplars(items)
     m = exemplar_vectors(ex, log=log)
     el = _el()
