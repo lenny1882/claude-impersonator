@@ -73,7 +73,7 @@ BUILD THE VOICE MODEL (sends anonymised text through claude -p, PLAN §3)
                              label purposes (Sonnet), or the second model's blind
                              pass (Opus); resumes after the last finished batch
   voice holdout [--fresh]    hold back 10% for validation (fresh: a new run)
-  voice rules                create the own-rules file from its template
+  voice rules                create the own-rules and struck-rules files from their templates
   voice guide                statistics, never-say list and the corpus guide
   voice validate [--limit N] drafts with 3, 5 and 8 exemplars, judged
   voice pairs [--more <audience>]

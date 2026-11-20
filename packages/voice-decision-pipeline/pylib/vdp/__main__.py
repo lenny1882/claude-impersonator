@@ -188,6 +188,8 @@ def cmd_voice(a):
     if step == "rules":
         made = guide.init_rules()
         print(f"  ok    {guide.rules_file()}" + (" created from the template" if made else " already exists"))
+        made = guide.init_struck()
+        print(f"  ok    {guide.struck_file()}" + (" created from the template" if made else " already exists"))
         return 0
     if step == "guide":
         with state.lock():
@@ -218,7 +220,7 @@ def cmd_voice(a):
         out = {"labels": labels.summary(), "holdout": (state.read_json(pool.holdout_file(), {}) or {}).get("run"),
                "best_count": validate.best_count(), "validation": validate.report(),
                "publish_blocked_by": voicebuild.gates(), "newest_build": voicebuild.newest()[0],
-               "own_rules": guide.rules_file()}
+               "own_rules": guide.rules_file(), "struck_rules": guide.struck_file()}
         print(json.dumps(out, indent=1))
         return 0
     raise SystemExit(f"unknown voice step {step}")

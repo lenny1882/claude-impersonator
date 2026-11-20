@@ -54,20 +54,21 @@ def init_rules():
         return False
 
 
-def own_rules():
-    """(rules, jira rules) from the rules file: every "- " or "* " bullet,
-    continuation lines joined, word for word."""
+def _bullets(path, section_of, first):
+    """{section: [bullet, ...]} from a rules file: every "- " or "* " bullet,
+    continuation lines joined, word for word. section_of maps a heading to
+    its section; bullets before any heading go to first."""
     try:
-        with open(rules_file(), encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             text = f.read()
     except FileNotFoundError:
-        return [], []
-    out = {"main": [], "jira": []}
-    sec, cur = "main", None
+        return {}
+    out = defaultdict(list)
+    sec, cur = first, None
     for line in text.splitlines():
         h = re.match(r"^#{1,6}\s+(.*)$", line)
         if h:
-            sec = "jira" if h.group(1).strip().lower().startswith("jira") else "main"
+            sec = section_of(h.group(1).strip().lower())
             cur = None
             continue
         b = re.match(r"^\s*[-*]\s+(.*)$", line)
@@ -78,7 +79,136 @@ def own_rules():
             cur[-1] += " " + line.strip()
         else:
             cur = None
-    return out["main"], out["jira"]
+    return out
+
+
+def own_rules():
+    """(rules, jira rules) from the rules file, word for word."""
+    out = _bullets(rules_file(), lambda h: "jira" if h.startswith("jira") else "main", "main")
+    return out.get("main", []), out.get("jira", [])
+
+
+# -- rules the owner struck ---------------------------------------------------
+#
+# A rule the guide model wrote that the owner doesn't want, or a phrase on the
+# never-say list, is listed in struck-rules.md in the state. assemble() and
+# render() leave it out, so validation drafts and every build go without
+# it; a rerun of `voice guide` writes the corpus guide again but can't bring
+# it back word for word, and the guide model is told not to write it or one
+# like it. One that comes back reworded is struck again, or answered by a
+# rule in own-rules.md, which wins over every corpus rule.
+
+STRUCK_TEMPLATE = """# Rules you struck
+
+Each line starting "- " is struck: left out of every validation draft and
+every build, however often `voice guide` runs again. Case, spacing, quote
+marks and the full stop at the end don't matter; the words do.
+
+Under "## Rules", copy a rule the guide model wrote. The guide model is also
+told not to write it, or a rule that says the same. If one comes back in
+other words, strike that too, or answer it with a rule in own-rules.md.
+
+Under "## Never say", copy a phrase from the never-say list.
+
+## Rules
+
+## Never say
+"""
+
+
+def struck_file():
+    return state.path("struck-rules.md")
+
+
+def init_struck():
+    try:
+        with open(struck_file(), "x", encoding="utf-8") as f:
+            f.write(STRUCK_TEMPLATE)
+        return True
+    except FileExistsError:
+        return False
+
+
+def strike_key(s):
+    """What a struck line and a rule are matched on: the words, in lower case,
+    with spacing, quote marks and end punctuation evened out."""
+    s = s.translate({0x2018: "'", 0x2019: "'", 0x201C: '"', 0x201D: '"'})
+    s = re.sub(r"\s+", " ", s).strip(" .;:!")
+    if len(s) > 1 and s[0] == s[-1] and s[0] in "'\"":
+        s = s[1:-1].strip(" .;:!")
+    return s.lower()
+
+
+def struck():
+    """{"rules": [...], "never_say": [...]}, word for word as the owner wrote them."""
+    out = _bullets(struck_file(), lambda h: "never_say" if h.startswith("never") else "rules", "rules")
+    return {"rules": out.get("rules", []), "never_say": out.get("never_say", [])}
+
+
+def strike(cg, keys=None):
+    """(corpus guide without the struck rules, keys of the struck rules that
+    matched one)."""
+    keys = {strike_key(r) for r in struck()["rules"]} if keys is None else keys
+    used = set()
+
+    def keep(rs):
+        out = []
+        for r in rs or []:
+            k = strike_key(r)
+            if k in keys:
+                used.add(k)
+            else:
+                out.append(r)
+        return out
+    g = dict(cg)
+    g["general"], g["combinations"] = keep(cg.get("general")), keep(cg.get("combinations"))
+    g["audiences"] = {a: {**v, "rules": keep(v.get("rules")),
+                          "purposes": {p: keep(rs) for p, rs in (v.get("purposes") or {}).items()}}
+                      for a, v in (cg.get("audiences") or {}).items()}
+    return g, used
+
+
+def strike_stats(stats, keys=None):
+    """(stats without the struck never-say phrases, keys that matched one)."""
+    if not stats:
+        return stats, set()
+    keys = {strike_key(p) for p in struck()["never_say"]} if keys is None else keys
+    ns = stats.get("never_say", [])
+    used = {strike_key(x["phrase"]) for x in ns} & keys
+    return {**stats, "never_say": [x for x in ns if strike_key(x["phrase"]) not in keys]}, used
+
+
+def struck_summary(stats):
+    """Counts only, for a log Claude reads: struck lines may quote real words."""
+    s = struck()
+    cg = state.read_json(state.path("voice", "corpus-guide.json"), None) or {}
+    rk, nk = {strike_key(r) for r in s["rules"]}, {strike_key(p) for p in s["never_say"]}
+    _, ru = strike(cg, rk)
+    _, nu = strike_stats(stats, nk)
+    return {"rules": len(rk), "rules_matched": len(ru), "never_say": len(nk), "never_say_matched": len(nu)}
+
+
+def struck_for_prompt(log=print):
+    """The struck rules the guide model may be shown: each one the leak check
+    finds nothing in. The rest stay struck from the guide but aren't sent;
+    the log gives their count, never their words."""
+    rules = struck()["rules"]
+    if not rules:
+        return []
+    from . import inputs, leaks
+    from .anonmap import Map
+    ok = leaks.clean(rules, inputs.load(), Map.load())
+    if len(ok) < len(rules):
+        log(f"  held  {len(rules) - len(ok)} struck rules not shown to the guide model: the leak check "
+            "found a name in them (they are still struck)")
+    return ok
+
+
+def struck_prompt(rules):
+    if not rules:
+        return ""
+    return ("\n\nself-01 struck these rules from an earlier guide as wrong. Don't write any of them, "
+            "or a rule that says the same in other words:\n" + "\n".join(f"- {r}" for r in rules))
 
 
 def _rules_schema(keys):
@@ -160,6 +290,7 @@ def write(log=print):
         raise SystemExit("voice-decision-pipeline: the exemplar pool is empty; run 'voice label' and 'voice holdout' first")
     from . import voicestats
     stats = voicestats.build(items, log=log)
+    system = SYSTEM + struck_prompt(struck_for_prompt(log=log))
     per, multi = sample(ex)
     out = {"audiences": {}}
     for aud in voice.CORPUS_AUDIENCES:
@@ -174,7 +305,7 @@ def write(log=print):
                   f"\n\nWrite the rules for this audience as a whole, then the rules for each of "
                   f"these purposes: {', '.join(keys)}.")
         try:
-            ans = model.call("guide", SYSTEM, prompt, _rules_schema(keys), log=log)
+            ans = model.call("guide", system, prompt, _rules_schema(keys), log=log)
         except model.UsageLimit as e:
             log(f"  stop  usage limit: {e}; run the same command again")
             return None
@@ -189,7 +320,7 @@ def write(log=print):
               "\n\nWrite the rules that hold across every audience, and the rules for how "
               "self-01 combines purposes in one message (what comes first, how they are joined).")
     try:
-        ans = model.call("guide", SYSTEM, prompt, GENERAL_SCHEMA, log=log)
+        ans = model.call("guide", system, prompt, GENERAL_SCHEMA, log=log)
     except model.UsageLimit as e:
         log(f"  stop  usage limit: {e}; run the same command again")
         return None
@@ -199,14 +330,21 @@ def write(log=print):
                                                    for e in xs} | {e["id"] for e in multi})})
     state.write_json(state.path("voice", "stats.json"), stats)
     log("  ok    guide written to voice/corpus-guide.json")
+    s = struck_summary(stats)
+    if s["rules"] or s["never_say"]:
+        log(f"  ok    struck: {s['rules_matched']} of {s['rules']} struck rules were written again word for "
+            f"word and are left out; {s['never_say_matched']} of {s['never_say']} struck phrases are on the "
+            "never-say list and are left out")
     return out
 
 
 def assemble(build_time):
-    """guide.json for a build: the owner's rules first, then the corpus guide."""
+    """guide.json for a build: the owner's rules first, then the corpus guide
+    without the rules the owner struck."""
     cg = state.read_json(state.path("voice", "corpus-guide.json"), None)
     if cg is None:
         raise SystemExit("voice-decision-pipeline: no guide written yet; run 'voice guide'")
+    cg, _ = strike(cg)
     mine, jira = own_rules()
     return {"schema_version": 1, "build_time": build_time, "own_rules": mine,
             "general": cg.get("general", []), "combinations": cg.get("combinations", []),
@@ -218,7 +356,9 @@ RARE_QUOTED = 0.02
 
 def render(g, stats, audience, purposes):
     """The guide text a draft for audience and purposes reads: the same
-    sections voice-runtime's `guide` gives (validation drafts with it)."""
+    sections voice-runtime's `guide` gives (validation drafts with it).
+    Phrases the owner struck are left off the never-say list."""
+    stats, _ = strike_stats(stats)
     out = []
     if g.get("own_rules"):
         out.append("self-01's own rules (these win over every rule below):\n" +

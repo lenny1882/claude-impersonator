@@ -370,6 +370,12 @@ developer).
   guide as its own first section at each build. Where one conflicts with a
   rule drawn from the corpus, the owner's rule wins. It reaches other machines
   inside the encrypted build.
+- Struck rules: a second file in the state lists corpus
+  rules and never-say phrases the owner doesn't want. They are left out when the
+  guide is put together, so validation drafts and builds both go without
+  them, and a rerun of the guide model can't bring one back word for word:
+  it is told not to write them or rules like them. A struck rule that
+  returns reworded is struck again, or countered in their own rules file.
 
 ### 3.6 Loading
 

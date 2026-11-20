@@ -155,7 +155,14 @@ Run in order, each in your own shell (each logs to
    guide was never shown; then `voice validate` drafts them and `voice
    pairs --more <audience>` pairs them.
 4. `voice rules` creates `own-rules.md` in the state; each `- ` line is one
-   of your rules, its `## Jira` section the Jira guide. `voice guide` writes
+   of your rules, its `## Jira` section the Jira guide. It also creates
+   `struck-rules.md`: a corpus rule copied under `## Rules`, or a phrase
+   under `## Never say`, is left out of every validation draft and build,
+   matched on its words (case, spacing, quote marks and the end full stop
+   don't count). `voice guide` tells the guide model not to write a struck
+   rule or one like it, sending only the struck rules the leak check finds
+   no name in; one that comes back reworded is struck again or answered in
+   `own-rules.md`. `voice guide` writes
    the statistics, the never-say list and the corpus guide (Opus 5.5).
 5. `voice validate`: for every held-back message, a brief of what it says
    in neutral words (Sonnet 5.5), then drafts from that brief with 3, 5 and 8
@@ -212,6 +219,7 @@ files 600), never backed up:
 | `label-check.json`, `disagreement-grades.json` | your label check and disagreement grades |
 | `holdouts.json` | the held-back items and the validation run |
 | `own-rules.md` | your own rules, first in the guide |
+| `struck-rules.md` | corpus rules and never-say phrases you struck, left out of validation and builds |
 | `voice/` | the corpus guide, statistics, builds and the build leak report |
 | `validation/` | drafts, judge scores, blind pairs and their key, the judge review |
 | `validation-answers.jsonl` | every answer you give on the validation pages, as you give it |

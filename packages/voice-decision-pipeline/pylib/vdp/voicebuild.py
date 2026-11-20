@@ -36,6 +36,8 @@ def build(log=print):
     stats = state.read_json(state.path("voice", "stats.json"), None)
     if stats is None:
         raise SystemExit("voice-decision-pipeline: no statistics yet; run 'voice guide'")
+    sm = guide.struck_summary(stats)
+    stats, _ = guide.strike_stats(stats)
     ex = pool.exemplars()
     k = validate.best_count() or DEFAULT_COUNT
     try:
@@ -74,7 +76,10 @@ def build(log=print):
         f.write(buf.getvalue())
     os.replace(out + ".part", out)
     log(f"  ok    build {bt}: {len(ex)} exemplars, exemplar count {k}, "
-        f"{len(g['own_rules'])} own rules, {len(g['audiences'])} audiences; leak check clean "
+        f"{len(g['own_rules'])} own rules, {len(g['audiences'])} audiences; "
+        f"{sm['rules_matched']} struck rules and {sm['never_say_matched']} struck never-say phrases left out "
+        f"({sm['rules'] - sm['rules_matched'] + sm['never_say'] - sm['never_say_matched']} struck lines match "
+        "nothing now); leak check clean "
         f"({lr['terms_checked']} terms); {out}")
     return bt, out
 

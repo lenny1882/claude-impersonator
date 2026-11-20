@@ -132,6 +132,7 @@ def overview():
     rrows = "".join(f"<tr><td>{plabels([p])}</td><td>{v['either']}</td><td>{v['differ']}</td><td>{int(v['rate'] * 100)}%</td></tr>"
                     for p, v in sorted(rates.items(), key=lambda x: -x[1]["rate"]))
     mine, jira = guide.own_rules()
+    sk = {k: len(v) for k, v in guide.struck().items()}
     bt, _ = voicebuild.newest()
     return _page("Voice build", f"""
 <h2>Labels</h2><p>{s['labelled']} labelled by the labeller, {s['second']} by the second model,
@@ -145,7 +146,9 @@ def overview():
         "not drawn yet: it is drawn once both passes have labelled.") + f"""</p>
 <table><tr><th>Purpose</th><th>Either model</th><th>Only one</th><th>Rate</th></tr>{rrows}</table>
 <h2>Your rules</h2><p>{len(mine)} rules and {len(jira)} Jira rules in <code>{E(guide.rules_file())}</code>,
-copied word for word as the guide's first section at each build.</p>
+copied word for word as the guide's first section at each build.
+{sk['rules']} struck rules and {sk['never_say']} struck never-say phrases in <code>{E(guide.struck_file())}</code>,
+left out of every validation draft and build.</p>
 <h2>Validation</h2><p>Best exemplar count so far: {validate.best_count() or '—'}.
 <a href='/voice/pairs'>Blind pairs</a> · <a href='/voice/judge'>Judge review</a> ·
 <a href='/voice/report'>Report</a></p>

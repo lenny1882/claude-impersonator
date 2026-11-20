@@ -982,6 +982,41 @@ assert t.startswith("self-01's own rules (these win") and "Combining purposes" i
 j = guide.render(g, {}, "jira", ["status"])
 assert "Jira comments" in j and "Writing to" not in j
 EOF
+check "struck rules and never-say phrases are left out of validation and builds, and the guide model is told" vpy <<'EOF'
+import os
+from vdp import guide, model, state
+assert os.path.exists(guide.struck_file()), "voice rules creates the struck-rules file"
+s = open(guide.struck_file()).read()
+s = s.replace("## Rules\n", "## Rules\n\n- Keep it  short.\n- for ask: say it plainly\n- a rule nobody wrote\n- Copy Robin Madeup on mail\n")
+s = s.replace("## Never say\n", "## Never say\n\n- “Kind regards”\n")
+open(guide.struck_file(), "w").write(s)
+g = guide.assemble("validation")
+rules = g["general"] + g["combinations"] + [r for a in g["audiences"].values()
+         for r in a["rules"] + [x for rs in a["purposes"].values() for x in rs]]
+assert "keep it short" not in rules and "for ask: say it plainly" not in rules, rules
+assert "no greeting" in rules and "for status: say it plainly" in rules, rules
+assert state.read_json(state.path("voice", "corpus-guide.json"))["audiences"]["clients"]["rules"] == ["keep it short", "no greeting"], "the corpus guide itself is untouched"
+st = state.read_json(state.path("voice", "stats.json"))
+assert any(x["phrase"] == "kind regards" for x in st["never_say"])
+t = guide.render(g, st, "clients", ["ask", "status"])
+assert '"kind regards"' not in t and "keep it short" not in t and "no greeting" in t, t
+assert guide.struck_summary(st) == {"rules": 4, "rules_matched": 2, "never_say": 1, "never_say_matched": 1}, guide.struck_summary(st)
+logs = []
+shown = guide.struck_for_prompt(log=logs.append)
+assert shown == ["Keep it  short.", "for ask: say it plainly", "a rule nobody wrote"], shown
+assert any("1 struck rules not shown" in l for l in logs) and not any("Robin" in l for l in logs), logs
+sent = []
+def fake(role, system, prompt, schema, log=print):
+    sent.append(system)
+    raise model.UsageLimit("stop here")
+real, guide.model.call = guide.model.call, fake
+try:
+    assert guide.write(log=lambda *a: None) is None
+finally:
+    guide.model.call = real
+assert "struck these rules" in sent[0] and "- Keep it  short." in sent[0] and "Robin" not in sent[0], sent
+os.remove(guide.struck_file())
+EOF
 VDP_STATE="$VST" VDP_CLAUDE="$VBIN/claude" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp voice validate >/dev/null 2>&1
 check "voice validate drafts each counted holdout with 3, 5 and 8 exemplars and the judge scores them" vpy <<'EOF'
 from vdp import pool, state, validate, voice

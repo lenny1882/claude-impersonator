@@ -105,6 +105,35 @@ def terms(d, amap):
     return out
 
 
+def matchers(d, amap):
+    """(terms regex, pseudonyms regex), as scan and scan_built build them."""
+    found = terms(d, amap)
+    rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
+        re.escape(t) for t in sorted(found, key=len, reverse=True)) + r")(?![A-Za-z0-9])",
+        re.IGNORECASE) if found else None
+    pseud = sorted({e["pseudonym"] for e in amap.entries if e.get("pseudonym")},
+                   key=len, reverse=True)
+    prx = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(map(re.escape, pseud)) + r")(?![A-Za-z0-9])",
+                     re.IGNORECASE) if pseud else None
+    return rx, prx
+
+
+def clean(strings, d, amap):
+    """The strings the leak check finds nothing in, by the same terms,
+    pseudonym blanking and URL rule as scan_built: what may be sent to a
+    model that wasn't already checked on its way in (the owner's struck rules)."""
+    rx, prx = matchers(d, amap)
+    out = []
+    for s in strings:
+        searched = blanked(json.dumps(s, ensure_ascii=False), prx)
+        if rx and rx.search(searched):
+            continue
+        if any("\0" not in h for _, _, h in urls.private(searched)):
+            continue
+        out.append(s)
+    return out
+
+
 def scan(d, amap):
     found = terms(d, amap)
     rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
