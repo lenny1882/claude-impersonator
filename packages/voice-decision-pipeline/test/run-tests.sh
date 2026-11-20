@@ -876,6 +876,12 @@ assert d["previous"] == [{"round": 1, "prompt": None, "ids": old_ids, "answers":
 assert old_ids[0] not in labels.corrections(), "an earlier round's grade no longer stands in for the labels"
 assert state.read_json(labels.check_file(), None)["prompt"] == labels.prompt_version(), "the label check is drawn too"
 EOF
+check "both sides of a blind pair show code, links and mentions the same way" vpy <<'EOF'
+from vdp.voicereview import shown
+real = "see <[url]|the test page> or <[url]>, run `make dev`:\n```\nx=1\n```\n<!here> <@colleague-05>"
+draft = "see [url] or [url], run [code]:\n[code]\n@here @colleague-05"
+assert shown(real) == shown(draft) == draft, (shown(real), shown(draft))
+EOF
 check "labelling notes in the state change the prompt version, so a rerun is traceable" vpy <<'EOF'
 from vdp import labels
 v = labels.prompt_version()

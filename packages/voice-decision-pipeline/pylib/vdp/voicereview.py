@@ -15,6 +15,7 @@ anonymised copy, the same text that was sent.
 import hashlib
 import html
 import json
+import re
 
 from . import guide, labels, state, validate, voice, voicebuild
 
@@ -44,6 +45,28 @@ TIP_CSS = "<style>.pl{text-decoration:underline dotted;text-underline-offset:2px
 def _page(title, body):
     from .review import page
     return page(title, f"{TIP_CSS}<script>{JS}</script><p class=meta><a href='/voice'>Voice build</a></p>" + body)
+
+
+FENCE = re.compile(r"```.*?```", re.S)
+INLINE = re.compile(r"`[^`\n]+`")
+SLACK_LINK = re.compile(r"<(\[url\]|https?://[^|>]+)(?:\|([^>]*))?>")
+SLACK_SPECIAL = re.compile(r"<!(here|channel|everyone)(?:\|[^>]*)?>")
+SLACK_MENTION = re.compile(r"<([@#])([^|>]+)(?:\|([^>]*))?>")
+CODE_RUN = re.compile(r"\[code\](?:\s*\[code\])+")
+
+
+def shown(text):
+    """A message as both sides of a blind pair show it: code as [code], as
+    the drafter was shown it, every link as [url], and Slack's mention markup
+    as the words it displays, so neither side gives itself away by format."""
+    t = FENCE.sub("[code]", text or "")
+    t = INLINE.sub("[code]", t)
+    # Every link shows as [url], labelled or not: the drafter writes a bare
+    # [url], so a label would mark the real side.
+    t = SLACK_LINK.sub("[url]", t)
+    t = SLACK_SPECIAL.sub(lambda m: "@" + m.group(1), t)
+    t = SLACK_MENTION.sub(lambda m: m.group(1) + (m.group(3) or m.group(2)), t)
+    return CODE_RUN.sub("[code]", t)
 
 
 def plabels(ps):
@@ -186,7 +209,7 @@ def pairs_page():
         cards.append(f"<div class=card id='c-{p['pair']}'><div class=meta>{p['pair']} · {E(p['audience'])} · "
                      f"{plabels(p['purposes'])}</div>"
                      f"<details><summary class=meta>conversation before</summary><pre>{E(p['context'])}</pre></details>"
-                     f"<p><b>A</b></p><pre>{E(p['a'])}</pre><p><b>B</b></p><pre>{E(p['b'])}</pre>"
+                     f"<p><b>A</b></p><pre>{E(shown(p['a']))}</pre><p><b>B</b></p><pre>{E(shown(p['b']))}</pre>"
                      f"<p class=row>{pb('A', 'A is mine')}{pb('B', 'B is mine')}{pb('cant', 'Can’t tell')}</p>"
                      f"<p class=meta><span class=reveal></span></p>"
                      f"<p class='row grade'{'' if pk else ' hidden'}>Would you send the draft as is? {gb}</p></div>")
@@ -207,7 +230,7 @@ def judge_page():
         cards.append(f"<div class=card id='c-{x['id']}'><div class=meta>{x['why']} · {E(x['audience'])} · "
                      f"judge {x['score']}: {E(x['reason'])}</div>"
                      f"<details><summary class=meta>conversation before</summary><pre>{E(x['context'])}</pre></details>"
-                     f"<p><b>Yours</b></p><pre>{E(x['real'])}</pre><p><b>Draft</b></p><pre>{E(x['draft'])}</pre>"
+                     f"<p><b>Yours</b></p><pre>{E(shown(x['real']))}</pre><p><b>Draft</b></p><pre>{E(shown(x['draft']))}</pre>"
                      f"<p class=row>Your grade for the draft: {gb}</p></div>")
     return _page("Judge review", f"""<p>The judge's {validate.WORST} worst-scored drafts and
 {validate.RANDOM} random others from run {jr['run']}, each beside your real message. Your grade
