@@ -50,6 +50,20 @@ def _page(title, body):
 shown = voice.shown
 
 
+def grade_text(n):
+    """A grade's meaning on the judge's scale, worded for the owner."""
+    return validate.GRADES[n].replace("self-01's", "your").replace("self-01", "you")
+
+
+def scale():
+    """The 1-5 scale the judge uses, for the owner's grades to mean the same."""
+    return "<ul class=meta>" + "".join(f"<li><b>{n}</b>: {E(grade_text(n))}</li>" for n in (5, 4, 3, 2, 1)) + "</ul>"
+
+
+def grade_title(n):
+    return E(f"{n}: {grade_text(n)}", quote=True)
+
+
 def plabels(ps):
     """Purpose names, comma-separated, each showing its definition on hover."""
     return ", ".join(f"<span class=pl title='{E(labels.purpose_tip(p), quote=True)}'>{E(p)}</span>"
@@ -186,7 +200,7 @@ def pairs_page():
         pb = lambda v, label: (f"<button class=p data-p={v} aria-pressed={'true' if pk == v else 'false'} "
                                f"onclick=\"pick('{p['pair']}','{v}')\">{label}</button>")
         gb = "".join(f"<button class=g data-g={n} aria-pressed={'true' if gr == n else 'false'} "
-                     f"onclick=\"grade('pair-grade','{p['pair']}',{n})\">{n}</button>" for n in range(1, 6))
+                     f"title='{grade_title(n)}' onclick=\"grade('pair-grade','{p['pair']}',{n})\">{n}</button>" for n in range(1, 6))
         cards.append(f"<div class=card id='c-{p['pair']}'><div class=meta>{p['pair']} · {E(p['audience'])} · "
                      f"{plabels(p['purposes'])}</div>"
                      f"<details><summary class=meta>conversation before</summary><pre>{E(p['context'])}</pre></details>"
@@ -196,8 +210,9 @@ def pairs_page():
                      f"<p class='row grade'{'' if pk else ' hidden'}>Would you send the draft as is? {gb}</p></div>")
     return _page("Blind pairs", f"""<p>Run {pr['run']}, {len(validate.active(pr))} pairs, drafts made with
 {pr['k']} exemplars. In each, one message is yours and one a draft. Pick yours, or "can't tell";
-then grade the draft 1 to 5 for "would send as is". Every answer is saved as you give it, so you
-can stop and come back.</p>{''.join(cards)}""")
+then grade the draft 1 to 5, on the scale the judge uses (each button shows its meaning on hover):</p>
+{scale()}<p>Every answer is saved as you give it, so you can stop and come back; a new grade
+replaces the old one.</p>{''.join(cards)}""")
 
 
 def judge_page():
@@ -207,7 +222,7 @@ def judge_page():
     for x in jr["items"]:
         gr = ans.get(x["id"], {}).get("grade")
         gb = "".join(f"<button class=g data-g={n} aria-pressed={'true' if gr == n else 'false'} "
-                     f"onclick=\"grade('judge-review','{x['id']}',{n})\">{n}</button>" for n in range(1, 6))
+                     f"title='{grade_title(n)}' onclick=\"grade('judge-review','{x['id']}',{n})\">{n}</button>" for n in range(1, 6))
         cards.append(f"<div class=card id='c-{x['id']}'><div class=meta>{x['why']} · {E(x['audience'])} · "
                      f"judge {x['score']}: {E(x['reason'])}</div>"
                      f"<details><summary class=meta>conversation before</summary><pre>{E(x['context'])}</pre></details>"
@@ -215,7 +230,8 @@ def judge_page():
                      f"<p class=row>Your grade for the draft: {gb}</p></div>")
     return _page("Judge review", f"""<p>The judge's {validate.WORST} worst-scored drafts and
 {validate.RANDOM} random others from run {jr['run']}, each beside your real message. Your grade
-shows where the judge and you differ.</p>{''.join(cards)}""")
+shows where the judge and you differ, on the judge's own scale (each button shows its meaning on
+hover):</p>{scale()}{''.join(cards)}""")
 
 
 def report_page():

@@ -79,14 +79,17 @@ say nothing about who it is for. Add nothing the message doesn't say."""
 BRIEF_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["brief"],
                 "properties": {"brief": {"type": "string"}}}
 
+# The one 1-5 scale: the judge's prompt and the owner's grade buttons both use it.
+GRADES = {5: "indistinguishable from self-01's own", 4: "sendable as is or with a trivial edit",
+          3: "content right, needs rewording", 2: "voice or content wrong", 1: "of no use"}
+
 JUDGE_SYSTEM = """You judge drafts written in one person's voice. The person is self-01; names
 are pseudonyms. You see the conversation, the message self-01 really wrote next, a brief of
 what that message says, and several drafts written from the brief without seeing the
 message. Score each draft 1 to 5 for how far self-01 would send it as is, judged against the
 real message: mostly voice (wording, length, tone, punctuation, capitalisation), and whether
 it says what the brief says, nothing dropped or added.
-5: indistinguishable from self-01's own. 4: sendable as is or with a trivial edit.
-3: content right, needs rewording. 2: voice or content wrong. 1: of no use."""
+""" + "\n" + " ".join(f"{n}: {GRADES[n]}." for n in (5, 4, 3, 2, 1))
 
 JUDGE_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["scores"],
                 "properties": {"scores": {"type": "array", "items": {

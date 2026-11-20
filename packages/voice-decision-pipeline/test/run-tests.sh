@@ -1065,6 +1065,14 @@ from vdp import state, validate
 jr = state.read_json(state.path("validation", "judge-review.json"))
 assert jr["k"] == 5 and {x["id"] for x in jr["items"]} == validate.counted() and jr["items"][0]["why"] == "worst", jr
 EOF
+check "the pairs and judge review pages show the judge's 1-5 scale on the page and on each grade button" vpy <<'EOF'
+from vdp import validate, voicereview
+for page in (voicereview.pairs_page(), voicereview.judge_page()):
+    for n in validate.GRADES:
+        d = voicereview.E(voicereview.grade_text(n))
+        assert "self-01" not in d and f"<li><b>{n}</b>: {d}</li>" in page and f"title='{n}: {d}'" in page, (n, d)
+assert all(d in validate.JUDGE_SYSTEM for d in validate.GRADES.values())
+EOF
 check "the pass is worked out from the owner's answers: picks, grades and the per-audience rule" vpy <<'EOF'
 from vdp import state, validate
 pr = state.read_json(validate.pairs_file())

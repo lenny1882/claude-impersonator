@@ -403,7 +403,9 @@ subagent loads the skill is open (§8.2).
   shuffled), 12 per audience across the five corpus audiences (not Jira), covering as many of
   the 11 purposes as each audience's held-back messages allow. For
   each pair the owner answers "A is mine", "B is mine" or "can't tell", and grades
-  the draft 1–5 for "would send as is". The owner can review more at any time (the
+  the draft 1–5 for "would send as is", on the judge's own scale, shown
+  (5 indistinguishable, 4 sendable with a trivial edit, 3 content right but needs rewording, 2 voice or content wrong, 1
+  unusable). The owner can review more at any time (the
   review page saves progress between sittings;
   The progress file
   holds pair ids and answers only, the key staying in the pipeline's
