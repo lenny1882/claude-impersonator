@@ -191,4 +191,43 @@ def build(items=None, log=print):
                           "reference_count": count_phrase(theirs, g)})
     log(f"  ok    stats: {len(items)} voice items over {len(auds)} audiences; "
         f"never-say list {len(never)} phrases ({len(kept)} from colleagues)")
-    return {"schema_version": 1, "audiences": auds, "spelling": spelling, "never_say": never}
+    return {"schema_version": 1, "audiences": auds, "spelling": spelling, "never_say": never,
+            "quoted": quoted_rates(items)}
+
+
+QUOTE = re.compile(r"(?:(?<=^)|(?<=[\s(]))['\"\u2018\u201c]([^'\"\u2019\u201d]{2,40}?)['\"\u2019\u201d](?=[\s,.;:)!?]|$)")
+
+
+def quoted(rule):
+    """The short phrases a guide rule quotes as self-01's wording: up to 3
+    words of letters only (no code, markdown, emoji names or ellipses)."""
+    out = []
+    for m in QUOTE.finditer(rule):
+        q = m.group(1).strip(" .,-!?")
+        if (q and re.fullmatch(r"[A-Za-z' ,]+", q) and len(q.split()) <= 3):
+            out.append(q.lower())
+    return out
+
+
+def quoted_rates(items):
+    """{audience: {phrase: share of messages using it}} for every phrase the
+    corpus guide's rules quote, so the drafter can see how rarely each is
+    written. Empty before the guide is written."""
+    g = state.read_json(state.path("voice", "corpus-guide.json"), None)
+    if not g:
+        return {}
+    rules = list(g.get("general", [])) + list(g.get("combinations", []))
+    for a in g.get("audiences", {}).values():
+        rules += a.get("rules", []) + [r for rs in a.get("purposes", {}).values() for r in rs]
+    phrases = sorted({q for r in rules for q in quoted(r)})
+    texts = defaultdict(list)
+    for it in items:
+        texts[it["audience"]].append(voice.shown(it["text"]).lower())
+    out = {}
+    for aud, ts in sorted(texts.items()):
+        n = max(1, len(ts))
+        out[aud] = {}
+        for q in phrases:
+            rx = re.compile(r"(?<![a-z0-9])" + re.escape(q) + r"(?![a-z0-9])")
+            out[aud][q] = round(sum(1 for t in ts if rx.search(t)) / n, 4)
+    return out

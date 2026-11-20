@@ -213,6 +213,9 @@ def assemble(build_time):
             "audiences": cg.get("audiences", {}), "jira": jira}
 
 
+RARE_QUOTED = 0.02
+
+
 def render(g, stats, audience, purposes):
     """The guide text a draft for audience and purposes reads: the same
     sections voice-runtime's `guide` gives (validation drafts with it)."""
@@ -245,6 +248,20 @@ def render(g, stats, audience, purposes):
             if sp:
                 out.append(f"Measured, to {audience} when the purpose is {p}: median {sp['median_words']} "
                            f"words (90% under {sp['p90_words']}), over {sp['messages']} messages.")
+    shown_rules = list(g.get("general", [])) + list(a.get("rules", []))
+    for p in purposes:
+        shown_rules += a.get("purposes", {}).get(p, [])
+    if len(purposes) > 1:
+        shown_rules += list(g.get("combinations", []))
+    from .voicestats import quoted
+    rates = (stats or {}).get("quoted", {}).get(audience, {})
+    rare = sorted({q for r in shown_rules for q in quoted(r) if q in rates and rates[q] < RARE_QUOTED},
+                  key=lambda q: (rates[q], q))
+    if rare:
+        out.append(f"Share of self-01's messages to {audience} holding each word quoted in the rules above ("
+                   "messages): " + ", ".join(f'"{q}" {rates[q]:.1%}' for q in rare) +
+                   ". Most messages use none of them: use one only where the examples for this message do "
+                   "(a word the brief needs is always fine).")
     ns = [x["phrase"] for x in (stats or {}).get("never_say", [])]
     if ns:
         out.append("self-01 never or almost never writes: " + "; ".join(f'"{p}"' for p in ns[:80]))

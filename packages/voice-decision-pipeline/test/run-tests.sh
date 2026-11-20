@@ -1024,6 +1024,20 @@ it = voice.load()[0]
 assert "nothing more: no question, offer, mention, pleasantry or sign-off" in validate.draft_prompt(it, ["ask"], [], "brief: x")
 assert "an @mention, or their name in the text" in validate.BRIEF_SYSTEM
 EOF
+check "drafts are told how rarely the guide's quoted words appear, and to write as briefly and plainly as self-01" vpy <<'EOF'
+from vdp import guide, state, validate, voice, voicestats
+assert voicestats.quoted("Use 'Splendid tidings', 'Fair winds' or 'Quite possibly', not 'It'd snow on -', '**x**' or 'a b c d'.") == ["splendid tidings", "fair winds", "quite possibly"]
+g = state.read_json(state.path("voice", "corpus-guide.json"))
+g["general"] = list(g["general"]) + ["Thank with 'Splendid tidings'."]
+state.write_json(state.path("voice", "corpus-guide.json"), g)
+items = voice.load()
+st = voicestats.build(items, log=lambda *a: None)
+aud = sorted(st["quoted"])[0]
+assert st["quoted"][aud]["splendid tidings"] == 0.0
+txt = guide.render(guide.assemble("validation"), st, aud, ["thank"])
+assert f"Share of self-01's messages to {aud} holding each word quoted in the rules above" in txt and '"splendid tidings" 0.0%' in txt, txt
+assert "as few words as self-01 would" in validate.DRAFT_SYSTEM and "plain instruction" in validate.DRAFT_SYSTEM
+EOF
 check "never-say phrases hold no pseudonym word, contraction tail, emoji name or placeholder" vpy <<'EOF'
 from vdp import voicestats
 words = {"i", "client", "email", "to", "mail", "care", "don", "slightly", "smiling", "face", "not", "m", "take", "a", "look"}

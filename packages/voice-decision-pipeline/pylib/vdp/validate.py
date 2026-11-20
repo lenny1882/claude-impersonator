@@ -62,7 +62,9 @@ DRAWS = 20000
 # and the brief says how a message addresses someone.
 # "brief-5": the never-say list without pseudonym words, contraction tails,
 # emoji names or placeholders.
-METHOD = "brief-5"
+# "brief-6": the drafter writes as briefly and loosely as self-01, asks as
+# plainly, and is shown how rarely the guide's quoted words appear.
+METHOD = "brief-6"
 PAIRS_PER_AUDIENCE = 12
 WORST, RANDOM = 20, 10
 
@@ -70,6 +72,16 @@ DRAFT_SYSTEM = """You draft a message as self-01, in self-01's own voice, follow
 and matching the example messages self-01 really wrote. Names are pseudonyms (colleague-07,
 client-03, product-04); keep using them. [code] stands for code left out: write [code] where
 self-01 would paste code. Reply with the message text only: no preamble, no quotation marks.
+
+How to write it:
+- Use as few words as self-01 would. Leave unsaid what the conversation already makes clear:
+  no softener, no restated context, no reason the brief doesn't give.
+- Phrase a request as self-01 does to this audience, often as a plain instruction or a bare question; say
+  "please" only where the examples for this kind of message do.
+- Keep self-01's loose phrasing; don't turn it into complete, polished sentences.
+- Keep self-01's own words and idioms; don't swap in a stock phrase.
+- Few of self-01's messages hold the guide's quoted words: don't add one for flavour,
+  only where the examples for this moment use it.
 
 """
 
