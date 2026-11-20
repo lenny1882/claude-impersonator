@@ -398,7 +398,10 @@ subagent loads the skill is open (§8.2).
   once links and code are hidden, are drafted, scored and paired: one too
   short, mostly code or only a link says nothing about voice.
   Validation runs
-  again if the drafting model changes.
+  again if the drafting model changes. The drafter is told to write as
+  briefly and loosely as self-01, to ask as plainly, and how rarely each
+  word the guide's rules quote appears in the owner's messages to that audience,
+  so a typical word is used where the owner's examples use it, not for flavour.
 - In parallel: the owner sees 60 blind pairs (their real message and the draft,
   shuffled), 12 per audience across the five corpus audiences (not Jira), covering as many of
   the 11 purposes as each audience's held-back messages allow. For
