@@ -16,7 +16,8 @@ Rows carry METHOD; rows written without a brief have none and are ignored,
 so a run resumes only its own method. KEPT names older methods whose rows
 still count for some audiences: a message there with no METHOD row keeps its
 old drafts, so a drafter change can be validated for one audience alone, and
-'voice pairs --redraw' draws that audience's pairs again from the new drafts.
+'voice pairs --redraw' drops that audience's pairs and draws a fresh batch
+from messages never paired.
 
 Exemplars are picked as voice-runtime picks them: the pool narrowed to the
 audience and to any of the purposes, then the closest by similarity to the
@@ -357,6 +358,8 @@ def answers_file():
 
 def make_pairs(audience=None, log=print):
     """12 pairs per corpus audience, or 12 more for one audience."""
+    if audience is not None:
+        _audience(audience)
     run = run_no()
     k = best_count(run)
     if k is None:
@@ -434,36 +437,57 @@ def drop_pairs(ids, reason, log=print):
     return cur
 
 
-def redraw(aud, log=print):
-    """Drop every pair of one audience and draw as many again from its current
-    drafts, after its drafts were written again under a new METHOD. The
-    dropped pairs and their answers stay in the files, marked."""
+def _audience(aud):
     if aud not in voice.CORPUS_AUDIENCES:
         raise SystemExit(f"voice-decision-pipeline: not an audience: {aud}; "
                          f"one of {', '.join(voice.CORPUS_AUDIENCES)}")
+
+
+def redraw(aud, log=print):
+    """After an audience's drafts are written again under a new METHOD: drop
+    every pair of it still in use and draw a fresh batch of
+    PAIRS_PER_AUDIENCE, never more, only from messages never in any pair, so
+    the owner never judges a message whose real side they have seen.
+    With fewer than a batch of those, it draws none and holds back as
+    many more as the batch needs; 'voice validate' drafts them and
+    'voice pairs --more' draws the batch. Dropped pairs and their answers
+    stay in the files, marked with why."""
+    _audience(aud)
     run = run_no()
     cur = state.read_json(pairs_file(), None)
     if not cur or cur["run"] != run:
         raise SystemExit("voice-decision-pipeline: no pairs for this run; run 'voice pairs' first")
-    old = [p["pair"] for p in active(cur) if p["audience"] == aud]
-    if not old:
-        raise SystemExit(f"voice-decision-pipeline: no {aud} pairs to draw again")
     cur.setdefault("dropped", {})
-    for i in old:
-        cur["dropped"][i] = f"drafted again under {METHOD}"
+    old = [p for p in active(cur) if p["audience"] == aud]
+    for p in old:
+        seen = any(q["id"] == p["id"] and q["pair"] != p["pair"] for q in cur["pairs"])
+        cur["dropped"][p["pair"]] = ("its message was already in an earlier pair" if seen
+                                     else f"replaced: drafts written again under {METHOD}")
     key = state.read_json(key_file(), {}) or {}
-    used = {p["id"] for p in active(cur)}
+    used = {p["id"] for p in cur["pairs"]}
     items = {it["id"]: it for it in voice.load()}
     lab = labels.final()
     drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run)
-              if r["k"] == cur["k"] and r.get("method") == METHOD}
-    before = len(cur["pairs"])
-    _draw(cur, key, used, items, lab, drafts, aud, len(old))
-    new = [p["pair"] for p in cur["pairs"][before:]]
+              if r["k"] == cur["k"] and r.get("method") == METHOD and r["id"] not in used
+              and r["id"] in items and items[r["id"]]["audience"] == aud}
+    log(f"  ok    dropped {len(old)} {aud} pair{'' if len(old) == 1 else 's'}, kept in the files, marked")
+    if len(drafts) >= PAIRS_PER_AUDIENCE:
+        before = len(cur["pairs"])
+        _draw(cur, key, used, items, lab, drafts, aud, PAIRS_PER_AUDIENCE)
+        new = [p["pair"] for p in cur["pairs"][before:]]
+        log(f"  ok    drew {len(new)} {aud} pairs from {METHOD} drafts of messages never paired: {new[0]} to {new[-1]}")
     state.write_json(key_file(), key)
     state.write_json(pairs_file(), cur)
-    log(f"  ok    dropped {len(old)} {aud} pairs, drew {len(new)} from {METHOD} drafts"
-        + (f": {new[0]} to {new[-1]}" if new else ""))
+    if len(drafts) < PAIRS_PER_AUDIENCE:
+        judged = {r["id"] for r in rows("judge.jsonl", run) if r.get("method") == METHOD}
+        waiting = {i for i, a in _COUNTED["aud"].items() if a == aud and i not in judged and i not in used}
+        need = PAIRS_PER_AUDIENCE - len(drafts) - len(waiting)
+        log(f"  --    {len(drafts)} {aud} message{'' if len(drafts) == 1 else 's'} drafted under {METHOD} and "
+            f"never paired, {len(waiting)} held back and not drafted yet; a batch is {PAIRS_PER_AUDIENCE}")
+        if need > 0:
+            pool.holdout_more(aud, need, log=log)
+        else:
+            log(f"  --    run 'voice validate' to draft them, then 'voice pairs --more {aud}'")
     return cur
 
 

@@ -1176,44 +1176,84 @@ finally:
         open(p, "w").write(t)
     validate.answer("pair", first, pick=was)
 EOF
-check "a kept older method's rows count for its audiences; validate drafts only the rest again, and --redraw draws their pairs again" vpy <<EOF
+check "a kept older method's rows count for its audiences; validate drafts only the rest again" vpy <<EOF
 import json, os, subprocess, sys
-from vdp import state, validate
+from vdp import guide, pool, state, validate
 V = lambda n: state.path("validation", n)
-files = [V(n) for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl")] + [validate.pairs_file(), validate.key_file()]
-keep = {p: open(p).read() for p in files}
-try:
-    old = next(iter(validate.KEPT))
-    for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl"):
-        rs = [dict(json.loads(l), method=old) for l in keep[V(n)].splitlines()]
-        open(V(n), "w").write("".join(json.dumps(r) + "\n" for r in rs))
-    aud = validate._COUNTED["aud"] if validate._COUNTED else None
-    validate.counted(); aud = validate._COUNTED["aud"]
-    kept = {i for i, a in aud.items() if a in validate.KEPT[old]}
-    redo = set(aud) - kept
-    assert kept and redo, (len(kept), len(redo))
-    assert {r["id"] for r in validate.rows("judge.jsonl", 1)} == kept
-    env = dict(os.environ, VDP_CLAUDE="$VBIN/claude")
-    out = subprocess.run([sys.executable, "-m", "vdp", "voice", "validate"], env=env, capture_output=True, text=True, check=True).stdout
-    assert f"== validate run 1: {len(redo)} of {len(aud)} " in out, out
-    js = validate.rows("judge.jsonl", 1)
-    assert len(js) == 3 * len(aud) and {r["id"] for r in js if r["method"] == validate.METHOD} == redo
-    pr0 = state.read_json(validate.pairs_file())
-    a = sorted({aud[p["id"]] for p in validate.active(pr0) if p["id"] in redo})[0]
-    mine = [p for p in validate.active(pr0) if p["audience"] == a]
-    others = [p["pair"] for p in validate.active(pr0) if p["audience"] != a]
-    subprocess.run([sys.executable, "-m", "vdp", "voice", "pairs", "--redraw", a], env=env, check=True, capture_output=True)
-    pr = state.read_json(validate.pairs_file())
-    new = [p for p in validate.active(pr) if p["audience"] == a]
-    assert len(new) == len(mine) and not {p["pair"] for p in mine} & {p["pair"] for p in new}
-    assert all(pr["dropped"][p["pair"]] == f"drafted again under {validate.METHOD}" for p in mine)
-    assert [p["pair"] for p in validate.active(pr) if p["audience"] != a] == others
-    assert {p["id"] for p in new} <= redo
-    bad = subprocess.run([sys.executable, "-m", "vdp", "voice", "pairs", "--redraw", "nobody"], env=env, capture_output=True, text=True)
-    assert bad.returncode != 0 and "not an audience" in bad.stderr, bad.stderr
-finally:
-    for p, t in keep.items():
-        open(p, "w").write(t)
+files = [V(n) for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl")] + [validate.pairs_file(), validate.key_file(), pool.holdout_file(), guide.shown_file()]
+open(os.environ["VDP_STATE"] + "/kept-test.json", "w").write(json.dumps({p: open(p).read() for p in files}))
+old = next(iter(validate.KEPT))
+for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl"):
+    rs = [dict(json.loads(l), method=old) for l in open(V(n)).read().splitlines()]
+    open(V(n), "w").write("".join(json.dumps(r) + "\n" for r in rs))
+validate.counted(); aud = validate._COUNTED["aud"]
+kept = {i for i, a in aud.items() if a in validate.KEPT[old]}
+redo = set(aud) - kept
+assert kept and redo, (len(kept), len(redo))
+assert {r["id"] for r in validate.rows("judge.jsonl", 1)} == kept
+env = dict(os.environ, VDP_CLAUDE="$VBIN/claude")
+out = subprocess.run([sys.executable, "-m", "vdp", "voice", "validate"], env=env, capture_output=True, text=True, check=True).stdout
+assert f"== validate run 1: {len(redo)} of {len(aud)} " in out, out
+js = validate.rows("judge.jsonl", 1)
+assert len(js) == 3 * len(aud) and {r["id"] for r in js if r["method"] == validate.METHOD} == redo
+EOF
+check "--redraw drops an audience's pairs, marked with why, and draws at most one batch, only from messages never paired" vpy <<EOF
+import os, subprocess, sys
+from vdp import pool, state, validate
+env = dict(os.environ, VDP_CLAUDE="$VBIN/claude")
+vv = lambda *a: subprocess.run([sys.executable, "-m", "vdp", "voice", *a], env=env, capture_output=True, text=True)
+pr = state.read_json(validate.pairs_file()); key = state.read_json(validate.key_file())
+validate.counted()
+kept = set(validate.KEPT[next(iter(validate.KEPT))])
+a = sorted({p["audience"] for p in validate.active(pr)} - kept)[0]
+mine = [p for p in validate.active(pr) if p["audience"] == a]
+x = mine[0]
+pr.setdefault("dropped", {})[x["pair"]] = "test"
+pr["pairs"].append(dict(x, pair="p999")); key["p999"] = key[x["pair"]]
+state.write_json(validate.pairs_file(), pr); state.write_json(validate.key_file(), key)
+others = [p["pair"] for p in validate.active(pr) if p["audience"] != a]
+used = {p["id"] for p in pr["pairs"]}
+# The fixture's guide saw every message: say it never saw some of this
+# audience's, so there are messages left to hold back.
+from vdp import guide, voice
+items = {it["id"]: it for it in voice.load()}
+shown = guide.shown_ids()
+free = sorted(i for i in shown if items[i]["audience"] == a and pool.countable(items[i]) and i not in pool.held())
+assert free, "fixture has no message left to hold back"
+state.write_json(guide.shown_file(), {"ids": sorted(shown - set(free))})
+held0 = len(state.read_json(pool.holdout_file())["ids"])
+out = vv("pairs", "--redraw", a)
+assert out.returncode == 0, out.stderr
+pr2 = state.read_json(validate.pairs_file())
+for p in mine[1:]:
+    assert pr2["dropped"][p["pair"]] == f"replaced: drafts written again under {validate.METHOD}", pr2["dropped"][p["pair"]]
+assert pr2["dropped"]["p999"] == "its message was already in an earlier pair", pr2["dropped"]["p999"]
+assert [p["pair"] for p in validate.active(pr2) if p["audience"] != a] == others
+new = [p for p in validate.active(pr2) if p["audience"] == a]
+assert not {p["id"] for p in new} & used and len(new) in (0, validate.PAIRS_PER_AUDIENCE), (len(new), out.stdout)
+if not new:
+    held1 = len(state.read_json(pool.holdout_file())["ids"])
+    assert held1 > held0 and "held back" in out.stdout, out.stdout
+    again = vv("pairs", "--redraw", a)
+    assert again.returncode == 0 and "run 'voice validate'" in again.stdout, again.stdout
+    assert len(state.read_json(pool.holdout_file())["ids"]) == held1, "held back twice before validate"
+    assert vv("validate").returncode == 0
+    more = vv("pairs", "--more", a)
+    assert more.returncode == 0, more.stderr
+    new = [p for p in validate.active(state.read_json(validate.pairs_file())) if p["audience"] == a]
+    assert 0 < len(new) <= validate.PAIRS_PER_AUDIENCE and not {p["id"] for p in new} & used, len(new)
+print("drew", len(new), "held back" if held0 != len(state.read_json(pool.holdout_file())["ids"]) else "")
+bad = vv("pairs", "--redraw", "nobody")
+assert bad.returncode != 0 and "not an audience" in bad.stderr, bad.stderr
+bad = vv("pairs", "--more", "nobody")
+assert bad.returncode != 0 and "not an audience" in bad.stderr, bad.stderr
+EOF
+vpy <<'EOF'
+import json, os
+f = os.environ["VDP_STATE"] + "/kept-test.json"
+for p, t in json.load(open(f)).items():
+    open(p, "w").write(t)
+os.remove(f)
 EOF
 check "voice build: guide, exemplars, stats and build.json in a tarball, leak-checked" \
   bash -c "VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice build >/dev/null && t=\$(ls '$VST'/voice/builds/*/build-*.tar) && tar -tf \"\$t\" | sort | tr '\n' ' ' | grep -q 'voice-runtime/build.json voice-runtime/exemplars.json voice-runtime/guide.json voice-runtime/stats.json'"

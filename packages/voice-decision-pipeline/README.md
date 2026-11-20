@@ -173,8 +173,11 @@ Run in order, each in your own shell (each logs to
    answers stay in the files, marked. When the drafter changes for one
    audience only, `voice validate` drafts that audience again (the others
    keep their drafts under an older method `validate.KEPT` names), and
-   `voice pairs --redraw <audience>` drops all its pairs and draws as many
-   from the new drafts.
+   `voice pairs --redraw <audience>` drops all its pairs, marked with why,
+   and draws one fresh batch of 12, only from messages never in any pair.
+   With fewer than 12 of those it holds back as many more as the batch
+   needs; then `voice validate` drafts them and `voice pairs --more
+   <audience>` draws the batch.
 7. `voice build`: guide.json, exemplars.json, stats.json and build.json in a
    tarball in the state; the leak check reads them first and stops on any
    real name. `voice publish` sends it through `builds-sync` once the label

@@ -407,6 +407,10 @@ subagent loads the skill is open (§8.2).
   drafter change can be validated for one audience alone once the others have
   passed: only that audience's messages are drafted again, and only its pairs
   drawn again; the other audiences' drafts, pairs and answers stand.
+  New pairs are a fresh batch of 12, never
+  more, from messages never in any pair, held back afresh where needed: a
+  pair whose real side the owner has already seen isn't blind. Replaced pairs
+  and their answers stay in the files, marked with why.
 - In parallel: the owner sees 60 blind pairs (their real message and the draft,
   shuffled), 12 per audience across the five corpus audiences (not Jira), covering as many of
   the 11 purposes as each audience's held-back messages allow. For
