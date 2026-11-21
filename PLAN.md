@@ -1059,9 +1059,30 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 
 ### 8.1 Sources and corpus
 
-- A name that is also an ordinary word is replaced only where it is the
-  name, not wherever the word appears. The copies, labels, guide, statistics
-  and exemplars are then built again from the fixed copies.
+- A name that is also an ordinary word (every word of it in the SCOWL
+  dictionary) is replaced only where it is the name, not wherever the word
+  appears. The copies, guide, statistics and exemplars are then built again
+  from the fixed copies, followed by `voice guide` and a validation run.
+  Labels are kept: item ids and purposes don't depend on the pseudonym.
+- `tools/ordinary-word-counts.py` counts each such replacement per
+  pseudonym (field, code, case, spaCy tag) and the labelled items,
+  exemplars and holdouts it touches, printing pseudonyms and counts only.
+  The owner looks up the word behind each pseudonym in the map from their
+  own terminal, never through Claude.
+- Per term, the owner marks it a name, mostly an ordinary word, or both. A
+  spaCy name that is mostly an ordinary word is re-marked on the Names tab;
+  a mining keep that is no client product is reversed in its decision and
+  map entry.
+- For a term that is both, a sample of its untagged occurrences, marked
+  name or word by the owner, gives spaCy's miss rate before a rule is
+  chosen.
+- Fields spaCy never tags (repo, channel and reaction names, other source
+  fields) need a rule of their own.
+- A multi-word client alias matches with 0 to 3 separators. Open: the
+  phrase with a separator kept replaced everywhere unless it is a common
+  phrase, and the joined form, when it is a dictionary word, given the
+  single-word rule. The counts script gains the matched form's word count
+  and whether it matched joined.
 
 ### 8.2 Voice
 
