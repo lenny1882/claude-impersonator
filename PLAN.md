@@ -1066,23 +1066,33 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   Labels are kept: item ids and purposes don't depend on the pseudonym.
 - `tools/ordinary-word-counts.py` counts each such replacement per
   pseudonym (field, code, case, spaCy tag) and the labelled items,
-  exemplars and holdouts it touches, printing pseudonyms and counts only.
-  The owner looks up the word behind each pseudonym in the map from their
-  own terminal, never through Claude.
-- Per term, the owner marks it a name, mostly an ordinary word, or both. A
-  spaCy name that is mostly an ordinary word is re-marked on the Names tab;
-  a mining keep that is no client product is reversed in its decision and
-  map entry.
-- For a term that is both, a sample of its untagged occurrences, marked
-  name or word by the owner, gives spaCy's miss rate before a rule is
-  chosen.
+  exemplars and holdouts it touches, printing pseudonyms and counts only,
+  then ranks every term by occurrences with its places in the map entry's
+  alias list. `--spellings` adds the matched spellings on the terminal
+  only. `tools/term-spellings.sh` lists ranked single-word terms with
+  their spellings, most labelled items first; `tools/case-sensitive-names.py`
+  shows what case-sensitive matching changes per person term;
+  `tools/ordinary-word-examples.py` writes a local page of sample
+  occurrences per pseudonym and of the fields spaCy never tags. Each
+  prints real spellings to the terminal or a local page only, run by the
+  owner in their own terminal; their logs hold counts only.
+- Per term, the owner marks it a name, mostly an ordinary word, or both;
+  a question about a term in a list of spellings names its place in the
+  list. A spaCy name that is mostly an ordinary word is re-marked on the
+  Names tab; a mining keep that is no client product is reversed in its
+  decision and map entry; a client spelling that is mostly a word is
+  dropped from the client. Terms below 100 occurrences stay replaced.
+- A single-word person name matches case-sensitively, against the case of
+  its map spelling. A person term the owner marks on the review page's
+  Case tab matches in any case.
+- A term whose matched spellings are all several words is unchanged. A
+  multi-word client alias still matches with 0 to 3 separators, its
+  joined form included.
 - Fields spaCy never tags (repo, channel and reaction names, other source
-  fields) need a rule of their own.
-- A multi-word client alias matches with 0 to 3 separators. Open: the
-  phrase with a separator kept replaced everywhere unless it is a common
-  phrase, and the joined form, when it is a dictionary word, given the
-  single-word rule. The counts script gains the matched form's word count
-  and whether it matched joined.
+  fields) need a rule of their own, chosen from sample values.
+- The rule ships in one release: the case rule and Case tab, the mining
+  reversals and client spelling drops, then re-anonymise, `voice guide`
+  and a validation run.
 
 ### 8.2 Voice
 

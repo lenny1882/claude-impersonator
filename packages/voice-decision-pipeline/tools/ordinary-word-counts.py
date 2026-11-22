@@ -9,13 +9,21 @@ spaCy's cached tag covers it (person, organisation or product, or none).
 Then it counts the records and voice items that carry one, and how many of
 those were labelled, held out or are exemplars, to size a relabel.
 
+A second table ranks every term by occurrences, most first, with its case
+counts and labelled items, and marks where the count drops below 100.
+
 Prints pseudonyms and counts only: never a name, a matched word or any
 text. Reads the pipeline's state and writes nothing there. Runs spaCy on
 nothing: a text with no cached tag is counted as such.
 
+--spellings adds to each ranked row, on the terminal only, the spellings
+the term was matched as, with a count each. The log never gets them, so
+run it in a terminal of your own, never through a tool that passes the
+terminal's output on.
+
 Run with the pipeline's own interpreter and pylib:
   PYTHONPATH=~/.local/share/voice-decision-pipeline/pylib \
-    ~/.local/share/voice-decision-pipeline/venv/bin/python tools/ordinary-word-counts.py
+    ~/.local/share/voice-decision-pipeline/venv/bin/python tools/ordinary-word-counts.py [--spellings]
 Output also goes to $VDP_LOG_DIR (default /tmp)/vdp-ordinary-word-counts.log,
 appended under a dated header.
 """
@@ -31,8 +39,13 @@ _logf = open(LOG, "a", encoding="utf-8")
 os.chmod(LOG, 0o600)
 
 
-def log(s=""):
-    print(s, flush=True)
+SPELLINGS = "--spellings" in sys.argv[1:]
+RANK_MARK = 100
+
+
+def log(s="", screen_only=""):
+    """s goes to the terminal and the log; screen_only to the terminal only."""
+    print(s + screen_only, flush=True)
     _logf.write(s + "\n")
     _logf.flush()
 
@@ -115,7 +128,8 @@ def main():
         k = (pseud, form)
         if k not in terms:
             terms[k] = {"kind": kind, "occ": 0, "field": Counter(), "code": 0,
-                        "case": Counter(), "spacy": Counter(), "records": set()}
+                        "case": Counter(), "spacy": Counter(), "records": set(),
+                        "seen": Counter()}
             forms[pseud].add(form)
         return terms[k]
 
@@ -135,6 +149,7 @@ def main():
             st["field"][field] += 1
             st["case"][case_of(text[a:b])] += 1
             st["records"].add(rid)
+            st["seen"][text[a:b]] += 1
             if any(x < b and a < y for x, y in cr):
                 st["code"] += 1
                 continue
@@ -205,7 +220,8 @@ def main():
     for (pseud, form) in sorted(terms, key=lambda k: (k[0], sorted(forms[k[0]]).index(k[1]))):
         st = terms[(pseud, form)]
         n = sorted(forms[pseud]).index(form) + 1
-        ic = item_counts(st["records"])
+        ic = st["items"] = item_counts(st["records"])
+        st["n"] = n
         all_recs |= st["records"]
         f, c, sp = st["field"], st["case"], st["spacy"]
         log(f"  {pseud + ' t' + str(n):<19} {st['kind']:<7} {st['occ']:>5} "
@@ -214,6 +230,34 @@ def main():
             f"{sp['person']:>6} {sp['org/product']:>8} {sp['untagged']:>5} {sp['no cache']:>7} | "
             f"{len(st['records']):>4} {ic['direct']:>12} {ic['via context']:>4} "
             f"{ic['labelled']:>4} {ic['exemplars']:>5} {ic['held out']:>4}")
+    origin = {e["pseudonym"]: e.get("origin") or "" for e in amap.entries}
+    aliases = {e["pseudonym"]: e["aliases"] for e in amap.entries}
+
+    def positions(pseud, form):
+        """1-based places in the map entry's alias list that the term is,
+        so it can be found there without being printed."""
+        ps = [str(i) for i, a in enumerate(aliases.get(pseud, []), 1) if Replacer.norm(a) == form]
+        return ",".join(ps) or "-"
+    log("")
+    log("  ranked by occurrences, most first")
+    log("  rank term                kind    origin       occ | lower  cap upper mixed "
+        "| lower%  labelled items  alias places")
+    marked = False
+    for i, k in enumerate(sorted(terms, key=lambda k: (-terms[k]["occ"], k)), 1):
+        st, (pseud, form) = terms[k], k
+        if not marked and st["occ"] < RANK_MARK:
+            log(f"  -- below {RANK_MARK} occurrences --")
+            marked = True
+        c = st["case"]
+        extra = ""
+        if SPELLINGS:
+            extra = "  | " + ", ".join(f"{s} {n}" for s, n in st["seen"].most_common(4))
+            if len(st["seen"]) > 4:
+                extra += f", +{len(st['seen']) - 4} more"
+        log(f"  {i:>4} {pseud + ' t' + str(st['n']):<19} {st['kind']:<7} "
+            f"{origin.get(pseud, ''):<10} {st['occ']:>5} | {c['lower']:>5} {c['capital']:>4} "
+            f"{c['upper']:>5} {c['mixed']:>5} | {round(100 * c['lower'] / st['occ']):>5}% "
+            f"{st['items']['labelled']:>8}  {positions(pseud, form):>12}", extra)
     tot = item_counts(all_recs)
     nt = sum(sp["not tagged field"] for sp in (t["spacy"] for t in terms.values()))
     log("")
