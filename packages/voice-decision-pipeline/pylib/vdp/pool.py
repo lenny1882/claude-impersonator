@@ -65,11 +65,11 @@ def countable(it, c=None):
     return keep(it, c) and voice.shown_words(it["text"]) >= c["min_words"]
 
 
-def holdout_more(audience, n, log=print):
+def holdout_more(audience, n, log=print, exclude=()):
     """Hold back n more of an audience's messages, only as many as needed, when
     its pairs run out: chosen from messages that would
-    count, were never shown to the guide, and aren't held back already. They
-    leave the exemplar pool; validate then drafts them."""
+    count, were never shown to the guide, and aren't held back already, nor
+    in exclude. They leave the exemplar pool; validate then drafts them."""
     from . import guide
     cur = state.read_json(holdout_file(), None)
     if not cur:
@@ -80,7 +80,7 @@ def holdout_more(audience, n, log=print):
     c = config()
     cands = sorted(it["id"] for it in voice.load()
                    if it["audience"] == audience and it["id"] in lab and it["id"] not in held_now
-                   and it["id"] not in shown and countable(it, c))
+                   and it["id"] not in shown and it["id"] not in set(exclude) and countable(it, c))
     rnd = random.Random(f"holdout-{cur['run']}-more-{audience}-{len(held_now)}")
     rnd.shuffle(cands)
     add = sorted(cands[:n])

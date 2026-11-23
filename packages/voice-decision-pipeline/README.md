@@ -117,8 +117,8 @@ anonymising map, the mining and batch decisions, the inputs with their
     voice holdout [--fresh | --more <audience> [--count N]]
     voice rules
     voice guide
-    voice validate [--limit N]
-    voice pairs [--more <audience> | --drop <pair,...> | --redraw <audience>]
+    voice validate [--limit N] [--batch]
+    voice pairs [--more <audience> | --drop <pair,...> | --redraw <audience> | --redraw all]
     voice build
     voice publish
     voice status
@@ -181,7 +181,13 @@ Run in order, each in your own shell (each logs to
    and draws one fresh batch of 12, only from messages never in any pair.
    With fewer than 12 of those it holds back as many more as the batch
    needs; then `voice validate` drafts them and `voice pairs --more
-   <audience>` draws the batch.
+   <audience>` draws the batch. When the copies change for every audience,
+   a new method and `voice validate --batch` draft only one batch of 12 per
+   audience, from held-back messages you were never shown (in a pair, the
+   judge review, the label check or the disagreement grading), holding back
+   more that the guide never saw where an audience is short; the batch is
+   kept in `validation/batch-<method>.json`. `voice pairs --redraw all` then
+   drops every audience's pairs and draws its batch from them.
 7. `voice build`: guide.json, exemplars.json, stats.json and build.json in a
    tarball in the state; the leak check reads them first and stops on any
    real name, all but build.json's `embedding_identity`. The terms it finds

@@ -397,6 +397,11 @@ Not sources:
   used; a pair whose real side the owner has seen isn't blind.
   `voice pairs --redraw <audience>` drops an audience's pairs and draws one
   batch of 12 from messages never paired, holding back as many as needed.
+  After a change to the copies (§8.1), `voice validate --batch` drafts one
+  batch per audience under a new method, only from held-back messages the
+  owner was never shown in a pair, the judge review, the label check or the
+  disagreement grading, topped up from messages the guide never saw; `voice
+  pairs --redraw all` draws every audience's batch from them.
   Replaced pairs and their answers stay in the files, marked with why.
 - When an audience runs out of pairs, `voice holdout --more <audience>`
   holds back more (default 12), only from messages that count and that the

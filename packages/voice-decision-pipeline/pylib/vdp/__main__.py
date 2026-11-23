@@ -167,7 +167,7 @@ def cmd_probe(a):
 def cmd_voice(a):
     """The voice build's steps (PLAN §3), in order: label, label --second,
     holdout, guide, validate, pairs, build, publish."""
-    from . import guide, labels, pool, validate, voicebuild
+    from . import guide, labels, pool, validate, voice, voicebuild
     step = a.step
     if step == "label":
         with state.lock():
@@ -196,10 +196,13 @@ def cmd_voice(a):
             return 0 if guide.write() is not None else 6
     if step == "validate":
         with state.lock():
-            return validate.drafts_and_judge(limit=a.limit)
+            return validate.drafts_and_judge(limit=a.limit, only_batch=a.batch)
     if step == "pairs":
         with state.lock():
-            if a.redraw:
+            if a.redraw == "all":
+                for aud in voice.CORPUS_AUDIENCES:
+                    validate.redraw(aud)
+            elif a.redraw:
                 validate.redraw(a.redraw)
             elif a.drop:
                 validate.drop_pairs([x for x in a.drop.split(",") if x],
@@ -259,7 +262,8 @@ def main(argv=None):
     s.add_argument("--limit", type=int, help="validate: only the first N held-back messages")
     s.add_argument("--more", help="pairs: 12 more pairs for this audience; holdout: hold back more of it")
     s.add_argument("--count", type=int, default=12, help="holdout --more: how many more to hold back")
-    s.add_argument("--redraw", help="pairs: draw this audience's pairs again from its new drafts")
+    s.add_argument("--redraw", help="pairs: draw this audience's pairs again from its new drafts; 'all' for every audience")
+    s.add_argument("--batch", action="store_true", help="validate: draft only one batch per audience of messages never shown")
     s.add_argument("--drop", help="pairs: leave these pairs out of the result and draw as many new ones")
     s.set_defaults(f=cmd_voice)
     a = p.parse_args(argv)

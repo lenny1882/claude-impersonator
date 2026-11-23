@@ -1297,7 +1297,8 @@ from vdp import guide, pool, state, validate
 V = lambda n: state.path("validation", n)
 files = [V(n) for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl")] + [validate.pairs_file(), validate.key_file(), pool.holdout_file(), guide.shown_file()]
 open(os.environ["VDP_STATE"] + "/kept-test.json", "w").write(json.dumps({p: open(p).read() for p in files}))
-old = next(iter(validate.KEPT))
+old = "brief-old"
+validate.KEPT = {old: ("project-team", "one-to-one", "technical-team", "senior")}
 for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl"):
     rs = [dict(json.loads(l), method=old) for l in open(V(n)).read().splitlines()]
     open(V(n), "w").write("".join(json.dumps(r) + "\n" for r in rs))
@@ -1306,8 +1307,10 @@ kept = {i for i, a in aud.items() if a in validate.KEPT[old]}
 redo = set(aud) - kept
 assert kept and redo, (len(kept), len(redo))
 assert {r["id"] for r in validate.rows("judge.jsonl", 1)} == kept
-env = dict(os.environ, VDP_CLAUDE="$VBIN/claude")
-out = subprocess.run([sys.executable, "-m", "vdp", "voice", "validate"], env=env, capture_output=True, text=True, check=True).stdout
+os.environ["VDP_CLAUDE"] = "$VBIN/claude"
+logs = []
+assert validate.drafts_and_judge(log=logs.append) == 0
+out = "\n".join(logs)
 assert f"== validate run 1: {len(redo)} of {len(aud)} " in out, out
 js = validate.rows("judge.jsonl", 1)
 assert len(js) == 3 * len(aud) and {r["id"] for r in js if r["method"] == validate.METHOD} == redo
@@ -1319,7 +1322,7 @@ env = dict(os.environ, VDP_CLAUDE="$VBIN/claude")
 vv = lambda *a: subprocess.run([sys.executable, "-m", "vdp", "voice", *a], env=env, capture_output=True, text=True)
 pr = state.read_json(validate.pairs_file()); key = state.read_json(validate.key_file())
 validate.counted()
-kept = set(validate.KEPT[next(iter(validate.KEPT))])
+kept = set().union(*validate.KEPT.values())
 a = sorted({p["audience"] for p in validate.active(pr)} - kept)[0]
 mine = [p for p in validate.active(pr) if p["audience"] == a]
 x = mine[0]
@@ -1369,6 +1372,79 @@ f = os.environ["VDP_STATE"] + "/kept-test.json"
 for p, t in json.load(open(f)).items():
     open(p, "w").write(t)
 os.remove(f)
+EOF
+check "validate --batch drafts one batch per audience of messages never shown, once; pairs --redraw all draws from it" vpy <<EOF
+import json, os, subprocess, sys
+from vdp import pool, state, validate
+env = dict(os.environ, VDP_CLAUDE="$VBIN/claude")
+vv = lambda *a: subprocess.run([sys.executable, "-m", "vdp", "voice", *a], env=env, capture_output=True, text=True)
+V = lambda n: state.path("validation", n)
+from vdp import labels
+from vdp import guide as _g
+files = [V(n) for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl", "judge-review.json")] + \
+        [validate.pairs_file(), validate.key_file(), pool.holdout_file(), labels.check_file(),
+         labels.disagree_grades_file(), _g.shown_file()]
+keep = {p: open(p).read() for p in files if os.path.exists(p)}
+try:
+    for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl"):
+        rs = [dict(json.loads(l), method="brief-old") for l in open(V(n)).read().splitlines()]
+        open(V(n), "w").write("".join(json.dumps(r) + "\n" for r in rs))
+    pr = state.read_json(validate.pairs_file())
+    shown = pr["pairs"][0]["id"]
+    state.write_json(validate.pairs_file(), {"run": 1, "k": pr["k"], "pairs": [pr["pairs"][0]]})
+    if os.path.exists(V("judge-review.json")):
+        os.remove(V("judge-review.json"))
+    # The fixture's label check saw every message: say it saw one, the
+    # disagreement grading another, so the rest were never shown.
+    ok = sorted(validate.counted())
+    for f, i in ((labels.check_file(), ok[1]), (labels.disagree_grades_file(), ok[2])):
+        d = state.read_json(f, {}) or {}
+        d["ids"], d["previous"] = [i], []
+        state.write_json(f, d)
+    seen = validate.shown_before()
+    assert {ok[1], ok[2]} <= seen
+    # One audience has nothing left never shown; the guide never saw some of
+    # its other messages, so the batch holds those back to fill it.
+    from vdp import guide, voice
+    items = {it["id"]: it for it in voice.load()}
+    validate.counted(); aud = validate._COUNTED["aud"]
+    left = {a for i, a in aud.items() if i not in seen}
+    short = sorted(set(voice.CORPUS_AUDIENCES) - left)
+    free = []
+    if short:
+        a0 = short[0]
+        shown_g = guide.shown_ids()
+        free = sorted(i for i in shown_g if items[i]["audience"] == a0 and pool.countable(items[i])
+                      and i not in pool.held() and i not in seen)
+        state.write_json(guide.shown_file(), {"ids": sorted(shown_g - set(free))})
+    held0 = set(state.read_json(pool.holdout_file())["ids"])
+    assert short and free, ("fixture has no audience to top up", short, len(free))
+    assert shown in seen
+    out = vv("validate", "--batch")
+    assert out.returncode == 0, out.stderr
+    b = state.read_json(validate.batch_file())
+    ids = {i for v in b["ids"].values() for i in v}
+    assert ids and not ids & seen and b["method"] == validate.METHOD, b
+    assert all(len(v) <= validate.PAIRS_PER_AUDIENCE for v in b["ids"].values()), b
+    assert {r["id"] for r in validate.rows("judge.jsonl", 1)} == ids
+    if free:
+        added = set(state.read_json(pool.holdout_file())["ids"]) - held0
+        assert added and added <= set(free) and set(b["ids"][a0]) <= added, (len(added), b["ids"][a0])
+    again = vv("validate", "--batch")
+    assert "== validate run 1: 0 of " in again.stdout, again.stdout
+    r = vv("pairs", "--redraw", "all")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.count("dropped ") == 5, r.stdout
+    new = {p["id"] for p in validate.active(state.read_json(validate.pairs_file()))}
+    assert new <= ids, (new - ids)
+finally:
+    for p in files:
+        if p in keep:
+            open(p, "w").write(keep[p])
+        elif os.path.exists(p):
+            os.remove(p)
+    if os.path.exists(validate.batch_file()):
+        os.remove(validate.batch_file())
 EOF
 check "voice build: guide, exemplars, stats and build.json in a tarball, leak-checked" \
   bash -c "VDP_STATE='$VST' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice build >/dev/null && t=\$(ls '$VST'/voice/builds/*/build-*.tar) && tar -tf \"\$t\" | sort | tr '\n' ' ' | grep -q 'voice-runtime/build.json voice-runtime/exemplars.json voice-runtime/guide.json voice-runtime/stats.json'"
