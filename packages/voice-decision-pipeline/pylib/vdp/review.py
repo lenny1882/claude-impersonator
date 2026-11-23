@@ -128,7 +128,7 @@ for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria
 b.dataset.d===d?'true':'false');const n=document.getElementById('anyn');
 if(n)n.textContent=document.querySelectorAll('button[data-d=any][aria-pressed=true]').length})}
 function editclient(name,aliases){document.getElementById('cname').value=name;
-document.getElementById('caliases').value=aliases.join('\n');window.scrollTo(0,0);
+document.getElementById('caliases').value=aliases.join('\\n');window.scrollTo(0,0);
 document.getElementById('cname').focus()}
 function setaud(btn,id,a){post('/api/audience',{[id]:a}).then(()=>{
 for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria-pressed',
@@ -213,8 +213,15 @@ def voice_home():
 
 
 def clients_page():
+    from .anonmap import Map
+    amap = Map.load()
+
+    def pseud(v):
+        e = amap.get(f"client:{v['name'].lower()}")
+        return e["pseudonym"] if e else "not yet in the map"
     rows = "".join(
-        f"<tr><td class=term>{html.escape(v['name'])}</td>"
+        f"<tr><td class=term>{html.escape(v['name'])} "
+        f"<span class=meta>{html.escape(pseud(v))}</span></td>"
         f"<td>{html.escape(', '.join(v.get('aliases') or [])) or '—'}</td>"
         f"<td class=act><button onclick=\"editclient({html.escape(json.dumps(v['name']))},"
         f"{html.escape(json.dumps(list(v.get('aliases') or [])))})\">Edit</button>"

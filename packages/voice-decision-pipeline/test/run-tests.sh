@@ -592,6 +592,12 @@ check "its page says it can only be rejected" \
   bash -c "curl -sf '${URL}batch?source=bitbucket' | grep -q 'can only be rejected'"
 check "it can be rejected" test "$(post api/decide '{"name":"bitbucket-001","status":"rejected"}')" = 200
 check "clients: the page has the add form" bash -c "curl -sf '${URL}clients' | grep -q 'Add client'"
+if command -v node >/dev/null; then
+  check "review page: its script parses, so every button works" bash -c \
+    "'$PY' -c 'from vdp import review; print(review.JS)' > '$TMP/review.js' && node --check '$TMP/review.js'"
+else
+  no "review page: its script parses, so every button works" "node is not installed"
+fi
 check "case: the page serves and the home page links it" \
   bash -c "curl -sf '${URL}case' | grep -q 'Map case' && curl -sf '$URL' | grep -q \"href='/case'\""
 check "case: a mark for a pseudonym the page doesn't list is refused" \
@@ -602,6 +608,8 @@ check "clients: adding one is saved, with its identifier" \
   bash -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{\"add\":{\"name\":\"Marrowfield Retail\",\"aliases\":[\"MR\",\"\"]}}' '${URL}api/clients')\" = 200 ] && jq -e '.marrowfieldretail.aliases==[\"MR\"]' '$ST/added-clients.json' >/dev/null"
 check "clients: the page and home page list it" \
   bash -c "curl -sf '${URL}clients' | grep -q 'Marrowfield Retail' && curl -sf '$URL' | grep -q '1 added'"
+check "clients: each added client shows its pseudonym, or that it has none yet" \
+  bash -c "curl -sf '${URL}clients' | grep -Eq 'Marrowfield Retail <span class=meta>(client-[0-9]+|not yet in the map)</span>'"
 check "clients: a batch waits for anonymise after an added client" \
   "$PY" -c "from vdp import batches; g = batches.gates(); assert any('clients added' in x for x in g), g"
 check "clients: removing it is saved" \
