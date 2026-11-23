@@ -1139,7 +1139,7 @@ it = voice.load()[0]
 assert "nothing more: no question, offer, mention, pleasantry or sign-off" in validate.draft_prompt(it, ["ask"], [], "brief: x")
 assert "an @mention, or their name in the text" in validate.BRIEF_SYSTEM
 EOF
-check "drafts are told how rarely the guide's quoted words appear, and to write as briefly and plainly as self-01" vpy <<'EOF'
+check "clients' drafts get their drafting notes and the quoted words' shares; other audiences get neither" vpy <<'EOF'
 from vdp import guide, state, validate, voice, voicestats
 assert voicestats.quoted("Use 'Splendid tidings', 'Fair winds' or 'Quite possibly', not 'It'd snow on -', '**x**' or 'a b c d'.") == ["splendid tidings", "fair winds", "quite possibly"]
 g = state.read_json(state.path("voice", "corpus-guide.json"))
@@ -1147,11 +1147,65 @@ g["general"] = list(g["general"]) + ["Thank with 'Splendid tidings'."]
 state.write_json(state.path("voice", "corpus-guide.json"), g)
 items = voice.load()
 st = voicestats.build(items, log=lambda *a: None)
-aud = sorted(st["quoted"])[0]
-assert st["quoted"][aud]["splendid tidings"] == 0.0
-txt = guide.render(guide.assemble("validation"), st, aud, ["thank"])
-assert f"Share of self-01's messages to {aud} holding each word quoted in the rules above: " in txt and '"splendid tidings" 0.0%' in txt, txt
-assert "as few words as self-01 would" in validate.DRAFT_SYSTEM and "plain instruction" in validate.DRAFT_SYSTEM
+assert st["quoted"]["clients"]["splendid tidings"] == 0.0
+gd = guide.assemble("validation")
+txt = guide.render(gd, st, "clients", ["thank"])
+assert "Share of self-01's messages to clients holding each word quoted in the rules above: " in txt and '"splendid tidings" 0.0%' in txt, txt
+assert "How to write it:\n" + "\n".join("- " + r for r in guide.DRAFTING_NOTES["clients"]) in txt, txt
+assert txt.index("How to write it") < txt.index("Every audience:") and txt.index("own rules") < txt.index("How to write it") if "own rules" in txt else True
+other = [a for a in st["quoted"] if a != "clients"][0]
+assert st["quoted"][other]["splendid tidings"] == 0.0
+txt = guide.render(gd, st, other, ["thank"])
+assert "How to write it" not in txt and "holding each word quoted" not in txt, txt
+assert guide.DRAFTING_NOTES["clients"][0] not in validate.DRAFT_SYSTEM
+d = guide.drafting()
+assert d["notes"]["clients"] == guide.DRAFTING_NOTES["clients"] and d["quoted_rates_for"] == ["clients"]
+EOF
+check "every audience's drafts are shown the share of its messages holding each mark of style" vpy <<'EOF'
+from vdp import guide, voice, voicestats
+S = voicestats.STYLE
+for k, xs in {"spaced dash": ["a - b", "a \u2013 b"], "exclamation mark": ["hi!"], "emoji": [":smile:"],
+              "_emphasis_ or *bold*": ["a _b_ c", "*d* e"], "list": ["x:\n- one\n- two", "1. a"],
+              "swear word": ["you bastard", "they cocked it up", "bloody hell", "a pain in the arse"]}.items():
+    assert all(S[k].search(x) for x in xs), k
+for k, xs in {"spaced dash": ["a-b", "- item"], "_emphasis_ or *bold*": ["snake_case_name", "a * b * c", "[REDACTED:x_y]"],
+              "swear word": ["scrap", "Essex arsenal", "crappie"], "list": ["a - b"]}.items():
+    assert not any(S[k].search(x) for x in xs), k
+items = voice.load()
+st = voicestats.build(items, log=lambda *a: None)
+for a, v in st["audiences"].items():
+    assert sorted(v["style"]) == sorted(S) and all(0 <= x <= 1 for x in v["style"].values()), v
+    ts = [voicestats.prose(it["text"], it["tags"]).strip() for it in items if it["audience"] == a]
+    ts = [t for t in ts if t]
+    assert v["style"]["exclamation mark"] == round(sum(1 for t in ts if "!" in t) / len(ts), 3)
+    txt = guide.render(guide.assemble("validation"), st, a, ["ask"])
+    assert f"Share of self-01's messages to {a} holding each: spaced dash " in txt and "Use each about as often as that" in txt, txt
+EOF
+check "more pairs use the exemplar count the existing pairs were drawn at" vpy <<'EOF'
+from vdp import state, validate, voice
+run = validate.run_no()
+best = validate.best_count(run)
+assert best is not None, "no judged drafts in the fixture"
+k = [x for x in validate.COUNTS if x != best][0]
+saved = {f: state.read_json(f, None) for f in (validate.pairs_file(), validate.key_file())}
+try:
+    state.write_json(validate.pairs_file(), {"run": run, "k": k, "pairs": []})
+    state.write_json(validate.key_file(), {})
+    a = sorted({it["audience"] for it in voice.load() if it["audience"] in voice.CORPUS_AUDIENCES
+                and any(r["id"] == it["id"] for r in validate.rows("drafts.jsonl", run))})[0]
+    cur = validate.make_pairs(audience=a, log=lambda *x: None)
+    key = state.read_json(validate.key_file())
+    at_k = {r["id"]: r["text"] for r in validate.rows("drafts.jsonl", run) if r["k"] == k}
+    assert cur["pairs"] and cur["k"] == k
+    for p in cur["pairs"]:
+        assert p["b" if key[p["pair"]] == "A" else "a"] == at_k[p["id"]], p["pair"]
+finally:
+    for f, v in saved.items():
+        if v is None:
+            import os
+            os.path.exists(f) and os.remove(f)
+        else:
+            state.write_json(f, v)
 EOF
 check "never-say phrases hold no pseudonym word, contraction tail, emoji name or placeholder" vpy <<'EOF'
 from vdp import voicestats

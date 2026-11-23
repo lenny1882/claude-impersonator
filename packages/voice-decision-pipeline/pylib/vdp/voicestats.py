@@ -3,6 +3,9 @@
 Measured from the anonymised copies, so nothing in stats.json can carry a
 name: length, capitalisation, end punctuation, exclamation marks, emoji,
 openings and sign-offs per audience, and British against American spelling.
+Per audience too, the share of messages holding each mark of style in STYLE
+(a spaced dash, an exclamation mark, an emoji, _emphasis_, a list, a swear
+word), which the drafter is shown so it uses each about as often.
 Every voice item counts, the ones too short or too code-heavy to be
 exemplars included.
 
@@ -32,6 +35,16 @@ SPELLING = [("colour", "color"), ("behaviour", "behavior"), ("organise", "organi
             ("cancelled", "canceled"), ("travelling", "traveling"), ("grey", "gray"),
             ("optimise", "optimize"), ("summarise", "summarize"), ("customise", "customize"),
             ("initialise", "initialize"), ("serialise", "serialize"), ("normalise", "normalize")]
+# Marks of style whose share of messages per audience the drafter is shown.
+STYLE = {
+    "spaced dash": re.compile(r"\S\s[-\u2013\u2014]\s+\S"),
+    "exclamation mark": re.compile(r"!"),
+    "emoji": EMOJI,
+    "_emphasis_ or *bold*": re.compile(r"(?<![\w*_])([_*])(?=[^\s_*])[^_*\n]{1,60}?(?<=[^\s_*])\1(?![\w*_])"),
+    "list": re.compile(r"^[ \t]*(?:[-*\u2022]|\d{1,2}[.)])[ \t]+\S", re.M),
+    "swear word": re.compile(r"\b(?:fuck\w*|shit\w*|bastard\w*|bollocks|bloody|crap(?:py)?|arse(?:s|d|hole\w*)?|piss(?:ed|ing)?|"
+                             r"cock(?:ed|s)? ?up|cocked|wank\w*|twat\w*|knackered|sod)\b", re.I),
+}
 # Rare: under 1 use in 1,000 messages, or under a tenth of the colleagues' rate.
 RARE_RATE = 0.001
 RATIO = 0.1
@@ -141,6 +154,7 @@ def build(items=None, log=print):
             "full_stop_end": round(sum(1 for t in ts if t.rstrip().endswith(".")) / n, 3),
             "exclamation_per_message": round(sum(t.count("!") for t in ts) / n, 3),
             "emoji_per_message": round(sum(len(EMOJI.findall(t)) for t in ts) / n, 3),
+            "style": {k: round(sum(1 for t in ts if rx.search(t)) / n, 3) for k, rx in STYLE.items()},
             "openings": [[w, c] for w, c in opens.most_common(10) if c >= 3],
             "signoffs": [[w, c] for w, c in signs.most_common(10) if c >= 3],
             # Length per purpose, where at least PURPOSE_MIN messages carry it.

@@ -373,6 +373,20 @@ def bullets(out, title, items):
     out.append("")
 
 
+# The pipeline's rule for the words a guide rule quotes (voicestats.quoted):
+# up to 3 words of letters only, so their shares can be shown beside the rules.
+QUOTE = re.compile(r"(?:(?<=^)|(?<=[\s(]))['\"\u2018\u201c]([^'\"\u2019\u201d]{2,40}?)['\"\u2019\u201d](?=[\s,.;:)!?]|$)")
+
+
+def quoted(rule):
+    out = []
+    for m in QUOTE.finditer(rule):
+        q = m.group(1).strip(" .,-!?")
+        if q and re.fullmatch(r"[A-Za-z' ,]+", q) and len(q.split()) <= 3:
+            out.append(q.lower())
+    return out
+
+
 def cmd_guide(a):
     audience = check_audience(a.audience)
     purposes = split_purposes(a.purposes)
@@ -382,15 +396,21 @@ def cmd_guide(a):
     cell = (g.get("audiences") or {}).get(audience) or {}
 
     out = ["# Voice guide: %s; %s (build %s)" % (audience, ", ".join(purposes), b.build_time), ""]
+    dr = st.get("drafting") or {}
     bullets(out, "self-01's own rules (these win over every rule below)", g.get("own_rules"))
+    bullets(out, "How to write it", (dr.get("notes") or {}).get(audience))
     if audience == "jira":
         bullets(out, "Jira comments", g.get("jira"))
     bullets(out, "General", g.get("general"))
     bullets(out, "Audience: %s" % audience, cell.get("rules"))
     for p in purposes:
         bullets(out, "Purpose: %s" % p, (cell.get("purposes") or {}).get(p))
+    shown = [r for r in (g.get("general") or []) + (cell.get("rules") or []) if isinstance(r, str)]
+    for p in purposes:
+        shown += [r for r in (cell.get("purposes") or {}).get(p) or [] if isinstance(r, str)]
     if len(purposes) > 1:
         bullets(out, "Combining purposes", g.get("combinations"))
+        shown += [r for r in g.get("combinations") or [] if isinstance(r, str)]
 
     s = (st.get("audiences") or {}).get(audience)
     if s:
@@ -406,11 +426,29 @@ def cmd_guide(a):
                            ("emoji_per_message", "emoji")):
             if isinstance(s.get(key), (int, float)):
                 out.append("- %s per message: %.2f" % (label, s[key]))
+        style = s.get("style") or {}
+        if style:
+            out.append("- share of messages holding each: %s. Use each about as often: put one in "
+                       "only where the exemplars for this message have it, and keep it where they do"
+                       % ", ".join("%s %d%%" % (k, round(100 * v)) for k, v in style.items()
+                                   if isinstance(v, (int, float))))
         for key, label in (("openings", "openings"), ("signoffs", "sign-offs")):
             pairs = [p for p in s.get(key) or [] if isinstance(p, list) and len(p) == 2]
             if pairs:
                 out.append("- %s: %s" % (label, ", ".join('"%s" (%s)' % (w, n) for w, n in pairs)))
         out.append("")
+    if audience in (dr.get("quoted_rates_for") or []):
+        rates = (st.get("quoted") or {}).get(audience) or {}
+        below = dr.get("rare_below", 0)
+        rare = sorted({q for r in shown for q in quoted(r)
+                       if isinstance(rates.get(q), (int, float)) and rates[q] < below},
+                      key=lambda q: (rates[q], q))
+        if rare:
+            out.append("## Words the rules quote, by share of messages holding them")
+            out.append("- " + ", ".join('"%s" %.1f%%' % (q, 100 * rates[q]) for q in rare) +
+                       ". Most messages use none of them: use one only where the exemplars for "
+                       "this message do (a word the content needs is always fine).")
+            out.append("")
     sp = st.get("spelling") or {}
     if sp:
         out.append("## Spelling: British %s, American %s" % (sp.get("british", 0), sp.get("american", 0)))

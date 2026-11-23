@@ -352,6 +352,30 @@ def assemble(build_time):
 
 
 RARE_QUOTED = 0.02
+# Drafting notes per audience, shown before the guide's rules, and the
+# audiences shown how rarely each quoted word appears. Only the audiences a
+# blind test passed with them get them; the rest draft from the guide alone.
+DRAFTING_NOTES = {
+    "clients": [
+        "Match the examples' word count. Omit what the conversation already makes clear: "
+        "no softener, no restated context, no reason the brief doesn't give.",
+        "Word a request like the examples for this audience: often an instruction or a bare question, "
+        "with \"please\" only where they have it.",
+        "Keep the examples' loose phrasing; don't rewrite it as complete, polished sentences.",
+        "Prefer the examples' vocabulary to generic business wording.",
+        "Use a word the guide quotes only where the examples for this moment use it; most messages "
+        "hold none.",
+    ],
+}
+QUOTED_RATES_FOR = frozenset(DRAFTING_NOTES)
+
+
+def drafting():
+    """The drafting notes as a build carries them in stats.json, so
+    voice-runtime's guide gives each audience the same notes and quoted-word
+    shares validation drafted with."""
+    return {"notes": {a: list(rs) for a, rs in sorted(DRAFTING_NOTES.items())},
+            "quoted_rates_for": sorted(QUOTED_RATES_FOR), "rare_below": RARE_QUOTED}
 
 
 def render(g, stats, audience, purposes):
@@ -363,6 +387,8 @@ def render(g, stats, audience, purposes):
     if g.get("own_rules"):
         out.append("self-01's own rules (these win over every rule below):\n" +
                    "\n".join(f"- {r}" for r in g["own_rules"]))
+    if DRAFTING_NOTES.get(audience):
+        out.append("How to write it:\n" + "\n".join(f"- {r}" for r in DRAFTING_NOTES[audience]))
     if audience == "jira":
         out.append("Jira comments:\n" + "\n".join(f"- {r}" for r in g.get("jira", [])))
         return "\n\n".join(out)
@@ -383,6 +409,11 @@ def render(g, stats, audience, purposes):
                    f"{int(st['full_stop_end'] * 100)}% end with a full stop; "
                    f"{st['exclamation_per_message']} exclamation marks and "
                    f"{st['emoji_per_message']} emoji per message.")
+        if st.get("style"):
+            out.append(f"Share of self-01's messages to {audience} holding each: " +
+                       ", ".join(f"{k} {v:.0%}" for k, v in st["style"].items()) +
+                       ". Use each about as often as that: put one in only where the examples for "
+                       "this message have it, and keep it where they do.")
         for p in purposes:
             sp = st.get("purposes", {}).get(p)
             if sp:
@@ -394,7 +425,7 @@ def render(g, stats, audience, purposes):
     if len(purposes) > 1:
         shown_rules += list(g.get("combinations", []))
     from .voicestats import quoted
-    rates = (stats or {}).get("quoted", {}).get(audience, {})
+    rates = (stats or {}).get("quoted", {}).get(audience, {}) if audience in QUOTED_RATES_FOR else {}
     rare = sorted({q for r in shown_rules for q in quoted(r) if q in rates and rates[q] < RARE_QUOTED},
                   key=lambda q: (rates[q], q))
     if rare:

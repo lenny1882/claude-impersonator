@@ -75,7 +75,9 @@ DRAWS = 20000
 # plainly, and is shown how rarely the guide's quoted words appear.
 # "brief-7": the drafter above, drafting from anonymised copies that apply
 # the case rule (PLAN §8.1).
-METHOD = "brief-7"
+# "brief-8": each audience's own drafting notes (guide.DRAFTING_NOTES) and
+# style shares (voicestats.STYLE).
+METHOD = "brief-8"
 # Audiences listed under a KEPT method keep that method's drafts, pairs and
 # answers; the rest are drafted under METHOD.
 KEPT = {}
@@ -86,16 +88,6 @@ DRAFT_SYSTEM = """You draft a message as self-01, in self-01's own voice, follow
 and matching the example messages self-01 really wrote. Names are pseudonyms (colleague-07,
 client-03, product-04); keep using them. [code] stands for code left out: write [code] where
 self-01 would paste code. Reply with the message text only: no preamble, no quotation marks.
-
-How to write it:
-- Use as few words as self-01 would. Leave unsaid what the conversation already makes clear:
-  no softener, no restated context, no reason the brief doesn't give.
-- Phrase a request as self-01 does to this audience, often as a plain instruction or a bare question; say
-  "please" only where the examples for this kind of message do.
-- Keep self-01's loose phrasing; don't turn it into complete, polished sentences.
-- Keep self-01's own words and idioms; don't swap in a stock phrase.
-- Few of self-01's messages hold the guide's quoted words: don't add one for flavour,
-  only where the examples for this moment use it.
 
 """
 
@@ -433,6 +425,8 @@ def make_pairs(audience=None, log=print):
     if cur and audience is None:
         return cur
     cur = cur or {"run": run, "k": k, "pairs": []}
+    # More pairs use the exemplar count the existing pairs were drawn at.
+    k = cur["k"]
     key = state.read_json(key_file(), {}) if cur["pairs"] else {}
     used = {p["id"] for p in cur["pairs"]}
     items = {it["id"]: it for it in voice.load()}

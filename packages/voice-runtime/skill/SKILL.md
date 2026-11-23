@@ -66,15 +66,11 @@ voice-runtime status
    use an exclamation mark to that audience, the draft does too. The
    CLAUDE.md rules still govern everything said to the user around the draft.
 
-   Match the length and register of the exemplars:
-   - Cut what the conversation already makes clear: softeners, restated
-     context, reasons nobody gave.
-   - Phrase a request as the exemplars for this kind of message do, often
-     as an instruction or a bare question.
-   - Leave fragments as fragments.
-   - Use the user's idioms rather than stock phrases.
-   - The guide gives the rate of each typical word it quotes; use one only
-     where the exemplars for this moment do.
+   Match the length and register of the exemplars, and follow the guide's
+   "How to write it" section where it has one. Use each mark of style the
+   guide measures (spaced dash, exclamation mark, emoji, emphasis, list,
+   swear word) about as often as its share of messages: only where the
+   exemplars for this moment have one, and keep it where they do.
 
    Where a tool sets the format, keep the tool's structure and write only the
    wording inside it in the user's voice: the PR description templates in

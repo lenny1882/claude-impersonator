@@ -27,6 +27,13 @@ then drafts from the guide and the closest exemplars, saves the draft, and
 waits for your approval of the exact text. Nothing is sent without it. Once
 you approve or drop it, the final version is recorded.
 
+`guide` gives the owner's own rules, the audience's drafting notes where
+the build has them, the guide's rules for the audience and purposes, and the
+measured style: length, capitals, end marks, and the share of messages
+holding each mark of style (spaced dash, exclamation mark, emoji, emphasis,
+list, swear word); for an audience the build names, the share of messages
+holding each word the rules quote.
+
 When the voice model can't be used, the skill says so first, with the reason
 and its fix, and offers a draft marked as not in your voice:
 

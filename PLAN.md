@@ -377,8 +377,16 @@ Not sources:
   words; Opus 5.5 drafts from the brief, its context, audience and purposes,
   with 3, 5 and 8 exemplars. The best mean judge score sets the build's
   exemplar count.
-- The drafter is told to write as briefly, loosely and plainly as self-01,
-  and how rarely each word the guide's rules quote appears.
+- Drafting notes are set per audience (`guide.DRAFTING_NOTES`), and only an
+  audience whose blind test passed with them gets them: clients' drafter gets
+  notes on length, requests, phrasing and idioms, and the share of messages
+  holding each word the guide's rules quote; the other audiences draft from
+  the guide alone. A build carries the notes in `stats.json`, so the
+  runtime's guide gives each audience the notes validation drafted with.
+- Every audience's drafter is shown the share of its messages holding each
+  mark of style: a spaced dash, an exclamation mark, an emoji, `_emphasis_`
+  or `*bold*`, a list, a swear word (`voicestats.STYLE`), and is told to use
+  each about as often, where the exemplars for the message have it.
 - Validation runs again if the drafting model changes. A drafter change can
   be validated for one audience alone: only that audience is drafted and
   paired again, and the other audiences' drafts, pairs and answers stand

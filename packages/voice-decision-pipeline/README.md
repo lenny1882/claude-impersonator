@@ -167,7 +167,10 @@ Run in order, each in your own shell (each logs to
    mean score sets the build's exemplar count. Only held-back messages the
    exemplar pool's own rule would keep (at least 4 words, under half code),
    with 4 words still left once links and code show as [url] and [code],
-   are drafted, scored and paired. Four calls a message;
+   are drafted, scored and paired. The drafter gets each audience's own
+   drafting notes (clients only, `guide.DRAFTING_NOTES`) and the share of
+   that audience's messages holding each mark of style (spaced dash,
+   exclamation mark, emoji, emphasis, list, swear word). Four calls a message;
    `--limit N` does the first N, and a later run carries on from there.
 6. `voice pairs`, then on the review page: 60 blind pairs (12 per audience),
    the judge's 20 worst and 10 random drafts, and the report: counts,
