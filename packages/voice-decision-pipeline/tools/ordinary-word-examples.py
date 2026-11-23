@@ -53,6 +53,7 @@ from vdp.review import page  # noqa: E402
 NAME_KINDS = {"person", "client", "product"}
 WORD_SPLIT = re.compile(r"[\s\-_.]+")
 CONTEXT = 100
+PROGRESS = 5000                  # records between progress lines
 
 
 def ordinary(s, words):
@@ -119,16 +120,21 @@ def main():
         return [s for s in rep.spans(text, False)
                 if s[3] in NAME_KINDS and ordinary(text[s[0]:s[1]], words)]
 
-    hits = defaultdict(list)         # pseudonym -> (record id, field, text, span)
+    hits = defaultdict(list)         # pseudonym -> (record id, field, text, span, text's spans)
     fields = defaultdict(Counter)    # field -> value -> occurrences in records
     fspans = {}                      # (field, value) -> spans
     fkind = defaultdict(Counter)     # field -> pseudonym kind -> occurrences
     n_rec = 0
+    t0 = time.time()
     for s in SOURCES:
         for r in state.read_jsonl(state.corpus_file(s)):
             n_rec += 1
-            texts = [("text", r.get("text") or "")]
-            texts += [(k, v) for k in SENT_FIELDS_NER
+            if n_rec % PROGRESS == 0:
+                log(f"  read {n_rec} records ({s}), {time.time() - t0:.0f} s")
+            # (field, text, its spans or None when not yet computed):
+            # each string's spans are computed once.
+            texts = [("text", r.get("text") or "", None)]
+            texts += [(k, v, None) for k in SENT_FIELDS_NER
                       if isinstance(v := (r.get("source_fields") or {}).get(k), str)]
             for f, v in untagged_strings(r, rep):
                 sp = spans_of(v) if v else []
@@ -138,13 +144,15 @@ def main():
                 fspans[(f, v)] = sp
                 for x in sp:
                     fkind[f][x[3]] += 1
-                texts.append((f, v))
+                texts.append((f, v, sp))
             if want:
-                for f, t in texts:
-                    for x in spans_of(t) if t else []:
+                for f, t, sp in texts:
+                    if sp is None:
+                        sp = spans_of(t) if t else []
+                    for x in sp:
                         if x[2] in want:
-                            hits[x[2]].append((r["id"], f, t, x))
-    log(f"  corpus records: {n_rec}")
+                            hits[x[2]].append((r["id"], f, t, x, sp))
+    log(f"  corpus records: {n_rec}, {time.time() - t0:.0f} s")
 
     rnd = random.Random(1)
     body = [f"<p class=meta>Local page: real text, read it here only. Made "
@@ -154,16 +162,16 @@ def main():
         body.append("<h2>Pseudonyms</h2>")
     for p in args.pseudonyms:
         hs = hits.get(p, [])
-        by_field = Counter(f for _, f, _, _ in hs)
+        by_field = Counter(f for _, f, _, _, _ in hs)
         log(f"  {p}: {len(hs)} occurrences ({', '.join(f'{f} {n}' for f, n in by_field.most_common())})")
         pick = rnd.sample(hs, min(args.sample, len(hs)))
         body.append(f"<h3>{html.escape(p)}</h3><p class=meta>{len(hs)} occurrences; "
                     f"{len(pick)} drawn at random. By field: "
                     f"{html.escape(', '.join(f'{f} {n}' for f, n in by_field.most_common()))}</p>")
         rows = []
-        for rid, f, t, x in pick:
+        for rid, f, t, x, sp in pick:
             a, b = max(0, x[0] - CONTEXT), min(len(t), x[1] + CONTEXT)
-            near = [y for y in spans_of(t) if a <= y[0] and y[1] <= b]
+            near = [y for y in sp if a <= y[0] and y[1] <= b]
             rows.append(f"<tr><td class=meta>{html.escape(f)}</td><td><pre>"
                         f"{'…' if a else ''}{marked(t, near, a, b)}{'…' if b < len(t) else ''}"
                         f"</pre></td></tr>")
