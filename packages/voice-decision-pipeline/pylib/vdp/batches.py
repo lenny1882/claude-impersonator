@@ -84,6 +84,13 @@ def gates():
     if meta.get("added_hash", decisions_hash({})) != decisions_hash(added_clients()):
         reasons.append("clients added or changed since the anonymised copies were built: "
                        "run 'voice-decision-pipeline anonymise' again")
+    from .anonymise import STAND_IN_VERSION, case_marks
+    if meta.get("case_hash", decisions_hash({})) != decisions_hash(case_marks()):
+        reasons.append("Case marks changed since the anonymised copies were built: "
+                       "run 'voice-decision-pipeline anonymise' again")
+    if meta.get("stand_ins") != STAND_IN_VERSION:
+        reasons.append("the anonymised copies were built before Slack file names and links "
+                       "were replaced whole: run 'voice-decision-pipeline anonymise' again")
     if meta.get("urls") != URLS_VERSION:
         reasons.append("the anonymised copies were built before URLs were replaced: "
                        "run 'voice-decision-pipeline anonymise' again")

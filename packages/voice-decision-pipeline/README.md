@@ -32,9 +32,10 @@ that are each versioned, released and installed on their own.
 
 The review page lists the Slack conversations the inputs leave without an
 audience (group DMs outside the senior set) for you to assign, the single
-words only spaCy took for a name to mark a name or not a name, the candidate
-client product, store and project names to keep or strike, a form to add a
-client name the lists missed, with its other spellings and identifiers, then
+words only spaCy took for a name to mark a name or not a name, the people
+whose one-word name is also an ordinary word to mark "any case", the candidate
+client product, store and project names to keep or strike, a form to add or
+edit a client name the lists missed, with its other spellings and identifiers, then
 each source's batches of 50 anonymised items
 with every replacement highlighted. Approving a source's first batch is what
 lets later passes send it (`voice-decision-pipeline sendable <source>`).
@@ -206,6 +207,8 @@ files 600), never backed up:
 | `anonymising-map.json` | append-only: real id, aliases, role, pseudonym, origin |
 | `mining-candidates.json`, `mining-decisions.json` | candidate names and your keep or strike |
 | `added-clients.json` | clients added by hand, with their other spellings and identifiers |
+| `case-decisions.json` | people marked "any case" on Case, by pseudonym |
+| `stand-in-key` | the secret Slack file and link stand-ins are keyed with |
 | `name-candidates.json`, `name-decisions.json` | single words only spaCy took for a name, with counts; your name or not-a-name decisions |
 | `batches/`, `review-state.json` | drawn batches; per-source approvals and stops |
 | `index/` | `vectors.npy`, `ids.json`, `identity.json` |
@@ -285,7 +288,16 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   the lower-case count is at least the tagged count. Until you mark it, it
   is replaced only where spaCy tagged it; marked a name, everywhere in any
   case; marked not a name, nowhere. Dictionary keys inside source fields
-  and reaction names are replaced too. Pseudonyms are
+  and reaction names are replaced too. **Case rule:** a person's one-word
+  spelling that is also an ordinary word (in the bundled English
+  dictionary) is replaced only where it is written in its map case, in a
+  record's text, PR titles and the reply before a prompt; written in
+  another case it is taken for the word and left. A person marked "any
+  case" on the review page's Case has every spelling replaced in any case.
+  Source fields, channel and reaction names match in any case whatever the
+  mark. A Slack file name or attachment link is replaced whole by a stand-in
+  (`file-…`, `link-…`), the same value always the same stand-in, keyed with
+  a secret made once in the state. Pseudonyms are
   role-tagged (`self-01`, `colleague-07`, `client-contact-02`, `client-03`,
   `product-04`, `person-05`) and one person keeps one across every source; a
   Bitbucket account is matched to its Slack person by name.
@@ -294,7 +306,9 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   author; not the source name, tag types, ids or timestamps) for every full
   name, handle of 3 characters or more and email in `users.json`, the
   Bitbucket accounts' names, the map's aliases and unique first names,
-  first names two people share, and the client and kept product names. A
+  first names two people share, and the client and kept product names; a
+  spelling under the case rule is searched for in its map case only, and a
+  keep struck later not at all. A
   single word only spaCy found counts once marked a name; undecided ones
   are counted apart. The pipeline's own pseudonyms are skipped, so a word
   before one (`acme product-07`) doesn't spell a kept product's name with
@@ -334,14 +348,15 @@ reaction), `bot`, `reaction:<name>`, `attachment`, `approval`, `ask-user`,
   (check by hand, suggested keep, suggested strike, decided), each with its
   own keep-all and strike-all; a decided term leaves its section. A fifth,
   Earlier runs, lists terms decided in an earlier run that this run didn't
-  list, each with its decision, so a struck one can still be kept. Keep
-  means replace for good: a kept term is in the map, and striking it later
-  has no effect; reversing a keep means editing its decision and map entry
-  in the state.
+  list, each with its decision, so a struck one can still be kept. A keep
+  struck later is no longer replaced or searched for from the next
+  `anonymise`; its map entry and number stay, marked inactive, so the number
+  never passes to another term, and keeping it again restores it.
 - **Gates:** no batch is drawn while a mining candidate or a word on Names is
   undecided, or after a decision until `anonymise` has run again; nor after an audience is set on
   the review page until `extract slack` and then `anonymise` have run again;
-  nor after a client is added or removed, or the public host list changes,
+  nor after a client is added, edited or removed, a Case mark changes, or
+  the public host list changes,
   until `anonymise` has run again. A batch drawn before the last `anonymise`
   can only be rejected: its items are no longer what is sent.
 - **Index:** your Slack and Bitbucket voice items, each embedded with the

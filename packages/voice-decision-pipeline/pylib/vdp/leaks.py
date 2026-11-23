@@ -17,6 +17,10 @@ pseudonym inside it ("docs.product-04.com"), and that is accepted. Only a public
 identifier added by hand on the review page is searched for from 2
 characters.
 
+A person's single-word spelling under the case rule (anonymise.case_rule)
+is searched for in its map case only: written in another case it was left
+on purpose. A mining keep struck later (inactive) is not searched for.
+
 Only what is sent is searched: each record's text, source fields (keys
 included), reactions and author. The source name, tag types, ids and
 timestamps are the pipeline's own words, not the corpus's, and so are the
@@ -91,7 +95,7 @@ def terms(d, amap):
         add(p.get("nickname"), "bitbucket name", min_len=4)
     for e in amap.entries:
         kind = {"person": "person alias", "client": "client", "product": "product"}.get(e["kind"])
-        if not kind:
+        if not kind or e.get("inactive"):
             continue
         added = set(e.get("added_aliases") or [])
         for a in e.get("aliases", []):
@@ -104,12 +108,31 @@ def terms(d, amap):
     return out
 
 
+def term_regex(found, d, amap):
+    """The regex for found's terms, group 1 the term. A term only the case
+    rule's spellings give is searched for in those spellings' case; every
+    other term in any case."""
+    from .anonymise import case_rule, first_name_roles, slack_users
+    if not found:
+        return None
+    exact, anyc = case_rule(amap, shared_first=first_name_roles(slack_users(d), lambda u: "person")[1])
+    forms = {}
+    for x in exact:
+        if x.lower() not in anyc:
+            forms.setdefault(x.lower(), set()).add(x)
+    pats = []
+    for t in sorted(found, key=len, reverse=True):
+        if t in forms:
+            pats += [f"(?-i:{re.escape(x)})" for x in sorted(forms[t])]
+        else:
+            pats.append(re.escape(t))
+    return re.compile(r"(?<![A-Za-z0-9])(" + "|".join(pats) + r")(?![A-Za-z0-9])", re.IGNORECASE)
+
+
 def matchers(d, amap):
     """(terms regex, pseudonyms regex), as scan and scan_built build them."""
     found = terms(d, amap)
-    rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
-        re.escape(t) for t in sorted(found, key=len, reverse=True)) + r")(?![A-Za-z0-9])",
-        re.IGNORECASE) if found else None
+    rx = term_regex(found, d, amap)
     pseud = sorted({e["pseudonym"] for e in amap.entries if e.get("pseudonym")},
                    key=len, reverse=True)
     prx = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(map(re.escape, pseud)) + r")(?![A-Za-z0-9])",
@@ -135,9 +158,7 @@ def clean(strings, d, amap):
 
 def scan(d, amap):
     found = terms(d, amap)
-    rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
-        re.escape(t) for t in sorted(found, key=len, reverse=True)) + r")(?![A-Za-z0-9])",
-        re.IGNORECASE) if found else None
+    rx = term_regex(found, d, amap)
     kinds = dict(found)
     # The pipeline's own pseudonyms are blanked before searching (same length,
     # so snippets still come from the real body): a word before a pseudonym
@@ -195,9 +216,7 @@ def scan_built(files, d, amap):
     Returns {"terms_checked", "hits", "terms": [...]}, examples naming the
     file."""
     found = terms(d, amap)
-    rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
-        re.escape(t) for t in sorted(found, key=len, reverse=True)) + r")(?![A-Za-z0-9])",
-        re.IGNORECASE) if found else None
+    rx = term_regex(found, d, amap)
     kinds = dict(found)
     pseud = sorted({e["pseudonym"] for e in amap.entries if e.get("pseudonym")},
                    key=len, reverse=True)

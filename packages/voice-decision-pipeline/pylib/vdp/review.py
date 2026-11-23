@@ -7,8 +7,13 @@ The jobs on it, all the owner's:
   - names: mark each single word only spaCy took for a person a name or not
     a name. A name is replaced everywhere at the next
     `anonymise`; not a name is never replaced.
+  - case: mark a person whose single-word spelling is also an ordinary word
+    "any case", so every spelling of theirs matches in any case; unmarked,
+    such a spelling matches only in its map case in the texts spaCy reads
+    (PLAN §8.1).
   - mining: keep or strike each candidate client product, store or project
-    name. Kept terms join the replacement list at the next `anonymise`.
+    name. Kept terms join the replacement list at the next `anonymise`; a
+    keep struck later stops being replaced.
   - batches: read 50 anonymised items from one source, every replacement
     highlighted, and approve or reject the batch; stop a source once
     satisfied.
@@ -118,6 +123,13 @@ function suggested(){const body={};for(const tr of document.querySelectorAll('tr
 if(!tr.querySelector('button[aria-pressed=true]'))body[tr.dataset.key]=tr.dataset.suggest}
 if(!Object.keys(body).length)return;if(!confirm(Object.keys(body).length+' undecided words will be marked as suggested'))return;
 post('/api/names',body).then(()=>location.reload())}
+function setcase(btn,p,d){post('/api/case',{[p]:d}).then(()=>{
+for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria-pressed',
+b.dataset.d===d?'true':'false');const n=document.getElementById('anyn');
+if(n)n.textContent=document.querySelectorAll('button[data-d=any][aria-pressed=true]').length})}
+function editclient(name,aliases){document.getElementById('cname').value=name;
+document.getElementById('caliases').value=aliases.join('\n');window.scrollTo(0,0);
+document.getElementById('cname').focus()}
 function setaud(btn,id,a){post('/api/audience',{[id]:a}).then(()=>{
 for(const b of btn.parentElement.querySelectorAll('button'))b.setAttribute('aria-pressed',
 b.dataset.a===a?'true':'false');const left=document.getElementById('left');
@@ -179,6 +191,8 @@ def home():
 <p><a href='/names'>{len(names)} words</a>, {nleft} undecided.</p>
 <h2>Leak check: real names left in the anonymised copies</h2>
 <p>{leak_line()}</p>
+<h2>Case: people whose name is also an ordinary word</h2>
+<p><a href='/case'>{case_line()}</a>.</p>
 <h2>Mining: client product, store and project names</h2>
 <p><a href='/mining'>{len(cands)} candidates</a>, {left} undecided.</p>
 <h2>Clients added by hand: names the lists and mining missed</h2>
@@ -202,7 +216,9 @@ def clients_page():
     rows = "".join(
         f"<tr><td class=term>{html.escape(v['name'])}</td>"
         f"<td>{html.escape(', '.join(v.get('aliases') or [])) or '—'}</td>"
-        f"<td class=act><button class=strike onclick=\"post('/api/clients',{{remove:{html.escape(json.dumps(k))}}})"
+        f"<td class=act><button onclick=\"editclient({html.escape(json.dumps(v['name']))},"
+        f"{html.escape(json.dumps(list(v.get('aliases') or [])))})\">Edit</button>"
+        f"<button class=strike onclick=\"post('/api/clients',{{remove:{html.escape(json.dumps(k))}}})"
         f".then(()=>location.reload())\">Remove</button></td></tr>"
         for k, v in sorted(added_clients().items()))
     return page("Clients added by hand", f"""
@@ -214,9 +230,60 @@ anonymise</code> again afterwards; no batch is drawn until then.</p>
 <p class=row><label>Client name <input id=cname size=40></label></p>
 <p class=row><label>Other spellings and identifiers, one per line<br>
 <textarea id=caliases rows=5 cols=40></textarea></label></p>
+<p class=meta>Edit puts a client into the form; Add client then saves it as edited, and a
+spelling taken out is no longer replaced after the next <code>anonymise</code>.</p>
 <p class=row><button class=keep onclick="post('/api/clients',{{add:{{name:document.getElementById('cname').value,
 aliases:document.getElementById('caliases').value.split('\\n')}}}}).then(()=>location.reload())">Add client</button></p>
 <table><tr><th>Client</th><th>Other spellings and identifiers</th><th></th></tr>{rows}</table>""")
+
+
+def case_people():
+    """[(entry, spellings)] for every person with a spelling the case rule
+    can apply to, by pseudonym."""
+    from .anonmap import Map
+    from .anonymise import case_rule_spellings
+    out = []
+    for e in Map.load().entries:
+        sp = case_rule_spellings(e)
+        if sp:
+            out.append((e, sp))
+    return sorted(out, key=lambda x: x[0]["pseudonym"])
+
+
+def case_line():
+    from .anonymise import case_marks
+    marks = case_marks()
+    people = case_people()
+    n = sum(1 for e, _ in people if (marks.get(e["pseudonym"]) or {}).get("decision") == "any")
+    return f"{len(people)} {'person' if len(people) == 1 else 'people'}, {n} marked any case"
+
+
+def case_page():
+    from .anonymise import case_marks
+    marks = case_marks()
+    people = case_people()
+    rows = []
+    for e, sp in people:
+        p = html.escape(e["pseudonym"])
+        d = (marks.get(e["pseudonym"]) or {}).get("decision") or "map"
+        rows.append(
+            f"<tr data-p='{p}'><td><b>{p}</b> <span class=meta>{html.escape(e.get('role') or '')}</span>"
+            f"<div>{html.escape(', '.join(sp))}</div></td>"
+            f"<td class=act><button class=keep data-d=map aria-pressed={'true' if d == 'map' else 'false'} "
+            f"onclick=\"setcase(this,'{p}','map')\">Map case</button>"
+            f"<button class=strike data-d=any aria-pressed={'true' if d == 'any' else 'false'} "
+            f"onclick=\"setcase(this,'{p}','any')\">Any case</button></td></tr>")
+    n = sum(1 for e, _ in people if (marks.get(e["pseudonym"]) or {}).get("decision") == "any")
+    return page("Case: names that are also ordinary words", f"""
+<p>Each person below has a one-word spelling that is also an ordinary word (in the bundled
+English dictionary). <b>Map case</b>, the default, replaces that spelling only where it is
+written in the case shown, in message text, PR titles and the replies before a prompt:
+written in another case it is taken for the ordinary word and left. <b>Any case</b> replaces
+every spelling of that person in any case, as before. Source fields, channel and reaction
+names match in any case either way. <span id=anyn>{n}</span> marked any case. Each click is
+saved; run <code>voice-decision-pipeline anonymise</code> again afterwards, and no batch is
+drawn until then.</p>
+<table><tr><th>Person and the spellings the rule covers</th><th></th></tr>{''.join(rows)}</table>""")
 
 
 def leak_line():
@@ -418,7 +485,7 @@ def mining():
     for term in sorted((t for t in dec if t.lower() not in listed), key=str.lower):
         d = (dec.get(term) or {}).get("decision") or ""
         t = html.escape(term)
-        note = ("kept: replaced as product-NN; a later strike has no effect (PLAN §5)"
+        note = ("kept: replaced as product-NN; a strike stops that at the next anonymise"
                 if d == "keep" else "struck: left as written")
         rows.append(
             f"<tr data-term='{t}' data-section='earlier' data-decision='{d}'><td>"
@@ -583,6 +650,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, mining())
             if u.path == "/names":
                 return self._send(200, names_page())
+            if u.path == "/case":
+                return self._send(200, case_page())
             if u.path == "/leaks":
                 return self._send(200, leaks_page())
             if u.path == "/clients":
@@ -628,6 +697,18 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError(d)
                     dec[key] = {"decision": d}
                 state.write_json(state.path("name-decisions.json"), dec)
+            elif p == "/api/case":
+                from .anonymise import case_marks
+                known = {e["pseudonym"] for e, _ in case_people()}
+                dec = case_marks()
+                for pseud, d in body.items():
+                    if d not in ("map", "any") or pseud not in known:
+                        raise ValueError(f"{pseud}: {d}")
+                    if d == "map":
+                        dec.pop(pseud, None)
+                    else:
+                        dec[pseud] = {"decision": d}
+                state.write_json(state.path("case-decisions.json"), dec)
             elif p == "/api/clients":
                 from .anonymise import add_client, remove_client
                 if "add" in body:

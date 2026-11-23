@@ -64,8 +64,9 @@ Not sources:
   message proposes something; it is never voice. Other reactions are
   context only.
 - **Pasted code, logs, links and attachments:** kept and tagged. Voice
-  analysis skips them; decision analysis reads them. Links are kept as URLs,
-  attachments as file names.
+  analysis skips them; decision analysis reads them. Links in text are kept
+  as URLs. A Slack file name or attachment link is sent as a stand-in, one
+  per distinct value (`file-…`, `link-…`).
 - **Transcripts:** each typed prompt, the text of Claude's reply before it,
   a one-line summary per tool call (which file, which command),
   AskUserQuestion questions and answers, project name and date.
@@ -124,8 +125,9 @@ Not sources:
 - **Lists:** every name in `users.json` (full name, display name, handle,
   first name), Slack user ids and @mentions, client names from the inputs,
   email addresses (`[email]`), phone numbers (`[phone]`).
-  - A first name is matched in any case. A first name two people share
-    becomes their role (`colleague`, or `person` when their roles differ).
+  - A first name is matched in any case, except under the case rule
+    (§8.1). A first name two people share becomes their role
+    (`colleague`, or `person` when their roles differ).
   - A name's pattern allows up to three separators between its words.
   - A form that matches a client or kept product's name once spaces,
     hyphens, dots and underscores are dropped is replaced as that client or
@@ -1089,7 +1091,16 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   multi-word client alias still matches with 0 to 3 separators, its
   joined form included.
 - Fields spaCy never tags (repo, channel and reaction names, other source
-  fields) need a rule of their own, chosen from sample values.
+  fields) keep any-case matching of every map spelling: the case rule
+  covers only a record's text, `preceding_reply` and `title`. Voice reads
+  none of these fields; decision extraction may (§4.9), and a client keeps
+  one pseudonym across every source. Slack file names and attachment links
+  are replaced whole, by a stand-in per distinct value keyed with a local
+  secret.
+- A mining keep the owner strikes later is inactive from the next
+  `anonymise`: no longer replaced or searched for by the leak check, its
+  entry and number kept. Only an explicit strike does this. A client
+  spelling is dropped by editing the client on the review page's Clients.
 - The rule ships in one release: the case rule and Case tab, the mining
   reversals and client spelling drops, then re-anonymise, `voice guide`
   and a validation run.

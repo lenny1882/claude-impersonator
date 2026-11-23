@@ -26,6 +26,16 @@ What is replaced, in order:
 Dictionary keys inside source fields (a question's text, for one) and
 reaction names (custom emoji can be named after people) are replaced too.
 
+The case rule (PLAN §8.1): a person's single-word spelling that is also an
+ordinary word (in dictionary()) matches only in the case it has in the map,
+in the texts spaCy reads (a record's text, preceding_reply, title), unless
+the owner marked that person "any case" on the review page's Case tab.
+Everywhere else (source fields, channel and reaction names) every spelling
+matches in any case. A mining keep the owner later struck is inactive: its
+entry and number stay, and it is no longer replaced. Slack file names and
+attachment links are replaced whole by a stand-in per distinct value
+(file-…, link-…), keyed with a secret kept in the state.
+
 spaCy's organisation and product tags are not replaced: they become mining
 candidates, alongside capitalised terms concentrated in one client's
 conversations, for the owner to keep or strike before the first batch is sent.
@@ -35,6 +45,7 @@ copies; `real_id()` maps them back locally.
 """
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -227,6 +238,74 @@ def name_decisions():
     return state.read_json(state.path("name-decisions.json"), {}) or {}
 
 
+def case_marks():
+    """{pseudonym: {"decision": "any" | "map"}}: the owner's marks on the
+    review page's Case tab. "any" makes every spelling of that person match
+    in any case; "map", like no mark, keeps the case rule."""
+    return state.read_json(state.path("case-decisions.json"), {}) or {}
+
+
+def case_rule_spellings(e, words=None):
+    """The spellings of person entry e the case rule can apply to: single
+    words that are ordinary words, from its aliases and first names. An
+    undecided single word only spaCy found is in neither list's regex, so
+    it is left out here too."""
+    if e.get("kind") != "person" or e.get("inactive"):
+        return []
+    words = dictionary() if words is None else words
+    out = []
+    for a in list(e.get("aliases") or []) + list(e.get("first_names") or []):
+        if one_word(a) and a.lower() in words and a not in out:
+            out.append(a)
+    return out
+
+
+def case_rule(amap, marks=None, shared_first=()):
+    """(exact, any_case_lower): exact holds the spellings that match only in
+    their map case under the case rule; any_case_lower the lower-cased
+    spellings that still match in any case (every other spelling in the map,
+    and first names two people share). A spelling in both sets is searched in
+    any case by the leak check."""
+    marks = case_marks() if marks is None else marks
+    words = dictionary()
+    exact, anyc = set(), {f.lower() for f in shared_first}
+    for e in amap.entries:
+        if e.get("inactive"):
+            continue
+        cs = set()
+        if e["kind"] == "person" and (marks.get(e.get("pseudonym")) or {}).get("decision") != "any":
+            cs = set(case_rule_spellings(e, words))
+        exact |= cs
+        for a in list(e.get("aliases") or []) + list(e.get("first_names") or []):
+            if a not in cs:
+                anyc.add(a.lower())
+    return exact, anyc
+
+
+STAND_IN_KINDS = {"files": "file", "attachment_links": "link"}
+STAND_IN_VERSION = 1   # anon-meta: copies made before stand-ins carry none
+
+
+def stand_in_key():
+    """The secret the file and link stand-ins are keyed with, made once and
+    kept in the state (owner-only): a plain hash of a file name could be
+    reversed by guessing names."""
+    p = state.path("stand-in-key")
+    if not os.path.exists(p):
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(os.urandom(32).hex())
+    with open(p, encoding="utf-8") as f:
+        return bytes.fromhex(f.read().strip())
+
+
+def stand_in(kind, value, key):
+    """The stand-in for one Slack file name or attachment link: the same
+    value always gives the same one."""
+    h = hmac.new(key, value.encode("utf-8"), hashlib.sha256).hexdigest()[:8]
+    return f"{kind}-{h}"
+
+
 def decisions_hash(dec):
     return hashlib.sha1(json.dumps(dec, sort_keys=True).encode()).hexdigest()
 
@@ -380,10 +459,29 @@ class Replacer:
             self.amap.ensure(f"client:{n.lower()}", kind="client", role="client",
                              origin="list", aliases=[n])
         decisions = state.read_json(state.path("mining-decisions.json"), {}) or {}
+        kept, struck = set(), set()
         for term, dec in sorted(decisions.items()):
+            if dec.get("decision") == "strike":
+                struck.add(f"product:{term.lower()}")
             if dec.get("decision") == "keep":
+                kept.add(f"product:{term.lower()}")
                 self.amap.ensure(f"product:{term.lower()}", kind="product", role="product",
                                  origin="mining", aliases=[term])
+        # A keep struck later (PLAN §8.1): the entry and its number stay, so
+        # the number never passes to another term, but it is no longer
+        # replaced or searched for. Kept again, it is active again. Only a
+        # strike does this: an entry whose decision is missing stays active,
+        # so a lost decisions file never stops replacements.
+        for e in self.amap.entries:
+            if e.get("origin") != "mining":
+                continue
+            off = e["real_id"] in struck and e["real_id"] not in kept
+            if off != bool(e.get("inactive")):
+                if off:
+                    e["inactive"] = True
+                else:
+                    e.pop("inactive", None)
+                self.amap.dirty = True
         self._added_clients({f"client:{n.lower()}": n for n in names})
 
     def _added_clients(self, listed):
@@ -414,14 +512,18 @@ class Replacer:
 
     def _compile(self):
         multi, single, spacy = [], {}, []
+        exact, _ = case_rule(self.amap, shared_first=self.shared_first)
+        self.case_exact = exact
         for e in self.amap.entries:
+            if e.get("inactive"):
+                continue
             if e["kind"] == "person":
                 for a in e["aliases"]:
                     (spacy if e.get("origin") == "spacy" else multi).append((a, e))
                 for fn in e.get("first_names", []):
                     single.setdefault(fn.lower(), []).append(e)
         orgs = [(a, e) for e in self.amap.entries if e["kind"] in ("client", "product")
-                for a in e["aliases"]]
+                and not e.get("inactive") for a in e["aliases"]]
         # A form spaCy took for a person that is a client or kept product's
         # name once spaces, hyphens, dots and underscores are dropped ("Acme
         # Corp" for "AcmeCorp") is another spelling of that client or
@@ -429,20 +531,23 @@ class Replacer:
         org_by_norm = {self.norm(a): e for a, e in orgs}
         orgs += [(a, org_by_norm[self.norm(a)]) for a, _ in spacy
                  if self.norm(a) in org_by_norm]
-        # Longest first, so "Jane Smith" wins over "Jane".
-        def build(pairs, flags):
+        # Longest first, so "Jane Smith" wins over "Jane". A spelling in
+        # exact matches only in its own case: the case rule, for the texts
+        # spaCy reads (spans with use_ner).
+        def build(pairs, flags, exact=frozenset()):
             pairs = sorted({(a, id(e)): (a, e) for a, e in pairs}.values(),
                            key=lambda x: -len(x[0]))
             pats, lookup = [], {}
             for a, e in pairs:
                 p = alias_pattern(a)
                 if p:
-                    pats.append(p)
+                    pats.append(f"(?-i:{p})" if a in exact else p)
                     lookup[re.sub(r"[\s\-_.]+", "", a.lower())] = e
             if not pats:
                 return None, {}
             return re.compile("|".join(f"(?:{p})" for p in pats), flags), lookup
         self.person_rx, self.person_lookup = build(multi, re.I)
+        self.person_rx_text = build(multi, re.I, exact)[0] if exact else self.person_rx
         self.org_rx, self.org_lookup = build(orgs, re.I)
         # Names only spaCy found, replaced wherever they appear in any case,
         # not only where spaCy tagged them: every name of
@@ -453,14 +558,33 @@ class Replacer:
         spacy = [(a, e) for a, e in spacy if self.norm(a) not in org_by_norm]
         dec = name_decisions()
         self.name_dec = {k: v.get("decision") for k, v in dec.items()}
-        self.spacy_rx, self.spacy_lookup = build(
-            [(a, e) for a, e in spacy
-             if not one_word(a) or self.name_dec.get(self.norm(a)) == "name"], re.I)
+        spacy_named = [(a, e) for a, e in spacy
+                       if not one_word(a) or self.name_dec.get(self.norm(a)) == "name"]
+        self.spacy_rx, self.spacy_lookup = build(spacy_named, re.I)
+        self.spacy_rx_text = build(spacy_named, re.I, exact)[0] if exact else self.spacy_rx
         self.first_names = single
         firsts = set(single) | set(self.shared_first)
-        self.first_rx = (re.compile(r"(?<![A-Za-z0-9])(" + "|".join(
-            re.escape(f) for f in sorted(firsts, key=len, reverse=True)) + r")(?![A-Za-z0-9])",
-            re.I) if firsts else None)
+
+        def first_rx(exact_firsts):
+            # A first name under the case rule is matched in each map case
+            # it has; one also matching in any case (another person's, or a
+            # shared one) keeps any case.
+            pats = []
+            for f in sorted(firsts, key=len, reverse=True):
+                forms = exact_firsts.get(f)
+                if forms:
+                    pats += [f"(?-i:{re.escape(x)})" for x in sorted(forms)]
+                else:
+                    pats.append(re.escape(f))
+            return (re.compile(r"(?<![A-Za-z0-9])(" + "|".join(pats) + r")(?![A-Za-z0-9])", re.I)
+                    if pats else None)
+        self.first_rx = first_rx({})
+        exact_firsts = {}
+        for fn, es in single.items():
+            forms = {x for e in es for x in e.get("first_names", []) if x.lower() == fn}
+            if forms and fn not in self.shared_first and forms <= exact:
+                exact_firsts[fn] = forms
+        self.first_rx_text = first_rx(exact_firsts) if exact_firsts else self.first_rx
 
     @staticmethod
     def norm(s):
@@ -489,8 +613,11 @@ class Replacer:
         # name inside it starts later, so the URL's span wins the overlap.
         for a, b, _ in urls.private(text):
             add(a, b, "[url]", "url")
-        if self.person_rx:
-            for m in self.person_rx.finditer(text):
+        person_rx = self.person_rx_text if use_ner else self.person_rx
+        first_rx = self.first_rx_text if use_ner else self.first_rx
+        spacy_rx = self.spacy_rx_text if use_ner else self.spacy_rx
+        if person_rx:
+            for m in person_rx.finditer(text):
                 e = self.person_lookup.get(self.norm(m.group(0)))
                 if e:
                     add(m.start(), m.end(), e["pseudonym"], "person")
@@ -499,16 +626,16 @@ class Replacer:
                 e = self.org_lookup.get(self.norm(m.group(0)))
                 if e:
                     add(m.start(), m.end(), e["pseudonym"], e["kind"])
-        if self.first_rx:
-            for m in self.first_rx.finditer(text):
+        if first_rx:
+            for m in first_rx.finditer(text):
                 fn = m.group(1).lower()
                 es = self.first_names.get(fn)
                 if es and len(es) == 1:
                     add(m.start(), m.end(), es[0]["pseudonym"], "person")
                 elif fn in self.shared_first:
                     add(m.start(), m.end(), self.shared_first[fn], "person")
-        if self.spacy_rx:
-            for m in self.spacy_rx.finditer(text):
+        if spacy_rx:
+            for m in spacy_rx.finditer(text):
                 e = self.spacy_lookup.get(self.norm(m.group(0)))
                 if e:
                     add(m.start(), m.end(), e["pseudonym"], "person")
@@ -632,8 +759,10 @@ def mine(recs, rep, ner, convs_by_client, decisions=None):
     decisions = decisions or {}
     decided = {t.lower(): t for t in decisions}
     words = dictionary()
-    known = {rep.norm(a) for e in rep.amap.entries if e.get("origin") != "spacy"
-             for a in e["aliases"]}
+    # A struck keep (inactive) is offered again, with its strike, so it can
+    # be kept again.
+    known = {rep.norm(a) for e in rep.amap.entries
+             if e.get("origin") != "spacy" and not e.get("inactive") for a in e["aliases"]}
     tags, kinds = Counter(), defaultdict(set)
     per_client = defaultdict(Counter)
     forms, examples = defaultdict(Counter), defaultdict(list)
@@ -851,6 +980,7 @@ def run(log=print):
         rep.spans(t, True)
     rep = Replacer(d, amap, ner)
     counts = Counter()
+    key = stand_in_key()
     for s in SOURCES:
         out = []
         for r in corpus[s]:
@@ -870,6 +1000,12 @@ def run(log=print):
                                       rep.replace_plain(os.path.basename(v.rstrip("/"))))
                 elif k in ("repo_name", "project"):
                     sf[k] = rep.replace_plain(os.path.basename(str(v or "").rstrip("/")))
+                elif k in STAND_IN_KINDS and r["source"] == "slack":
+                    # Whole: a file name or link names whatever it likes.
+                    vs = v if isinstance(v, list) else [v]
+                    sf[k] = [stand_in(STAND_IN_KINDS[k], x, key) if isinstance(x, str) else x
+                             for x in vs]
+                    counts[STAND_IN_KINDS[k]] += sum(isinstance(x, str) for x in vs)
                 else:
                     sf[k] = rep.deep(v)
             for m in marks:
@@ -907,6 +1043,8 @@ def run(log=print):
         "audiences_hash": inputs.audiences_hash(d),
         "names_hash": decisions_hash(ndec),
         "added_hash": decisions_hash(added_clients()),
+        "case_hash": decisions_hash(case_marks()),
+        "stand_ins": STAND_IN_VERSION,
         "urls": urls.VERSION,
         "map_entries": len(amap.entries),
         "replacements": dict(counts),

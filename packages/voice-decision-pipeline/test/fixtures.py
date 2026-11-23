@@ -92,7 +92,9 @@ def slack(root):
         msg(t + 2 * DAY + 30, ME, "Yes, of course")])
     w(f"{exp}/GMPIMTRIO/2023-11-17.json", [
         msg(t + 3 * DAY, "UCOLTOMBB", "Who is on call this weekend?"),
-        msg(t + 3 * DAY + 30, ME, "I am, swap with me next week")])
+        msg(t + 3 * DAY + 30, ME, "I am, swap with me next week",
+            files=[{"name": "acmecorp-rota.xlsx"}],
+            attachments=[{"from_url": "https://docs.google.com/acmecorp-rota"}])])
     w(f"{exp}/CSTRUCKXX/2023-11-16.json", [msg(t + 2 * DAY, ME, "struck conversation message")])
     inputs = {
         "_about": "test fixture",

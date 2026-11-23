@@ -479,6 +479,74 @@ check "mining: a non-dictionary term concentrated in one client's channel is a c
 check "map: one pseudonym per role, numbered from 01" \
   q '[.entries[].pseudonym]|sort==["client-01","client-contact-01","colleague-01","colleague-02","self-01"]' "$ST/anonymising-map.json"
 
+check "anon: Slack file names and links are replaced whole, by a keyed stand-in per value" \
+  bash -c "jq -s -e '[.[].source_fields | (.files // empty), (.attachment_links // empty)] | flatten | length==2 and (map(test(\"^(file|link)-[0-9a-f]{8}\$\"))|all)' '$A' >/dev/null && ! grep -q acmecorp-rota '$A' && [ \"\$(stat -c %a '$ST/stand-in-key')\" = 600 ]"
+check "anon: case rule: an ordinary-word one-word spelling matches only in its map case in message text, in any case elsewhere" "$PY" - <<'EOF'
+from vdp import inputs, leaks, state
+from vdp.anonmap import Map
+from vdp.anonymise import Ner, Replacer
+d = inputs.load()
+amap = Map()
+e = amap.ensure("test:rose", kind="person", role="colleague", origin="users.json", aliases=["Rose Hill", "Rose"])
+f = amap.ensure("test:daisy", kind="person", role="colleague", origin="users.json", aliases=["Daisy Okafor"])
+f["first_names"] = ["Daisy"]
+z = amap.ensure("test:zorvex", kind="person", role="colleague", origin="users.json", aliases=["Zorvex"])
+p, q, r = e["pseudonym"], f["pseudonym"], z["pseudonym"]
+rep = Replacer(d, amap, Ner())
+assert rep.apply("ask Rose about the rose bush")[0] == f"ask {p} about the rose bush", rep.apply("ask Rose about the rose bush")
+assert rep.apply("Daisy picked a daisy")[0] == f"{q} picked a daisy", rep.apply("Daisy picked a daisy")
+assert rep.apply("ping zorvex")[0] == f"ping {r}", rep.apply("ping zorvex")
+assert rep.replace_plain("fix/rose-login") == f"fix/{p}-login", rep.replace_plain("fix/rose-login")
+assert rep.deep({"files": ["daisy-notes"]}) == {"files": [f"{q}-notes"]}, rep.deep({"files": ["daisy-notes"]})
+rx = leaks.term_regex(leaks.terms(d, amap), d, amap)
+assert rx.search("ask Rose") and rx.search("ask Daisy") and rx.search("ping zorvex")
+assert not rx.search("the rose bush") and not rx.search("a daisy")
+cf = state.path("case-decisions.json")
+state.write_json(cf, {p: {"decision": "any"}})
+try:
+    rep = Replacer(d, amap, Ner())
+    assert rep.apply("the rose bush")[0] == f"the {p} bush", rep.apply("the rose bush")
+    assert rep.apply("a daisy")[0] == "a daisy", rep.apply("a daisy")
+    rx = leaks.term_regex(leaks.terms(d, amap), d, amap)
+    assert rx.search("the rose bush") and not rx.search("a daisy")
+    from vdp import batches
+    assert any("Case marks changed" in x for x in batches.gates()), batches.gates()
+finally:
+    import os
+    os.remove(cf)
+EOF
+check "anon: a mining keep struck later is no longer replaced or searched for, and keeps its number" "$PY" - <<'EOF'
+import os
+from vdp import inputs, leaks, state
+from vdp.anonmap import Map
+from vdp.anonymise import Ner, Replacer
+d = inputs.load()
+mf = state.path("mining-decisions.json")
+had = os.path.exists(mf)
+old = state.read_json(mf, {}) or {}
+try:
+    amap = Map()
+    state.write_json(mf, {**old, "Quillbrite": {"decision": "keep"}})
+    rep = Replacer(d, amap, Ner())
+    p = amap.get("product:quillbrite")["pseudonym"]
+    assert rep.apply("ship Quillbrite")[0] == f"ship {p}"
+    state.write_json(mf, {**old, "Quillbrite": {"decision": "strike"}})
+    rep = Replacer(d, amap, Ner())
+    e = amap.get("product:quillbrite")
+    assert e.get("inactive") and e["pseudonym"] == p, e
+    assert rep.apply("ship Quillbrite")[0] == "ship Quillbrite", rep.apply("ship Quillbrite")
+    assert "quillbrite" not in leaks.terms(d, amap)
+    state.write_json(mf, {**old, "Quillbrite": {"decision": "keep"}})
+    rep = Replacer(d, amap, Ner())
+    assert not amap.get("product:quillbrite").get("inactive")
+    assert rep.apply("ship Quillbrite")[0] == f"ship {p}"
+finally:
+    if had:
+        state.write_json(mf, old)
+    else:
+        os.remove(mf)
+EOF
+
 vdp batch slack >/dev/null 2>&1 && no "batch refuses while mining candidates are undecided" "it drew one" \
   || ok "batch refuses while mining candidates are undecided"
 
@@ -524,6 +592,10 @@ check "its page says it can only be rejected" \
   bash -c "curl -sf '${URL}batch?source=bitbucket' | grep -q 'can only be rejected'"
 check "it can be rejected" test "$(post api/decide '{"name":"bitbucket-001","status":"rejected"}')" = 200
 check "clients: the page has the add form" bash -c "curl -sf '${URL}clients' | grep -q 'Add client'"
+check "case: the page serves and the home page links it" \
+  bash -c "curl -sf '${URL}case' | grep -q 'Map case' && curl -sf '$URL' | grep -q \"href='/case'\""
+check "case: a mark for a pseudonym the page doesn't list is refused" \
+  test "$(post api/case '{"colleague-99":"any"}')" = 400
 check "clients: a name shorter than 2 characters is refused" \
   test "$(post api/clients '{"add":{"name":"Q","aliases":[]}}')" = 400
 check "clients: adding one is saved, with its identifier" \
