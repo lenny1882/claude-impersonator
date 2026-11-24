@@ -28,6 +28,7 @@ import os
 import subprocess
 import time
 
+# The defaults; the state's voice/settings.json "models" wins (settings.py).
 MODELS = {
     # PLAN §3.4, §3.7
     "labeller": "claude-sonnet-5-5",
@@ -101,9 +102,15 @@ def _check(schema, v, where="answer"):
     return v
 
 
+def name(role):
+    """The model for role, as the settings give it."""
+    from . import settings
+    return settings.model(role)
+
+
 def call(role, system, prompt, schema, log=print):
     """The structured answer of one `claude -p` call by the model for role."""
-    model = MODELS[role]
+    model = name(role)
     cmd = [executable(), "-p", "--model", model, "--output-format", "json",
            "--json-schema", json.dumps(schema), "--no-session-persistence",
            "--tools", "", "--setting-sources", "", "--strict-mcp-config",

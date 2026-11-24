@@ -210,6 +210,21 @@ def cmd_voice(a):
                   f"quoted-word shares {'yes' if aud in d['quoted_rates_for'] else 'no'}; "
                   f"judged under it {'yes' if aud in judged else 'no'}; pairs {pairs}")
         return 0
+    if step == "settings":
+        from . import settings
+        d = settings.load()
+        ch = settings.changed(d)
+        print(f"voice settings: {settings.file()}")
+        print("  differs from the defaults: " + (", ".join(ch) if ch else "nothing"))
+        print(f"  purposes: {', '.join(d['labels']['purposes'])}")
+        print("  models: " + ", ".join(f"{k} {v}" for k, v in d["models"].items()))
+        r = d["pass_rule"]
+        print(f"  pass rule: overall {r['overall_bar']}, audience {r['audience_bar']}, sure {r['sure']}, "
+              f"unsure {r['unsure']}, grades {r['grades_all']}/{r['grades_audience']}, "
+              f"{r['pairs_per_audience']} pairs an audience, exemplar counts {r['exemplar_counts']}")
+        di = settings.draft_inputs(d)
+        print("  in the draft methods: " + (", ".join(sorted(di)) if di else "nothing (all defaults)"))
+        return 0
     if step == "validate":
         with state.lock():
             return validate.drafts_and_judge(limit=a.limit, only_batch=a.batch)
@@ -272,7 +287,7 @@ def main(argv=None):
     s = sub.add_parser("sendable"); s.add_argument("source", choices=SOURCES); s.set_defaults(f=cmd_sendable)
     s = sub.add_parser("probe"); s.set_defaults(f=cmd_probe)
     s = sub.add_parser("voice")
-    s.add_argument("step", choices=["label", "holdout", "rules", "guide", "drafter", "validate", "pairs",
+    s.add_argument("step", choices=["label", "holdout", "rules", "guide", "drafter", "settings", "validate", "pairs",
                                     "build", "publish", "status"])
     s.add_argument("--second", action="store_true", help="label: the second model's blind pass")
     s.add_argument("--redo", help="label: send again items either model gave one of these purposes")

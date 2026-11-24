@@ -23,6 +23,8 @@ from collections import defaultdict
 
 from . import model, pool, state, voice
 
+# The defaults of SYSTEM, PER_PURPOSE and COMBINED; the state's
+# voice/settings.json "guide" section wins (settings.py).
 PER_PURPOSE = 12
 COMBINED = 30
 RULES_TEMPLATE = """# Your own voice rules
@@ -244,6 +246,8 @@ def fmt_ex(e):
 def sample(ex):
     """The examples the guide's prompts show, drawn by its fixed seed:
     ({audience: [(purpose, [exemplar])]}, [multi-purpose exemplar])."""
+    from . import settings
+    gs = settings.get("guide")
     rnd = random.Random("guide")
     by = defaultdict(lambda: defaultdict(list))
     for e in ex:
@@ -255,13 +259,13 @@ def sample(ex):
         if not cells:
             continue
         per[aud] = []
-        for p in [p for p in voice.PURPOSES if cells.get(p)]:
+        for p in [p for p in voice.purposes() if cells.get(p)]:
             xs = list(cells[p])
             rnd.shuffle(xs)
-            per[aud].append((p, len(cells[p]), xs[:PER_PURPOSE]))
+            per[aud].append((p, len(cells[p]), xs[:gs["per_purpose"]]))
     multi = [e for e in ex if len(e["purposes"]) > 1]
     rnd.shuffle(multi)
-    return per, multi[:COMBINED]
+    return per, multi[:gs["combined"]]
 
 
 def shown_file():
@@ -290,7 +294,9 @@ def write(log=print):
         raise SystemExit("voice-decision-pipeline: the exemplar pool is empty; run 'voice label' and 'voice holdout' first")
     from . import voicestats
     stats = voicestats.build(items, log=log)
-    system = SYSTEM + struck_prompt(struck_for_prompt(log=log))
+    from . import settings
+    system = settings.get("guide")["system"] + struck_prompt(struck_for_prompt(log=log))
+    defs = voice.purposes()
     per, multi = sample(ex)
     out = {"audiences": {}}
     for aud in voice.CORPUS_AUDIENCES:
@@ -298,7 +304,7 @@ def write(log=print):
             log(f"  skip  {aud}: no exemplars")
             continue
         keys = [p for p, _, _ in per[aud]]
-        parts = [f"## Purpose: {p} ({voice.PURPOSES[p]}), {n} messages\n\n"
+        parts = [f"## Purpose: {p} ({defs.get(p, p)}), {n} messages\n\n"
                  + "\n\n---\n\n".join(fmt_ex(e) for e in xs) for p, n, xs in per[aud]]
         prompt = (f"Audience: {aud}. Statistics of every message self-01 wrote to this audience:\n"
                   f"{json.dumps(stats['audiences'].get(aud, {}))}\n\n" + "\n\n".join(parts) +
@@ -351,6 +357,7 @@ def assemble(build_time):
             "audiences": cg.get("audiences", {}), "jira": jira}
 
 
+# The default; the state's voice/settings.json "style.quoted_rare_below" wins.
 RARE_QUOTED = 0.02
 
 
@@ -360,8 +367,9 @@ def render(g, stats, audience, purposes, d=None):
     the audience's drafting notes from the drafter's settings d (the state's
     voice/drafter.json by default). Phrases the owner struck are left off
     the never-say list."""
-    from . import drafter
+    from . import drafter, settings
     d = d or drafter.load()
+    rare_below = settings.get("style")["quoted_rare_below"]
     stats, _ = strike_stats(stats)
     out = []
     if g.get("own_rules"):
@@ -406,7 +414,7 @@ def render(g, stats, audience, purposes, d=None):
         shown_rules += list(g.get("combinations", []))
     from .voicestats import quoted
     rates = (stats or {}).get("quoted", {}).get(audience, {}) if audience in d["quoted_rates_for"] else {}
-    rare = sorted({q for r in shown_rules for q in quoted(r) if q in rates and rates[q] < RARE_QUOTED},
+    rare = sorted({q for r in shown_rules for q in quoted(r) if q in rates and rates[q] < rare_below},
                   key=lambda q: (rates[q], q))
     if rare:
         out.append(f"Share of self-01's messages to {audience} holding each word quoted in the rules above: " + ", ".join(f'"{q}" {rates[q]:.1%}' for q in rare) +

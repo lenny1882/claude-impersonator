@@ -41,7 +41,9 @@ voice-runtime status
 2. **Work out the purposes** from the request, in the order the message
    will carry them: `push-back`, `decline`, `ask`, `chase`, `status`,
    `explain`, `approve`, `own-mistake`, `thank`, `escalate`, `small-talk`,
-   `other`. A message can have several.
+   `other`. A message can have several. A build labelled with other
+   purposes carries its own list: `guide` and `search` refuse a purpose
+   that isn't in it and name the ones that are.
 
 3. **Show both above the draft**, every time:
 
@@ -66,8 +68,11 @@ voice-runtime status
    use an exclamation mark to that audience, the draft does too. The
    CLAUDE.md rules still govern everything said to the user around the draft.
 
-   Match the length and register of the exemplars, and follow the guide's
-   "How to write it" section where it has one. Use each mark of style the
+   Draft by the guide's "How to draft" section: it is the drafter prompt
+   the build was validated with, word for word, and it wins over this
+   step's wording where they differ. Match the length and register of the
+   exemplars, and follow the guide's "How to write it" section where it has
+   one. Use each mark of style the
    guide measures (spaced dash, exclamation mark, emoji, emphasis, list,
    swear word) about as often as its share of messages: only where the
    exemplars for this moment have one, and keep it where they do.

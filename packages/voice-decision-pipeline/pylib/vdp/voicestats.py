@@ -36,6 +36,8 @@ SPELLING = [("colour", "color"), ("behaviour", "behavior"), ("organise", "organi
             ("optimise", "optimize"), ("summarise", "summarize"), ("customise", "customize"),
             ("initialise", "initialize"), ("serialise", "serialize"), ("normalise", "normalize")]
 # Marks of style whose share of messages per audience the drafter is shown.
+# STYLE and the four never-say thresholds below are the defaults; the state's
+# voice/settings.json "style" section wins (settings.py).
 STYLE = {
     "spaced dash": re.compile(r"\S\s[-\u2013\u2014]\s+\S"),
     "exclamation mark": re.compile(r"!"),
@@ -129,7 +131,9 @@ def pct(xs, q):
 
 
 def build(items=None, log=print):
-    from . import labels
+    from . import labels, settings
+    marks = settings.style_marks()
+    ns = settings.get("style")["never_say"]
     items = items or voice.load()
     words = dictionary()
     final = labels.final()
@@ -154,7 +158,7 @@ def build(items=None, log=print):
             "full_stop_end": round(sum(1 for t in ts if t.rstrip().endswith(".")) / n, 3),
             "exclamation_per_message": round(sum(t.count("!") for t in ts) / n, 3),
             "emoji_per_message": round(sum(len(EMOJI.findall(t)) for t in ts) / n, 3),
-            "style": {k: round(sum(1 for t in ts if rx.search(t)) / n, 3) for k, rx in STYLE.items()},
+            "style": {k: round(sum(1 for t in ts if rx.search(t)) / n, 3) for k, rx in marks.items()},
             "openings": [[w, c] for w, c in opens.most_common(10) if c >= 3],
             "signoffs": [[w, c] for w, c in signs.most_common(10) if c >= 3],
             # Length per purpose, where at least PURPOSE_MIN messages carry it.
@@ -179,10 +183,10 @@ def build(items=None, log=print):
         mc.update(ngrams(t, words))
     cands = []
     for g, c in gc.items():
-        if c < COLLEAGUE_MIN:
+        if c < ns["colleague_min"]:
             continue
         rate_them, rate_me = c / n_them, mc[g] / n_me
-        if rate_me <= RARE_RATE or rate_me <= RATIO * rate_them:
+        if rate_me <= ns["rare_rate"] or rate_me <= ns["ratio"] * rate_them:
             cands.append((rate_them, g, c))
     cands.sort(reverse=True)
     # A longer phrase that holds a listed shorter one adds nothing.
@@ -191,7 +195,7 @@ def build(items=None, log=print):
         if any(f" {k} " in f" {g} " for k, _ in kept):
             continue
         kept.append((g, c))
-        if len(kept) >= COLLEAGUE_TOP:
+        if len(kept) >= ns["colleague_top"]:
             break
     for g, c in kept:
         never.append({"phrase": g, "self": mc[g], "reference": "colleagues", "reference_count": c})
@@ -200,7 +204,7 @@ def build(items=None, log=print):
         if g in listed:
             continue
         me = count_phrase(mine, g)
-        if me / n_me <= RARE_RATE:
+        if me / n_me <= ns["rare_rate"]:
             never.append({"phrase": g, "self": me, "reference": "generic",
                           "reference_count": count_phrase(theirs, g)})
     log(f"  ok    stats: {len(items)} voice items over {len(auds)} audiences; "

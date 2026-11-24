@@ -28,7 +28,8 @@ AUDIENCES = {
 CORPUS_AUDIENCES = tuple(AUDIENCES.values())
 ALL_AUDIENCES = CORPUS_AUDIENCES + ("jira",)
 
-# PLAN §3.3: eleven purposes and "other", in this order.
+# PLAN §3.3: eleven purposes and "other", in this order. The defaults: the
+# state's voice/settings.json "labels.purposes" wins (purposes()).
 PURPOSES = {
     "push-back": ("push back / disagree: objects to or corrects a proposal, a claim or a plan, "
                   "including stating a limit or requirement that rules out what someone wants. "
@@ -54,6 +55,14 @@ PURPOSES = {
               "conversation (sharing a result is status), and is other only when the "
               "conversation doesn't show one"),
 }
+
+
+def purposes():
+    """{id: definition} of the purposes, as the settings give them."""
+    from . import settings
+    return settings.purposes()
+
+
 CONTEXT_CHARS = 6000
 MAX_CONTEXT = 20
 

@@ -348,13 +348,28 @@ def cmd_install_build(a):
 
 # --- guide -------------------------------------------------------------------
 
+def build_purposes():
+    """The purposes the installed build was labelled with (stats.json's
+    drafting.purposes), else this release's own list. A build that can't be
+    read gives this release's list here; the command's own read refuses it."""
+    try:
+        dr = Build().file("stats.json").get("drafting") or {}
+    except (Refusal, Failure):
+        return PURPOSES
+    ps = dr.get("purposes")
+    if isinstance(ps, list) and ps and all(isinstance(p, str) and p for p in ps):
+        return tuple(ps)
+    return PURPOSES
+
+
 def split_purposes(s):
+    known = build_purposes()
     ps = [p.strip() for p in (s or "").split(",") if p.strip()]
     if not ps:
-        raise Failure("--purposes needs at least one of: %s" % ", ".join(PURPOSES))
-    bad = [p for p in ps if p not in PURPOSES]
+        raise Failure("--purposes needs at least one of: %s" % ", ".join(known))
+    bad = [p for p in ps if p not in known]
     if bad:
-        raise Failure("unknown purpose %s; purposes are: %s" % (", ".join(bad), ", ".join(PURPOSES)))
+        raise Failure("unknown purpose %s; purposes are: %s" % (", ".join(bad), ", ".join(known)))
     return ps
 
 
@@ -397,6 +412,11 @@ def cmd_guide(a):
 
     out = ["# Voice guide: %s; %s (build %s)" % (audience, ", ".join(purposes), b.build_time), ""]
     dr = st.get("drafting") or {}
+    ds = dr.get("draft_system")
+    if isinstance(ds, str) and ds.strip():
+        out.append("## How to draft (the prompt this build was validated with)")
+        out.append(ds.strip())
+        out.append("")
     bullets(out, "self-01's own rules (these win over every rule below)", g.get("own_rules"))
     bullets(out, "How to write it", (dr.get("notes") or {}).get(audience))
     if audience == "jira":

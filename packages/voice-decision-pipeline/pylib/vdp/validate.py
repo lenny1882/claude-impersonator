@@ -41,7 +41,9 @@ given; pairs.json holds the pairs and pairs-key.json which side is real,
 both in the state. On top of the pairs they review the judge's 20
 worst-scored drafts and 10 random ones.
 
-Pass rule: every
+Pass rule (the settings' pass_rule section, settings.py; the names below
+are its defaults here, and each change is recorded with the run it applies
+to in validation/pass-rule.jsonl): every
 gate on its own, none weighed against another. The spotting rate is right
 picks minus wrong picks over pairs ("can't tell" counts as neither); how sure
 a rate is comes from a Dirichlet over the right, wrong and can't-tell counts,
@@ -64,6 +66,8 @@ from collections import Counter, defaultdict
 from . import drafter, guide, labels, model, pool, state, voice
 from .index import VOICE_SOURCES
 
+# The defaults of the pass rule and the judge; the state's voice/settings.json
+# "pass_rule" and "judge" sections win (settings.py, rule(), judge_system()).
 COUNTS = (3, 5, 8)
 OVERALL_BAR, AUDIENCE_BAR = 0.10, 0.25
 SURE, UNSURE = 0.80, 0.50
@@ -84,13 +88,34 @@ BRIEF_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["b
 GRADES = {5: "indistinguishable from self-01's own", 4: "sendable as is or with a trivial edit",
           3: "content right, needs rewording", 2: "voice or content wrong", 1: "of no use"}
 
-JUDGE_SYSTEM = """You judge drafts written in one person's voice. The person is self-01; names
+JUDGE_BASE = """You judge drafts written in one person's voice. The person is self-01; names
 are pseudonyms. You see the conversation, the message self-01 really wrote next, a brief of
 what that message says, and several drafts written from the brief without seeing the
 message. Score each draft 1 to 5 for how far self-01 would send it as is, judged against the
 real message: mostly voice (wording, length, tone, punctuation, capitalisation), and whether
 it says what the brief says, nothing dropped or added.
-""" + "\n" + " ".join(f"{n}: {GRADES[n]}." for n in (5, 4, 3, 2, 1))
+"""
+
+
+def grades():
+    """{1..5: meaning} of the judge's scale, as the settings give it."""
+    from . import settings
+    return {int(k): v for k, v in settings.get("judge")["grades"].items()}
+
+
+def judge_system():
+    from . import settings
+    g = grades()
+    return settings.get("judge")["system"] + "\n" + " ".join(f"{n}: {g[n]}." for n in (5, 4, 3, 2, 1))
+
+
+JUDGE_SYSTEM = JUDGE_BASE + "\n" + " ".join(f"{n}: {GRADES[n]}." for n in (5, 4, 3, 2, 1))
+
+
+def rule():
+    """The pass rule and its sizes, as the settings give them."""
+    from . import settings
+    return settings.get("pass_rule")
 
 JUDGE_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["scores"],
                 "properties": {"scores": {"type": "array", "items": {
@@ -296,6 +321,7 @@ def batch(log=print):
     method and run, then read back, so a resumed run drafts the same
     messages."""
     run = run_no()
+    n_ = rule()["pairs_per_audience"]
     lab = labels.final()
     ok = counted()
     aud = _COUNTED["aud"]
@@ -313,11 +339,11 @@ def batch(log=print):
         if a in done:
             continue
         cand = {i: (a, lab[i]) for i in sorted(ok) if aud[i] == a and i in lab and i not in seen}
-        if len(cand) < PAIRS_PER_AUDIENCE:
+        if len(cand) < n_:
             # Short of a batch: hold back more of the audience, only messages
             # the guide never saw and the owner was never shown.
             try:
-                add = pool.holdout_more(a, PAIRS_PER_AUDIENCE - len(cand), log=lambda *x: None, exclude=seen)
+                add = pool.holdout_more(a, n_ - len(cand), log=lambda *x: None, exclude=seen)
             except SystemExit:
                 add = []
             if add:
@@ -325,17 +351,19 @@ def batch(log=print):
                 ok = counted()
                 aud = _COUNTED["aud"]
                 cand = {i: (a, lab[i]) for i in sorted(ok) if aud.get(i) == a and i in lab and i not in seen}
-        out[a] = sorted(labels.spread_sample(cand, PAIRS_PER_AUDIENCE, seed=f"batch-{m}-{run}-{a}"))
+        out[a] = sorted(labels.spread_sample(cand, n_, seed=f"batch-{m}-{run}-{a}"))
         stored[a] = {"method": m, "ids": out[a]}
-        if len(out[a]) < PAIRS_PER_AUDIENCE:
-            log(f"  --    {a}: only {len(out[a])} held-back messages never shown; a batch is {PAIRS_PER_AUDIENCE}")
+        if len(out[a]) < n_:
+            log(f"  --    {a}: only {len(out[a])} held-back messages never shown; a batch is {n_}")
     state.write_json(batch_file(), {"run": run, "ids": stored})
     return out
 
 
-def drafts_and_judge(counts=COUNTS, limit=None, only_batch=False, log=print):
+def drafts_and_judge(counts=None, limit=None, only_batch=False, log=print):
     import numpy as np
     voice.require_sendable()
+    counts = tuple(counts or rule()["exemplar_counts"])
+    jsys = judge_system()
     from . import voicestats
     g = guide.assemble("validation")
     d = drafter.load()
@@ -393,7 +421,7 @@ def drafts_and_judge(counts=COUNTS, limit=None, only_batch=False, log=print):
                   f"The brief the drafts were written from:\n{brief}\n\n" +
                   "\n\n".join(f"Draft {i}:\n{ds[k]}" for i, k in enumerate(ks, 1)) +
                   f"\n\nScore drafts 1 to {len(ks)}.")
-            ans = model.call("judge", JUDGE_SYSTEM, jp, JUDGE_SCHEMA, log=log)
+            ans = model.call("judge", jsys, jp, JUDGE_SCHEMA, log=log)
         except model.UsageLimit as e:
             log(f"  stop  usage limit after {n - 1} messages: {e}; run the same command again to resume")
             return 6
@@ -460,7 +488,7 @@ def make_pairs(audience=None, log=print):
     lab = labels.final()
     drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run) if r["k"] == k}
     for aud in ([audience] if audience else voice.CORPUS_AUDIENCES):
-        _draw(cur, key, used, items, lab, drafts, aud, PAIRS_PER_AUDIENCE)
+        _draw(cur, key, used, items, lab, drafts, aud, rule()["pairs_per_audience"])
     state.write_json(key_file(), key)
     state.write_json(pairs_file(), cur)
     log(f"  ok    {len(active(cur))} blind pairs (exemplar count {cur['k']})")
@@ -538,6 +566,7 @@ def redraw(aud, log=print):
     stay in the files, marked with why."""
     _audience(aud)
     m = drafter.method(aud)
+    n_ = rule()["pairs_per_audience"]
     run = run_no()
     cur = state.read_json(pairs_file(), None)
     if not cur or cur["run"] != run:
@@ -563,19 +592,19 @@ def redraw(aud, log=print):
     in_batch = entry is not None
     bids = set(entry or [])
     whole = in_batch and bids <= set(drafts)
-    if (len(drafts) >= PAIRS_PER_AUDIENCE or whole) and drafts:
+    if (len(drafts) >= n_ or whole) and drafts:
         before = len(cur["pairs"])
-        _draw(cur, key, used, items, lab, drafts, aud, min(PAIRS_PER_AUDIENCE, len(drafts)))
+        _draw(cur, key, used, items, lab, drafts, aud, min(n_, len(drafts)))
         new = [p["pair"] for p in cur["pairs"][before:]]
         log(f"  ok    drew {len(new)} {aud} pairs from {m} drafts of messages never paired: {new[0]} to {new[-1]}")
     state.write_json(key_file(), key)
     state.write_json(pairs_file(), cur)
-    if len(drafts) < PAIRS_PER_AUDIENCE and not whole:
+    if len(drafts) < n_ and not whole:
         judged = {r["id"] for r in rows("judge.jsonl", run)}
         waiting = {i for i, a in _COUNTED["aud"].items() if a == aud and i not in judged and i not in used}
-        need = PAIRS_PER_AUDIENCE - len(drafts) - len(waiting)
+        need = n_ - len(drafts) - len(waiting)
         log(f"  --    {len(drafts)} {aud} message{'' if len(drafts) == 1 else 's'} drafted under {m} and "
-            f"never paired, {len(waiting)} held back and not drafted yet; a batch is {PAIRS_PER_AUDIENCE}")
+            f"never paired, {len(waiting)} held back and not drafted yet; a batch is {n_}")
         if need > 0:
             pool.holdout_more(aud, need, log=log)
         else:
@@ -592,10 +621,12 @@ def judge_review(log=print):
     if cur and cur["run"] == run:
         return cur
     k = best_count(run)
+    rl = rule()
+    WORST_, RANDOM_ = rl["judge_review_worst"], rl["judge_review_random"]
     js = [r for r in rows("judge.jsonl", run) if r["k"] == k]
     js.sort(key=lambda r: (r["score"], r["id"]))
-    worst = js[:WORST]
-    rest = js[WORST:]
+    worst = js[:WORST_]
+    rest = js[WORST_:]
     random.Random(f"judge-review-{run}").shuffle(rest)
     items = {it["id"]: it for it in voice.load()}
     drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run) if r["k"] == k}
@@ -603,7 +634,7 @@ def judge_review(log=print):
         {"id": r["id"], "why": w, "score": r["score"], "reason": r["reason"],
          "audience": items[r["id"]]["audience"], "real": items[r["id"]]["text"],
          "draft": drafts.get(r["id"], ""), "context": voice.render_context(items[r["id"]]["before"], 3000)}
-        for w, group in (("worst", worst), ("random", rest[:RANDOM])) for r in group if r["id"] in items]}
+        for w, group in (("worst", worst), ("random", rest[:RANDOM_])) for r in group if r["id"] in items]}
     state.write_json(p, cur)
     return cur
 
@@ -650,6 +681,9 @@ def report(run=None):
     pr = state.read_json(pairs_file(), None)
     if not pr or pr["run"] != run:
         return {"run": run, "pairs": 0}
+    from . import settings
+    rl = rule()
+    since = settings.record_pass_rule(run)
     key = state.read_json(key_file(), {}) or {}
     ans = answers(run)
     per = {"all": Counter()}
@@ -669,20 +703,20 @@ def report(run=None):
     c = per["all"]
     n = sum(c.values())
     spot = _spot_draws(c, f"report-{run}-{n}")
-    sure = round(sum(1 for s in spot if s <= OVERALL_BAR) / len(spot), 3)
-    blind_ok = n > 0 and sure >= SURE
+    sure = round(sum(1 for s in spot if s <= rl["overall_bar"]) / len(spot), 3)
+    blind_ok = n > 0 and sure >= rl["sure"]
     share4 = lambda xs: sum(1 for x in xs if x >= 4) / len(xs) if xs else 0.0
     grades_aud = {a: round(share4(xs), 3) for a, xs in sorted(by_aud.items())}
-    grades_ok = (bool(grades) and share4(grades) >= GRADES_ALL and 1 not in grades
-                 and all(v >= GRADES_AUDIENCE for v in grades_aud.values()))
+    grades_ok = (bool(grades) and share4(grades) >= rl["grades_all"] and 1 not in grades
+                 and all(v >= rl["grades_audience"] for v in grades_aud.values()))
     audiences = {}
     for k, v in sorted(per.items()):
         if k.startswith("aud:"):
             m = sum(v.values())
             ds = _spot_draws(v, f"report-{run}-{k}-{m}")
-            p = round(sum(1 for s in ds if s <= AUDIENCE_BAR) / len(ds), 3)
+            p = round(sum(1 for s in ds if s <= rl["audience_bar"]) / len(ds), 3)
             audiences[k[4:]] = {"pairs": m, "sure": p, "grades_4_up": grades_aud.get(k[4:]),
-                                "state": "ok" if p >= SURE else "more" if p >= UNSURE else "failed"}
+                                "state": "ok" if p >= rl["sure"] else "more" if p >= rl["unsure"] else "failed"}
     more = [a for a, v in audiences.items() if v["state"] == "more"]
     failed = [a for a, v in audiences.items() if v["state"] == "failed"]
     done = n == len(active(pr)) and len(grades) == len(active(pr))
@@ -695,6 +729,7 @@ def report(run=None):
         "grades": dict(Counter(grades)), "grades_4_up": round(share4(grades), 3), "blind_ok": blind_ok,
         "grades_ok": grades_ok, "more_pairs_for": more, "failed_audiences": failed, "done": done,
         "passed": done and blind_ok and grades_ok and not more and not failed,
+        "pass_rule": rl, "pass_rule_from_run": since,
         "right_pairs": [p["pair"] for p in active(pr)
                         if ans.get(p["pair"], {}).get("pick") == key.get(p["pair"])],
     }

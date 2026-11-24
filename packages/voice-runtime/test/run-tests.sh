@@ -222,6 +222,15 @@ printf '%s' "$out" | grep -q 'CLIENT-NOTE\|How to write it\|Words the rules quot
 out=$("$VR" guide --audience clients --purposes decline)
 note=$(printf '%s\n' "$out" | grep -n -m1 'CLIENT-NOTE' | cut -d: -f1); rule=$(printf '%s\n' "$out" | grep -n -m1 'CLIENT-RULE' | cut -d: -f1)
 [ -n "$note" ] && [ -n "$rule" ] && [ "$note" -lt "$rule" ] && printf '%s' "$out" | grep -qE '"kindly" [0-9.]+[^0-9. ]' && ok "clients get their drafting notes before the rules, and the quoted words' shares" || no "clients get their drafting notes before the rules, and the quoted words' shares" "$out"
+out=$("$VR" guide --audience technical-team --purposes status)
+ds=$(printf '%s\n' "$out" | grep -n -m1 'DRAFT-SYSTEM' | cut -d: -f1); own=$(printf '%s\n' "$out" | grep -n -m1 'OWN-RULE' | cut -d: -f1)
+[ -n "$ds" ] && [ -n "$own" ] && [ "$ds" -lt "$own" ] && printf '%s' "$out" | grep -q '^## How to draft' && ok "guide gives the build's drafter prompt first, under How to draft" || no "guide gives the build's drafter prompt first, under How to draft" "$out"
+cur=$(jq -r .build_time "$ST/manifest.json"); cp "$ST/builds/$cur/stats.json" "$TMP/stats.purposes"
+jq '.drafting.purposes = ["status", "gossip"]' "$TMP/stats.purposes" > "$ST/builds/$cur/stats.json"
+g=$("$VR" guide --audience technical-team --purposes gossip 2>&1); grc=$?
+d=$("$VR" guide --audience technical-team --purposes decline 2>&1); drc=$?
+cp "$TMP/stats.purposes" "$ST/builds/$cur/stats.json"
+[ "$grc" = 0 ] && [ "$drc" = 1 ] && printf '%s' "$d" | grep -q 'purposes are: status, gossip' && ok "a build's own purpose list is the one guide accepts" || no "a build's own purpose list is the one guide accepts" "exit $grc/$drc: $d"
 out=$(EMBEDDING_LIB_HOME="$TMP/no-el" "$VR" guide --audience clients --purposes decline 2>&1)
 printf '%s' "$out" | grep -q CLIENT-DECLINE-RULE && ok "guide runs on the system python3 without embedding-lib" || no "guide runs on the system python3 without embedding-lib" "$out"
 

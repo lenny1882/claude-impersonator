@@ -11,8 +11,10 @@ run 'voice validate --batch', then 'voice pairs --redraw all'.
                     the guide's rules quote
 
 Each corpus audience's draft method is a hash of what its drafts depend on:
-both prompts, its notes, whether it is shown the quoted words' shares, and
-CODE, the version of the prompt text this module's callers build around them
+both prompts, its notes, whether it is shown the quoted words' shares, the
+voice settings that change the drafter's prompt or model where they differ
+from their defaults (settings.draft_inputs: the style section, the drafter's
+and brief writer's models), and CODE, the version of the prompt text this module's callers build around them
 (the draft prompt, the style and length lines). Changing one audience's notes
 changes only that audience's method, so only it is drafted and paired again;
 the other audiences' drafts, pairs and answers stand.
@@ -91,17 +93,20 @@ def load():
             "notes": {a: list(v) for a, v in notes.items()}, "quoted_rates_for": sorted(q)}
 
 
-def _hash(draft, brief, notes, quoted):
-    blob = json.dumps({"code": CODE, "draft": draft, "brief": brief, "notes": list(notes),
-                       "quoted": bool(quoted)}, sort_keys=True, ensure_ascii=False)
+def _hash(draft, brief, notes, quoted, extra=None):
+    h = {"code": CODE, "draft": draft, "brief": brief, "notes": list(notes), "quoted": bool(quoted)}
+    if extra:
+        h["settings"] = extra
+    blob = json.dumps(h, sort_keys=True, ensure_ascii=False)
     return "d-" + hashlib.sha256(blob.encode("utf-8")).hexdigest()[:10]
 
 
 def method(audience, d=None):
     """The audience's draft method under settings d (the file's by default)."""
+    from . import settings
     d = d or load()
     return _hash(d["draft_system"], d["brief_system"], d["notes"].get(audience, []),
-                 audience in d["quoted_rates_for"])
+                 audience in d["quoted_rates_for"], settings.draft_inputs())
 
 
 def methods(d=None):
@@ -122,10 +127,14 @@ def normal(m, audience):
 
 
 def for_build(d=None):
-    """The notes as a build carries them in stats.json, so voice-runtime's
-    guide gives each audience what validation drafted with."""
-    from .guide import RARE_QUOTED
+    """What a build carries in stats.json so voice-runtime drafts as
+    validation did: the drafter's base prompt, the notes, the purposes'
+    ids in order, and the quoted-word cutoff."""
+    from . import settings
     d = d or load()
-    return {"notes": {a: list(v) for a, v in sorted(d["notes"].items())},
-            "quoted_rates_for": list(d["quoted_rates_for"]), "rare_below": RARE_QUOTED,
+    return {"draft_system": d["draft_system"],
+            "notes": {a: list(v) for a, v in sorted(d["notes"].items())},
+            "quoted_rates_for": list(d["quoted_rates_for"]),
+            "rare_below": settings.get("style")["quoted_rare_below"],
+            "purposes": list(settings.purposes()),
             "methods": methods(d)}

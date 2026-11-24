@@ -173,7 +173,14 @@ Run in order, each in your own shell (each logs to
    word). The prompts and notes are in the state's `voice/drafter.json`, not
    the code: edit it to change the drafter, no release needed; `voice
    drafter` lists each audience's method (a hash of its settings) and
-   whether it is judged and paired under it. Four calls a message;
+   whether it is judged and paired under it. The other tuned settings are in
+   `voice/settings.json`: the purposes and labelling prompt, the guide
+   writer's prompt and example counts, the judge's prompt and grade wording,
+   the pass rule, the marks of style, the quoted-word cutoff, the never-say
+   thresholds and each role's model. It is written with the defaults the
+   first time it is read; a key left out takes its default. `voice settings`
+   lists what differs from the defaults. A change to the style section or
+   to the drafter's or brief writer's model changes every audience's method. Four calls a message;
    `--limit N` does the first N, and a later run carries on from there.
 6. `voice pairs`, then on the review page: 60 blind pairs (12 per audience),
    the judge's 20 worst and 10 random drafts, and the report: counts,
@@ -232,6 +239,9 @@ files 600), never backed up:
 | `bitbucket-progress/` | each finished repo of an `extract bitbucket` still running or stopped |
 | `labels/` | each pass's labels, and every disagreement between them |
 | `labelling-notes.md` | additions to the labelling prompt |
+| `voice/drafter.json` | the drafter's and brief writer's prompts, each audience's drafting notes |
+| `voice/settings.json` | purposes, the labelling, guide and judge prompts, the pass rule, marks of style, never-say thresholds, models |
+| `validation/pass-rule.jsonl` | each pass rule used, with the run it applies from |
 | `label-check.json`, `disagreement-grades.json` | your label check and disagreement grades |
 | `holdouts.json` | the held-back items and the validation run |
 | `own-rules.md` | your own rules, first in the guide |

@@ -7,7 +7,8 @@ every purpose a message carries, in the order they appear. Results go to
 labels/<pass>.jsonl, one line per item, written after each batch, so a
 stopped pass resumes after the last finished batch.
 
-The labelling prompt is fixed here, plus labelling-notes.md in the state:
+The labelling prompt and the purposes are the state's voice/settings.json
+(settings.py, defaults here and in voice.PURPOSES), plus labelling-notes.md in the state:
 whatever is written there is added to the prompt, which is how the prompt
 is changed between passes (never during one) after a failed label check or
 a purpose the two models disagree on too often. `label --redo <purpose,...>`
@@ -42,33 +43,41 @@ SAMPLE_MAX_WRONG = 6
 DISAGREE_SAMPLE = 60
 PASSES = {"labeller": "labeller", "second": "second"}
 
-SCHEMA = {
-    "type": "object", "additionalProperties": False, "required": ["items"],
-    "properties": {"items": {"type": "array", "items": {
-        "type": "object", "additionalProperties": False, "required": ["n", "purposes"],
-        "properties": {
-            "n": {"type": "integer"},
-            "purposes": {"type": "array", "minItems": 1,
-                         "items": {"type": "string", "enum": list(voice.PURPOSES)}}}}}},
-}
+def schema():
+    return {
+        "type": "object", "additionalProperties": False, "required": ["items"],
+        "properties": {"items": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["n", "purposes"],
+            "properties": {
+                "n": {"type": "integer"},
+                "purposes": {"type": "array", "minItems": 1,
+                             "items": {"type": "string", "enum": list(voice.purposes())}}}}}},
+    }
 
 
 def notes_file():
     return state.path("labelling-notes.md")
 
 
-def system_prompt():
-    lines = "\n".join(f"- {k}: {v}" for k, v in voice.PURPOSES.items())
-    base = f"""You label the purposes of messages written by one person, self-01, at work.
+# The default; the state's voice/settings.json "labels.system" wins, with
+# {purposes} replaced by the purposes, one "- id: definition" line each.
+SYSTEM = """You label the purposes of messages written by one person, self-01, at work.
 Names in the text are pseudonyms (colleague-07, client-03, product-04); [url], [email],
 [phone] and [REDACTED:...] stand for removed details. Each numbered item is one message by
 self-01, shown with the conversation before it and, where there is one, after it.
 
 For each item give every purpose the message carries, using only these ids, in the order
 they appear in the message. A message can carry several. Use "other" only when none fits.
-{lines}
+{purposes}
 
 Label the message itself, not the context; the context only shows what it answers."""
+
+
+def system_prompt():
+    from . import settings
+    lb = settings.get("labels")
+    lines = "\n".join(f"- {k}: {v}" for k, v in lb["purposes"].items())
+    base = lb["system"].replace("{purposes}", lines)
     n = notes()
     return base + (f"\n\nFurther notes:\n{n}" if n else "")
 
@@ -86,7 +95,7 @@ def purpose_tip(p):
     labelling-notes.md that names the purpose as a whole word."""
     lines = [l.strip().lstrip("-").strip() for l in notes().splitlines()]
     pat = re.compile(rf"(?<![\w-]){re.escape(p)}(?![\w-])")
-    return "\n".join([voice.PURPOSES[p]] + [l for l in lines if l and pat.search(l)])
+    return "\n".join([voice.purposes()[p]] + [l for l in lines if l and pat.search(l)])
 
 
 def prompt_version():
@@ -138,7 +147,7 @@ def run(which, redo=(), log=print):
     system = system_prompt()
     pv = prompt_version()
     if redo:
-        bad = sorted(redo - set(voice.PURPOSES))
+        bad = sorted(redo - set(voice.purposes()))
         if bad:
             raise SystemExit(f"voice-decision-pipeline: unknown purpose {', '.join(bad)}")
         hit = redo_set(redo, pv)
@@ -157,7 +166,7 @@ def run(which, redo=(), log=print):
         prompt = "\n".join(item_prompt(n + 1, it) for n, it in enumerate(chunk))
         prompt += f"\nGive the purposes for items 1 to {len(chunk)}."
         try:
-            ans = model.call(PASSES[which], system, prompt, SCHEMA, log=log)
+            ans = model.call(PASSES[which], system, prompt, schema(), log=log)
         except model.UsageLimit as e:
             log(f"  stop  usage limit after {sent} items: {e}; run the same command again to resume")
             return 6
@@ -166,7 +175,7 @@ def run(which, redo=(), log=print):
         for n, it in enumerate(chunk, 1):
             if n in got:
                 ps = list(dict.fromkeys(got[n]))
-                lines.append({"id": it["id"], "purposes": ps, "prompt": pv, "model": model.MODELS[PASSES[which]]})
+                lines.append({"id": it["id"], "purposes": ps, "prompt": pv, "model": model.name(PASSES[which])})
         with open(labels_file(which), "a", encoding="utf-8") as f:
             for r in lines:
                 f.write(json.dumps(r, sort_keys=True) + "\n")
@@ -283,7 +292,7 @@ def disagreement_rates():
                 differ[p] += 1
     return {p: {"either": either[p], "differ": differ[p],
                 "rate": round(differ[p] / either[p], 3) if either[p] else 0.0}
-            for p in voice.PURPOSES}
+            for p in voice.purposes()}
 
 
 def write_disagreements(new_sample=False):

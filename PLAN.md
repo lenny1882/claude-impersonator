@@ -305,9 +305,11 @@ Not sources:
   sign-offs, emoji, spelling, common words and phrases. Every voice item
   counts, including those too short or code-heavy to be exemplars.
 - Audience comes from the conversation (§3.2). Sonnet 5.5 labels purposes on
-  anonymised messages, 20 items a call. The labelling prompt is changed
-  through `labelling-notes.md` in the state; `voice label --redo <purposes>`
-  resends the items either model gave one of those purposes.
+  anonymised messages, 20 items a call. The purposes, the labelling prompt
+  and each role's model are in the state's `voice/settings.json` (§3.7), and
+  the prompt can also be added to through `labelling-notes.md`; `voice label
+  --redo <purposes>` resends the items either model gave one of those
+  purposes.
 - Opus 5.5 labels every message blind as the second labeller.
 - Label check: the owner checks a sample of 120 labelled messages spread
   across audiences and purposes (more on request). Over 5% wrong (more than 6
@@ -381,12 +383,26 @@ Not sources:
   the code, so changing them needs no release: the drafter's and the brief
   writer's system prompts, each audience's drafting notes, and the audiences
   shown the share of messages holding each word the guide's rules quote. The
-  file is written with defaults the first time it is read; by default only
-  clients has notes (length, requests, phrasing, vocabulary) and the
-  quoted-word shares, and the other audiences draft from the guide alone.
-  `voice drafter` lists each audience's method and state. A build carries
-  the notes and methods in `stats.json`, so the runtime's guide gives each
-  audience the notes validation drafted with.
+  file is written with defaults the first time it is read: the two prompts,
+  and no notes or quoted-word shares for any audience; notes are added to
+  the owner's file only. `voice drafter` lists each audience's method and
+  state. A build carries the drafter's base prompt, the notes, the methods
+  and the purpose ids in `stats.json`; the runtime's guide gives the prompt
+  and each audience's notes, and its skill drafts by that prompt, so the
+  runtime drafts as validation did.
+- Every other voice setting that is tuned rather than built lives in the
+  state's `voice/settings.json`, written with defaults the first time it is
+  read, so changing one needs no release: the purposes and the labelling
+  prompt; the guide writer's prompt and how many examples it is shown; the
+  judge's prompt and the 1–5 grade wording; the pass rule below and its
+  sizes; the marks of style, the quoted-word cutoff and the never-say
+  thresholds; and the model for each role. A key left out takes its
+  default; a malformed file is refused with what is wrong. `voice settings`
+  lists what differs from the defaults. The marks of style, the cutoff, the
+  never-say thresholds and the drafter's and brief writer's models change
+  what the drafter is shown, so where they differ from the defaults they join
+  every audience's draft method. The anonymiser's rules, secret patterns and
+  public hosts stay in code, as they decide what leaks.
 - Every audience's drafter is shown the share of its messages holding each
   mark of style: a spaced dash, an exclamation mark, an emoji, `_emphasis_`
   or `*bold*`, a list, a swear word (`voicestats.STYLE`), and is told to use
@@ -426,7 +442,10 @@ Not sources:
 - A model judge, Fable 5.2, scores every draft against the real message,
   mostly on voice, given the same brief. The owner also reviews the judge's
   20 worst-scored drafts and 10 random ones each run.
-- Pass: every gate passes on its own. The spotting rate is right picks minus
+- Pass: the defaults below, changed in `voice/settings.json`; each change is
+  recorded with the run it applies to (`validation/pass-rule.jsonl`), and
+  the report says from which run the rule applies. Every gate passes on its
+  own. The spotting rate is right picks minus
   wrong picks as a share of pairs. How sure a rate is comes from a Dirichlet
   over the right, wrong and can't-tell counts.
   - Blind test: at least 80% sure the overall spotting rate is at most 10%.
@@ -1125,27 +1144,6 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 
 ### 8.2 Voice
 
-- Next: every voice setting that is tuned rather than built moves into state
-  files, so changing one needs no release, as the drafter's settings already
-  are (`voice/drafter.json`, §3.7):
-  - the label purposes (`voice.PURPOSES`) and the labeller's prompt;
-  - the guide writer's prompt and its rule counts (`guide.SYSTEM`,
-    `PER_PURPOSE`, `COMBINED`);
-  - the judge's prompt and the 1–5 grade wording (`validate.JUDGE_SYSTEM`,
-    `GRADES`);
-  - the pass rule: the overall and per-audience spotting bars, the pass and
-    fail confidence lines, the grade shares, pairs per audience, the
-    exemplar counts, and the judge review's sizes; a change is recorded with
-    the run it applies to;
-  - the marks of style and their word lists (`voicestats.STYLE`), the
-    quoted-word cutoff and the never-say thresholds, which join the drafter
-    method's hash because they change the prompt;
-  - the model for each role (`model.MODELS`).
-
-  A build carries the drafter's base prompt (`draft_system`) as well as the
-  notes, and voice-runtime's skill drafts by it, so the runtime drafts with
-  the prompt validation passed. The anonymiser's rules, secret patterns and
-  public hosts stay in code.
 - The line in `~/.claude/CLAUDE.md` that loads the voice skill; the owner
   approves its wording.
 - A test that a drafting subagent loads the skill, and whether

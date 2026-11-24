@@ -1172,6 +1172,7 @@ try:
     b = drafter.for_build()
     assert b["notes"] == {"clients": d["notes"]["clients"]} and b["quoted_rates_for"] == ["clients"]
     assert set(b["methods"]) == set(voice.CORPUS_AUDIENCES)
+    assert b["draft_system"] == d["draft_system"] and b["purposes"] == list(voice.PURPOSES), b
 finally:
     for f, t in keep.items():
         open(f, "w").write(t)
@@ -1299,7 +1300,8 @@ for page in (voicereview.pairs_page(), voicereview.judge_page()):
     for n in validate.GRADES:
         d = voicereview.E(voicereview.grade_text(n))
         assert "self-01" not in d and f"<li><b>{n}</b>: {d}</li>" in page and f"title='{n}: {d}'" in page, (n, d)
-assert all(d in validate.JUDGE_SYSTEM for d in validate.GRADES.values())
+assert all(d in validate.judge_system() for d in validate.GRADES.values())
+assert validate.judge_system() == validate.JUDGE_SYSTEM
 EOF
 check "each gate is measured by how sure the counts make it: 12 more pairs when unsure, a fail when likely over" vpy <<'EOF'
 from vdp import validate
@@ -1311,7 +1313,7 @@ assert sure({"right": 30, "wrong": 30}) > sure({"right": 6, "wrong": 6}), "more 
 EOF
 check "the pass is worked out from the owner's answers: picks, grades and the per-audience rule" vpy <<'EOF'
 from vdp import state, validate
-validate.SURE = 0.75   # the fixture has one or two pairs an audience: one "can't tell" makes 0.79 sure
+_rule = validate.rule; validate.rule = lambda: {**_rule(), "sure": 0.75}   # the fixture has one or two pairs an audience: one "can't tell" makes 0.79 sure
 pr = state.read_json(validate.pairs_file())
 key = state.read_json(validate.key_file())
 for i, p in enumerate(pr["pairs"]):
@@ -1513,6 +1515,76 @@ finally:
     if keep is not None:
         open(df, "w").write(keep)
 EOF
+check "the voice settings are written with the defaults, which give the prompts and methods the code always gave; overrides apply, are recorded and refused when malformed" vpy <<'EOF'
+import json, os, subprocess, sys
+from vdp import drafter, guide, labels, model, settings, state, validate, voice, voicestats
+f = settings.file()
+keep = open(f).read() if os.path.exists(f) else None
+log = settings.pass_rule_log()
+keep_log = open(log).read() if os.path.exists(log) else None
+try:
+    os.path.exists(f) and os.remove(f)
+    d = settings.load()
+    assert os.path.exists(f) and oct(os.stat(f).st_mode & 0o777) == "0o600"
+    assert json.load(open(f)) == settings.defaults() and settings.changed() == []
+    assert d["labels"]["purposes"] == voice.PURPOSES and d["models"] == model.MODELS
+    lines = "\n".join(f"- {k}: {v}" for k, v in voice.PURPOSES.items())
+    assert labels.system_prompt().startswith(labels.SYSTEM.replace("{purposes}", lines))
+    assert validate.judge_system() == validate.JUDGE_SYSTEM and d["guide"]["system"] == guide.SYSTEM
+    assert {k: (r.pattern, r.flags) for k, r in settings.style_marks().items()} == \
+           {k: (r.pattern, r.flags) for k, r in voicestats.STYLE.items()}
+    assert settings.draft_inputs() == {}
+    assert drafter.LEGACY["brief-8"] == drafter.method("senior"), "the defaults leave every method as it was"
+    before, pv = drafter.methods(), labels.prompt_version()
+    state.write_json(f, {"schema_version": 1, "pass_rule": {"overall_bar": 0.2},
+                         "models": {"judge": "claude-test-judge"}, "guide": {"per_purpose": 2}})
+    assert validate.rule()["overall_bar"] == 0.2 and validate.rule()["audience_bar"] == validate.AUDIENCE_BAR
+    assert model.name("judge") == "claude-test-judge" and model.name("drafter") == model.MODELS["drafter"]
+    assert drafter.methods() == before and labels.prompt_version() == pv, "judge, guide and pass rule leave methods alone"
+    assert sorted(settings.changed()) == ["guide.per_purpose", "models.judge", "pass_rule.overall_bar"]
+    r = validate.report()
+    if r.get("pairs"):
+        assert r["pass_rule"]["overall_bar"] == 0.2 and r["pass_rule_from_run"] == r["run"]
+        last = list(state.read_jsonl(log))[-1]
+        assert last["rule"]["overall_bar"] == 0.2 and last["run"] == r["run"]
+        n = len(list(state.read_jsonl(log)))
+        validate.report()
+        assert len(list(state.read_jsonl(log))) == n, "an unchanged rule isn't recorded again"
+    marks = settings.defaults()["style"]["marks"]
+    marks["semicolon"] = {"pattern": ";", "flags": ""}
+    state.write_json(f, {"schema_version": 1, "style": {"marks": marks}})
+    assert "semicolon" in settings.style_marks() and set(settings.draft_inputs()) == {"style"}
+    after = drafter.methods()
+    assert all(after[a] != before[a] for a in after), "a style change drafts every audience again"
+    state.write_json(f, {"schema_version": 1, "labels": {"purposes": {"ask": "asks", "other": "none"}}})
+    assert labels.schema()["properties"]["items"]["items"]["properties"]["purposes"]["items"]["enum"] == ["ask", "other"]
+    assert labels.prompt_version() != pv and "- ask: asks" in labels.system_prompt()
+    for bad, why in (({"schema_version": 1, "pass_rule": {"sure": "high"}}, "pass_rule.sure must be a number"),
+                     ({"schema_version": 1, "pass_rule": {"sure": 0.4}}, "unsure must not be above"),
+                     ({"schema_version": 1, "labels": {"system": "no list"}}, "must hold {purposes}"),
+                     ({"schema_version": 1, "style": {"marks": {"x": {"pattern": "("}}}}, "not a regular expression"),
+                     ({"schema_version": 1, "models": {"painter": "x"}}, "unknown role painter"),
+                     ({"schema_version": 1, "judge": {"grades": {"5": "x"}}}, 'each of "1" to "5"'),
+                     ({"schema_version": 1, "nothing": {}}, "unknown section nothing"),
+                     ({"schema_version": 2}, "schema_version")):
+        state.write_json(f, bad)
+        try:
+            settings.load(); raise AssertionError(bad)
+        except SystemExit as e:
+            assert why in str(e), (why, str(e))
+    os.remove(f)
+    out = subprocess.run([sys.executable, "-m", "vdp", "voice", "settings"], capture_output=True, text=True)
+    assert out.returncode == 0 and f in out.stdout and "differs from the defaults: nothing" in out.stdout, out.stdout + out.stderr
+finally:
+    if keep is not None:
+        open(f, "w").write(keep)
+    elif os.path.exists(f):
+        os.remove(f)
+    if keep_log is not None:
+        open(log, "w").write(keep_log)
+    elif os.path.exists(log):
+        os.remove(log)
+EOF
 check "validate --batch drafts one batch per audience of messages never shown, once; pairs --redraw all draws from it" vpy <<EOF
 import json, os, subprocess, sys
 from vdp import pool, state, validate
@@ -1635,7 +1707,7 @@ EOF
 check "publish goes through builds-sync's library once the gates pass" vpy <<'EOF'
 import os, sys, json
 from vdp import state, validate, voicebuild
-validate.SURE = 0.75   # as above: one or two fixture pairs an audience
+_rule = validate.rule; validate.rule = lambda: {**_rule(), "sure": 0.75}   # as above: one or two fixture pairs an audience
 home = state.path("fake-bs")
 os.makedirs(os.path.join(home, "pylib"), exist_ok=True)
 open(os.path.join(home, "pylib", "builds_sync.py"), "w").write(
@@ -1649,7 +1721,7 @@ assert open(tar + ".published").read() == bt
 EOF
 check "publish refuses while validation hasn't passed" vpy <<'EOF'
 from vdp import state, validate, voicebuild
-validate.SURE = 0.75   # as above: one or two fixture pairs an audience
+_rule = validate.rule; validate.rule = lambda: {**_rule(), "sure": 0.75}   # as above: one or two fixture pairs an audience
 pr = state.read_json(validate.pairs_file())
 validate.answer("pair", pr["pairs"][0]["pair"], grade=1)
 try:

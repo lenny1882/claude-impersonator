@@ -64,7 +64,7 @@ shown = voice.shown
 
 def grade_text(n):
     """A grade's meaning on the judge's scale, worded for the owner."""
-    return validate.GRADES[n].replace("self-01's", "your").replace("self-01", "you")
+    return validate.grades()[n].replace("self-01's", "your").replace("self-01", "you")
 
 
 def scale():
@@ -95,12 +95,12 @@ def voice_nav(items):
 def plabels(ps):
     """Purpose names, comma-separated, each showing its definition on hover."""
     return ", ".join(f"<span class=pl title='{E(labels.purpose_tip(p), quote=True)}'>{E(p)}</span>"
-                     if p in voice.PURPOSES else E(p) for p in ps)
+                     if p in voice.purposes() else E(p) for p in ps)
 
 
 def boxes(chosen):
     return "".join(f"<label class=meta><input type=checkbox value={p}{' checked' if p in chosen else ''}> {p}</label> "
-                   for p in voice.PURPOSES)
+                   for p in voice.purposes())
 
 
 def ctx_block(it):
@@ -264,8 +264,8 @@ def judge_page():
                      f"<details><summary class=meta>conversation before</summary><pre>{E(x['context'])}</pre></details>"
                      f"<p><b>Yours</b></p><pre>{E(shown(x['real']))}</pre><p><b>Draft</b></p><pre>{E(shown(x['draft']))}</pre>"
                      f"<p class=row>Your grade for the draft: {gb}</p></div>")
-    return _page("Judge review", f"""<p>The judge's {validate.WORST} worst-scored drafts and
-{validate.RANDOM} random others from run {jr['run']}, each beside your real message. Your grade
+    return _page("Judge review", f"""<p>The judge's {validate.rule()['judge_review_worst']} worst-scored drafts and
+{validate.rule()['judge_review_random']} random others from run {jr['run']}, each beside your real message. Your grade
 shows where the judge and you differ, on the judge's own scale (each button shows its meaning on
 hover):</p>{scale()}{voice_nav([x['audience'] for x in jr['items']])}{''.join(cards)}""")
 
@@ -277,6 +277,7 @@ def report_page():
     rows = "".join(f"<tr><td>{E(k)}</td><td>{v.get('right', 0)}</td><td>{v.get('wrong', 0)}</td>"
                    f"<td>{v.get('cant', 0)}</td></tr>" for k, v in sorted(r["counts"].items()))
     sp = r["spotting"]
+    rl = r["pass_rule"]
     pr = state.read_json(validate.pairs_file(), {}) or {}
     byp = {p["pair"]: p for p in pr.get("pairs", [])}
     key = state.read_json(validate.key_file(), {}) or {}
@@ -289,12 +290,13 @@ def report_page():
 <p>Run {r['run']}: {r['answered']} of {r['pairs']} pairs answered, {r['graded']} graded.
 {'<b>Passed.</b>' if r['passed'] else '<b>Not passed yet.</b>'}
 Blind test {'passes' if r['blind_ok'] else 'fails'}: {int(r['confidence_pass_holds'] * 100)}% sure the
-spotting rate is at most {int(validate.OVERALL_BAR * 100)}% (needs {int(validate.SURE * 100)}%).
+spotting rate is at most {int(rl['overall_bar'] * 100)}% (needs {int(rl['sure'] * 100)}%).
 Grades {'pass' if r['grades_ok'] else 'fail'}: {int(r.get('grades_4_up', 0) * 100)}% at 4 or higher (needs
-{int(validate.GRADES_ALL * 100)}%, and {int(validate.GRADES_AUDIENCE * 100)}% in each audience), none at 1.
+{int(rl['grades_all'] * 100)}%, and {int(rl['grades_audience'] * 100)}% in each audience), none at 1.
+This pass rule has applied from run {r['pass_rule_from_run']}.
 {f'More pairs needed for {E(more)}: run <code>voice pairs --more &lt;audience&gt;</code>.' if more else ''}
 {f'<b>Failed for {E(", ".join(r["failed_audiences"]))}.</b>' if r.get('failed_audiences') else ''}</p>
-<table><tr><th>Audience</th><th>Pairs</th><th>Sure spotting ≤ {int(validate.AUDIENCE_BAR * 100)}%</th>
+<table><tr><th>Audience</th><th>Pairs</th><th>Sure spotting ≤ {int(rl['audience_bar'] * 100)}%</th>
 <th>Grades at 4+</th><th>State</th></tr>{''.join(
     f"<tr><td>{E(a)}</td><td>{v['pairs']}</td><td>{int(v['sure'] * 100)}%</td>"
     f"<td>{'—' if v['grades_4_up'] is None else str(int(v['grades_4_up'] * 100)) + '%'}</td><td>{v['state']}</td></tr>"
@@ -320,7 +322,7 @@ def post(path, body):
         i = body["id"]
         if i not in d["ids"] or body["verdict"] not in ("right", "wrong"):
             raise ValueError("not in the sample")
-        ps = [p for p in body.get("purposes") or [] if p in voice.PURPOSES]
+        ps = [p for p in body.get("purposes") or [] if p in voice.purposes()]
         d["answers"][i] = {"verdict": body["verdict"], "purposes": ps if body["verdict"] == "wrong" else []}
         state.write_json(labels.check_file(), d)
         return "ok"
@@ -329,7 +331,7 @@ def post(path, body):
         i = body["id"]
         if i not in g.get("ids", []) or body["pick"] not in ("labeller", "second", "neither"):
             raise ValueError("not in the sample")
-        ps = [p for p in body.get("purposes") or [] if p in voice.PURPOSES]
+        ps = [p for p in body.get("purposes") or [] if p in voice.purposes()]
         if body["pick"] != "neither":
             x = {r["id"]: r for r in state.read_jsonl(state.path("labels", "disagreements.jsonl"))}.get(i, {})
             ps = x.get(body["pick"], [])
