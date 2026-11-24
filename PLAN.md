@@ -99,8 +99,8 @@ Not sources:
 - Every package's state is owner-only: directories 700, files 600. Scripts
   set umask 077 before writing; each install creates its state directory as
   700 and its verify step checks the modes.
-- No backup. The drafts, decision log and questions reach the builds repo,
-  encrypted (§5); the `age` key has a copy outside the machine.
+- No backup. The drafts and decision log reach S3, encrypted (§5); every key
+  is held by AWS KMS.
 - State is kept until the owner deletes it. `forget <person|conversation>`
   (also a Bitbucket repo or PR) removes the items from the corpus and its
   index, rewrites the index matrix without them, and adds them to the struck
@@ -856,7 +856,7 @@ after install, because `update.sh` reruns the installer from it.
 |---|---|---|
 | `embedding-lib` | command | nothing |
 | `question-store` | command, with hook registrations | nothing |
-| `builds-sync` | skill plus command; registers hooks | nothing; `age` |
+| `builds-sync` | skill plus command; registers hooks | nothing; AWS (KMS, S3, IAM Roles Anywhere) |
 | `voice-decision-pipeline` | command | `embedding-lib`; writes the data format |
 | `voice-runtime` | skill | `embedding-lib`; reads the data format |
 | `decision-runtime` | command, with hook registrations | `embedding-lib`, `question-store`; reads the data format |
@@ -881,7 +881,7 @@ after install, because `update.sh` reruns the installer from it.
   - `question-store`: park, notify (push, session), collect (first answer
     wins), hand back, show (the session command). Its versioned interface is
     park a question / read its answer.
-  - `builds-sync`: the builds repo (below).
+  - `builds-sync`: uploads and live records (below).
 - **Building vs using:** only the pipeline builds the models (corpus,
   labels, guide, principles, indexes, the agent block, validation). The
   others use what it built and write evidence records (drafts and approved
@@ -896,9 +896,8 @@ after install, because `update.sh` reruns the installer from it.
   stops a pass cleanly with exit 6; finished batches are kept and the same
   command resumes.
 - **`voice publish`** refuses until the label check and the validation run
-  have passed. The build format, the `builds-sync` library (`publish_build`,
-  `read_live`) and `voice-runtime install-build` are fixed in each package's
-  README.
+  have passed. The build format, the `builds-sync` library and the service's
+  interface are fixed in each package's README.
 - **Coupling:** shared code lives once in the owning package's library,
   which only defines things. Dependents load it from that package's install
   directory (never `PATH`), check a version constant, and fail their install
@@ -916,60 +915,98 @@ after install, because `update.sh` reruns the installer from it.
   `~/.claude/skills/voice-runtime/state/`; `decision-runtime`,
   `question-store` and `voice-decision-pipeline` in `~/.claude/<name>/`. No
   path or setting is configured or shared.
-  - **Builds on every machine:** the corpus is extracted, anonymised and
-    built once, on one machine. Each build is committed to a builds repo, and
-    every machine the owner uses installs `voice-runtime` and
-    `decision-runtime` from it. No other machine extracts or builds. Nothing
-    real may be in a build: the leak check runs on the built files (voice
-    guide, exemplars, statistics, principles and their evidence quotes, tech
-    positions, client constraints, cases, the agent block) before every
-    commit, and a failure stops it.
+  - **One build machine:** the corpus is extracted, anonymised and built
+    on one machine only. Every machine the owner uses reaches the builds
+    through an AWS service and never holds one. Nothing real may be in a
+    build: the leak check runs on the built files (voice guide, exemplars,
+    statistics, principles and their evidence quotes, tech positions, client
+    constraints, cases, the agent block) before every upload, and a failure
+    stops it.
+  - **Revocation is complete:** a lost machine is cut off from elsewhere,
+    without access to it, and afterwards nothing left on its disk can be
+    decrypted: no build, no key, no live record. No machine holds a key that
+    opens anything it stores. Revoking one machine leaves the others
+    working, with no re-keying.
+  - **Machine identity:** every machine runs Linux and has a TPM 2.0. Each
+    machine's private key is generated inside its TPM and never leaves it.
+    A certificate authority whose signing key is a KMS asymmetric key issues
+    each machine a certificate for that key. IAM Roles Anywhere exchanges the
+    certificate for AWS credentials lasting at most an hour; nothing
+    long-lived is stored on a machine. Each machine has its own IAM role,
+    whose trust policy accepts only that machine's certificate subject.
+  - **Keys:** AWS KMS holds every key; key material never leaves it and
+    CloudTrail logs every use. Each key's policy refuses deletion except by
+    a named admin role, since deleting a key makes everything under it
+    unreadable. Every build and every record segment has its own data key,
+    tagged with its id and purpose (encryption context). Keys:
+    - upload: the build machine may only encrypt with it;
+    - distribution: only the re-encryption workflow encrypts and only the
+      service decrypts;
+    - records: machines may only encrypt with it; only the build machine's
+      role decrypts;
+    - pipeline state: only the build machine's role uses it;
+    - certificate signing (asymmetric).
+  - **Publishing a build:** `voice build` runs the leak check and embeds the
+    exemplars, so the index ships inside the build. `voice publish`
+    encrypts the build under a new data key from the upload key, signs it
+    with the build machine's TPM key, pushes it to the builds repo's upload
+    branch, and deletes the plaintext tarball from the pipeline state.
   - **Builds repo:** a private GitHub repo, separate from this one, named in
-    `build-inputs.json` (`builds_repo`). Everything in it is encrypted with
-    `age` under one key, except a plaintext `README.md` with no content. The
-    pipeline and every machine refuse a push if any other tracked file
-    doesn't end in `.age`.
-    - Layout: `builds/<build-time>.tar.age`, one per build, and
-      `live/<hostname>/<package>/<push-time>.jsonl.age`. Only the pipeline
-      writes `builds/`; each machine writes only its own `live/` directory.
-    - The embedding index is not in the repo. Each machine embeds the
-      exemplars at install, reusing the previous build's rows by a hash of
-      each text; a change in `embedding-lib`'s identity re-embeds them all.
-    - Each machine holds the key at `~/.config/age/builds.key`, mode 600,
-      copied there by hand.
-    - Live files that travel: `drafts.jsonl` (`voice-runtime`),
-      `decision-log.jsonl` (`decision-runtime`), `questions.jsonl`
-      (`question-store`). The reviewed-changes record, gate state and
-      question delivery state stay on their machine.
-    - Segments: each push stores only the records added since the last
-      push, so `questions.jsonl` is append-only and the newest line per
-      question id wins. The pipeline joins every machine's segments by push
-      time, drops repeated records by id, and applies the struck list.
-      History is never rewritten for `forget`.
-  - **`builds-sync`** installs a skill directory, an executable in
-    `~/.local/bin`, and hooks registered from it. It owns the clone, the key
-    path, `age` and every pull, commit and push; the pipeline and the
-    runtimes load its library. Its state records the clone's location (asked
-    once at first install) and where each live file's last push stopped.
+    `build-inputs.json` (`builds_repo`). It holds encrypted uploads and an
+    encrypted archive of the builds; nothing in it is plaintext except a
+    `README.md` with no content.
+  - **Re-encryption workflow** (GitHub Actions): runs from a branch or repo
+    machines can't push to, since a push-triggered workflow runs the
+    workflow file of the pushed commit. It logs in to AWS through GitHub's
+    OIDC, so no secret is stored on GitHub. It checks each upload's
+    signature against the registered machine keys, re-encrypts the build
+    under a new data key from the distribution key with the build id as
+    context, and writes it to S3 for the service and to the archive branch.
+  - **Reading:** the runtime embeds the situation locally and calls the
+    service (a Lambda in the owner's AWS account) with the machine's
+    one-hour credentials. The service decrypts the build inside AWS, ranks
+    the exemplars by dot product and returns the guide text and the closest
+    exemplars as JSON. No model runs in AWS. The runtime passes them on
+    stdin to `claude -p --no-session-persistence`, which writes no
+    transcript, and prints only the draft. Nothing derived from a build is
+    written to the machine's disk, so the interactive session's transcript
+    holds the situation and the result, never the guide or exemplars. An
+    older build is used by asking the service for its build id; S3 keeps
+    every build.
+  - **Live records:** `drafts.jsonl` (`voice-runtime`) and
+    `decision-log.jsonl` (`decision-runtime`) are encrypted as they are
+    written, under the records key, so a machine can add records but never
+    read them back. Only record ids and hashes stay in plaintext, enough to
+    match a final version to its draft. Each machine writes its segments to
+    its own S3 prefix, where it may write and read nothing, then deletes the
+    local copies. The pipeline reads every machine's segments through the
+    build machine's role at the start of each build, joins them by push
+    time, drops repeated records by id and applies the struck list.
+    `questions.jsonl` is settled with `question-store` (§8.4).
+  - **Pipeline state:** the build machine's pipeline state is kept in an
+    encrypted directory whose key is wrapped by the pipeline state key. It
+    is unwrapped with the build machine's one-hour credentials and mounted
+    only while a pipeline command or the review page runs, then unmounted.
+  - **Revoking a machine:** delete its role or remove its certificate
+    subject from the role's trust policy, so it gets no new credentials;
+    revoke the role's active sessions with an IAM deny on token issue time,
+    so credentials it already holds stop at once; remove its signing key
+    from the registry, so its uploads are refused.
+  - **Machine settings:** full-disk encryption unlocked by the TPM with a
+    PIN; swap encrypted with a random key on every boot; hibernation off; a
+    short screen-lock timeout, since a running machine's disk is unlocked.
+  - **Limits:** what a machine has been shown can't be withdrawn. Drafts and
+    decisions stay in its transcripts for Claude Code's retention period,
+    readable on a running, unlocked machine. Every model call's prompt goes
+    to Anthropic's API.
+  - **`builds-sync`** carries uploads to the builds repo on the build
+    machine and live records to S3 on every machine.
     - Push: a `SessionEnd` hook pushes this machine's new records;
       `builds-sync push` does the same on demand. A lock stops two sessions
-      colliding. An offline or killed session loses nothing.
-    - Update check: a `SessionStart` hook shows the notice the last check
-      left and starts the next check in the background, at most once a day,
-      by a day stamp written before the `git fetch`; `builds-sync check
-      --force` checks at once.
-    - Nothing installs it automatically: `builds-sync install`, or the skill, which
-      runs it in the background and watches `/tmp/builds-sync-install.log`.
-      `install <build-time>` installs an older build; there is no pinning.
-      `builds-sync status` says which build a machine runs.
-    - Each install writes a new `builds/<build-time>/` and writes
-      `manifest.json` last, so the previous build is used until the new one
-      is complete, then deleted.
-  - The pipeline writes each build through `builds-sync` and, at the start
-    of each build, reads every machine's live segments into the corpus. The
-    runtimes never read the pipeline's state and keep working on the last
-    build delivered. `decision-runtime` reaches questions only through
-    `question-store`'s interface.
+      colliding. A killed session loses nothing: its pending records stay
+      encrypted on disk until the next push.
+  - The runtimes never read the pipeline's state. `decision-runtime` reaches
+    questions only through `question-store`'s interface.
   - What must agree across packages is checked when read: the embedding
     model and version, each file's schema version, and principle ids
     (carried across rebuilds by `supersedes`/`superseded_by`).
@@ -979,13 +1016,13 @@ after install, because `update.sh` reruns the installer from it.
     is JSON entries per audience and purpose, so `voice-runtime` loads only
     the cells a draft needs. The agent block is plain text generated from the
     principles.
-  - Manifest: one `manifest.json` per runtime naming the current build and
-    each file's schema version, written last. Each runtime checks only the
-    files it reads.
+  - Manifest: one `manifest.json` per build naming each file's schema
+    version. The service checks the files a call reads.
   - Layout, by package:
-    - `voice-runtime`: `builds/<build-time>/` (`guide.json`,
-      `exemplars.json`, `stats.json`, `index/`), `manifest.json`,
-      `drafts.jsonl` (live).
+    - `voice-runtime`: no build on the machine. The build (`guide.json`,
+      `exemplars.json`, `stats.json`, `index/`) is held encrypted in S3 and
+      read through the service; the machine keeps `drafts.jsonl` segments,
+      encrypted, until pushed, and plaintext record ids and hashes.
     - `decision-runtime`: `builds/<build-time>/` (`principles.json`,
       `priorities.json`, `tech-positions.json`, `client-constraints.json`,
       `cases.json`, `agent-block.txt`), `manifest.json`,
@@ -1114,6 +1151,24 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 - `anonymise` doesn't change message counts, so `/gsd:profile-user`'s
   message thresholds behave as on raw text, and its sensitive-content
   patterns still match where those words remain.
+- IAM Roles Anywhere: a trust anchor is AWS Private CA or an external CA
+  certificate; certificates from public CAs (ACM public certificates, Let's
+  Encrypt) can't be trust anchors. End-entity certificates must be X.509v3
+  with Digital Signature key usage and SHA-256 or stronger. Role trust
+  policies can be limited by `aws:PrincipalTag/x509Subject/CN`. Revocation
+  lists are imported with `ImportCrl`. The credential helper signs with a
+  TPM 2.0 key (from version 1.4.0).
+- Let's Encrypt no longer issues certificates with the TLS Client
+  Authentication EKU after 8 July 2026, so it can't identify a client.
+- AWS KMS: AWS-managed keys such as `aws/ssm` have no monthly charge, but
+  their key policies can't be changed, so Parameter Store SecureStrings
+  under them are gated by IAM alone (`ssm:GetParameter` plus
+  `kms:Decrypt`). Requests to asymmetric keys are outside the free tier.
+- Claude Code: `claude -p --no-session-persistence` writes no session file.
+  A `PostToolUse` hook's `updatedToolOutput` changes only what Claude sees;
+  the transcript format is internal and changes between versions, and
+  `SessionEnd` isn't documented to run when a session is killed.
+  `cleanupPeriodDays` has a minimum of 1 and defaults to 30.
 - claude.ai cloud sessions load none of `~/.claude`; they are not covered.
   Sessions started from claude.ai through Remote Control servers on the
   owner's machines are.
@@ -1175,7 +1230,7 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 - The §3.8 upkeep: matching edited drafts to sent messages, and review
   sessions.
 - The judge review of each validation run (§3.7).
-- `voice-runtime`'s first release; `voice build` and `voice publish`.
+- `voice-runtime`'s first release, as reworked in §8.6; `voice publish`.
 
 ### 8.3 Decisions
 
@@ -1202,6 +1257,9 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 ### 8.4 Questions to the owner (`question-store`)
 
 - Built as §4.7 describes.
+- Where `questions.jsonl` lives under §5's revocation requirement (the AWS
+  service, write-only records, or plaintext on the machine), settled when
+  `question-store` is planned. Live records already travel through S3.
 
 ### 8.5 Packaging and process
 
@@ -1219,6 +1277,24 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   material has built up, with the command, and the owner runs it in their
   own shell; a failing leak check stops it before anything is sent.
 
+### 8.6 Encrypted builds and revocation
+
+- Built as §5 describes: the AWS account's KMS keys, S3 bucket, service,
+  Roles Anywhere trust anchor, per-machine roles and certificate
+  authority; the re-encryption workflow; `builds-sync` reworked for
+  uploads and S3 records; `voice-runtime` reworked to read through the
+  service and draft through `claude -p`; `voice build` embedding the index
+  and `voice publish` signing, uploading and deleting the tarball; the
+  pipeline state in its encrypted directory.
+- Still to settle: whether drafts and decisions stay in session transcripts
+  on the default retention or drafts are reviewed and sent outside the
+  session; that the index is built on the build machine inside the build;
+  the machine settings (full-disk encryption with a PIN, encrypted swap,
+  hibernation off, screen-lock timeout) on every machine; whether the
+  encrypted archive branch on GitHub is kept; `decision-runtime`'s reads
+  through the service, given its gating hooks run on every edit and
+  install command and would each add a call to AWS.
+
 ## 9. Needs the owner when it runs
 
 1. A Bitbucket token with `read:repository` in `~/.netrc`, mode 600
@@ -1233,5 +1309,6 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 7. Run each package's install from its release tarball; the installer
    writes outside Claude's Bash sandbox.
 8. Move the decision model up trust levels.
-9. The private builds repo exists, each machine can push to it, and each
-   machine holds the `age` key.
+9. The private builds repo, the AWS account's KMS keys, S3 bucket, service,
+   Roles Anywhere trust anchor and per-machine roles exist; each machine has
+   a TPM key and a certificate.
