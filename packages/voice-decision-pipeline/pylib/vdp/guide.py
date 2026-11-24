@@ -24,7 +24,7 @@ from collections import defaultdict
 from . import model, pool, state, voice
 
 # The defaults of SYSTEM, PER_PURPOSE and COMBINED; the state's
-# voice/settings.json "guide" section wins (settings.py).
+# settings.json "guide" section wins (settings.py).
 PER_PURPOSE = 12
 COMBINED = 30
 RULES_TEMPLATE = """# Your own voice rules
@@ -239,8 +239,33 @@ restates the purpose; nothing you cannot see in the messages. British or America
 as the messages use it."""
 
 
-def fmt_ex(e):
-    return (f"(answering: {e['answered'][:300]})\n" if e["answered"] else "") + e["text"]
+# The guide writer's task prompts and the examples' "answering" length: the
+# defaults; the state's settings.json "guide" section wins (settings.py).
+AUDIENCE_PROMPT = """Audience: {audience}. Statistics of every message self-01 wrote to this audience:
+{stats}
+
+{examples}
+
+Write the rules for this audience as a whole, then the rules for each of these purposes: {purposes}."""
+PURPOSE_EXAMPLES = """## Purpose: {purpose} ({definition}), {count} messages
+
+{examples}"""
+GENERAL_PROMPT = """Rules written per audience:
+{rules}
+
+Messages carrying several purposes, each with its purposes in the order they appear:
+
+{examples}
+
+Write the rules that hold across every audience, and the rules for how self-01 combines purposes in one message (what comes first, how they are joined)."""
+ANSWERING_CHARS = 300
+
+
+def fmt_ex(e, n=None):
+    if n is None:
+        from . import settings
+        n = settings.get("guide")["answering_chars"]
+    return (f"(answering: {e['answered'][:n]})\n" if e["answered"] else "") + e["text"]
 
 
 def sample(ex):
@@ -254,7 +279,7 @@ def sample(ex):
         for p in e["purposes"]:
             by[e["audience"]][p].append(e)
     per = {}
-    for aud in voice.CORPUS_AUDIENCES:
+    for aud in voice.corpus_audiences():
         cells = by.get(aud)
         if not cells:
             continue
@@ -295,21 +320,22 @@ def write(log=print):
     from . import voicestats
     stats = voicestats.build(items, log=log)
     from . import settings
-    system = settings.get("guide")["system"] + struck_prompt(struck_for_prompt(log=log))
+    gs = settings.get("guide")
+    system = gs["system"] + struck_prompt(struck_for_prompt(log=log))
     defs = voice.purposes()
     per, multi = sample(ex)
     out = {"audiences": {}}
-    for aud in voice.CORPUS_AUDIENCES:
+    for aud in voice.corpus_audiences():
         if aud not in per:
             log(f"  skip  {aud}: no exemplars")
             continue
         keys = [p for p, _, _ in per[aud]]
-        parts = [f"## Purpose: {p} ({defs.get(p, p)}), {n} messages\n\n"
-                 + "\n\n---\n\n".join(fmt_ex(e) for e in xs) for p, n, xs in per[aud]]
-        prompt = (f"Audience: {aud}. Statistics of every message self-01 wrote to this audience:\n"
-                  f"{json.dumps(stats['audiences'].get(aud, {}))}\n\n" + "\n\n".join(parts) +
-                  f"\n\nWrite the rules for this audience as a whole, then the rules for each of "
-                  f"these purposes: {', '.join(keys)}.")
+        parts = [settings.fill(gs["purpose_examples"], purpose=p, definition=defs.get(p, p), count=n,
+                               examples="\n\n---\n\n".join(fmt_ex(e, gs["answering_chars"]) for e in xs))
+                 for p, n, xs in per[aud]]
+        prompt = settings.fill(gs["audience_prompt"], audience=aud,
+                               stats=json.dumps(stats['audiences'].get(aud, {})),
+                               examples="\n\n".join(parts), purposes=", ".join(keys))
         try:
             ans = model.call("guide", system, prompt, _rules_schema(keys), log=log)
         except model.UsageLimit as e:
@@ -319,12 +345,8 @@ def write(log=print):
                                  "purposes": {p: v for p, v in ans["purposes"].items() if v}}
         log(f"  ok    guide {aud}: {len(ans['rules'])} audience rules, {len(keys)} purposes")
     summary = json.dumps({a: v["rules"] for a, v in out["audiences"].items()})
-    prompt = ("Rules written per audience:\n" + summary + "\n\nMessages carrying several purposes, "
-              "each with its purposes in the order they appear:\n\n" +
-              "\n\n---\n\n".join(f"[{e['audience']}; {', '.join(e['purposes'])}]\n{fmt_ex(e)}"
-                                 for e in multi) +
-              "\n\nWrite the rules that hold across every audience, and the rules for how "
-              "self-01 combines purposes in one message (what comes first, how they are joined).")
+    prompt = settings.fill(gs["general_prompt"], rules=summary, examples="\n\n---\n\n".join(
+        f"[{e['audience']}; {', '.join(e['purposes'])}]\n{fmt_ex(e, gs['answering_chars'])}" for e in multi))
     try:
         ans = model.call("guide", system, prompt, GENERAL_SCHEMA, log=log)
     except model.UsageLimit as e:
@@ -357,70 +379,103 @@ def assemble(build_time):
             "audiences": cg.get("audiences", {}), "jira": jira}
 
 
-# The default; the state's voice/settings.json "style.quoted_rare_below" wins.
+# The default; the state's settings.json "style.quoted_rare_below" wins.
 RARE_QUOTED = 0.02
+
+# The wording round the guide a draft reads: the defaults; the state's
+# settings.json "render" section wins. voice-runtime's guide is given the
+# same wording in the build and gives the same text.
+RENDER = {
+    "own_rules": "self-01's own rules (these win over every rule below):",
+    "notes": "How to write it:",
+    "jira": "Jira comments:",
+    "general": "Every audience:",
+    "audience": "Writing to {audience}:",
+    "purpose": "When the purpose is {purpose}:",
+    "combining": "Combining purposes:",
+    "measured": ("Measured, to {audience}: median {median_words} words (90% under {p90_words}); "
+                 "{lowercase_start}% start lower case; {full_stop_end}% end with a full stop; "
+                 "{exclamation_per_message} exclamation marks and {emoji_per_message} emoji per message."),
+    "style": ("Share of self-01's messages to {audience} holding each: {shares}. Use each about as often "
+              "as that: put one in only where the examples for this message have it, and keep it where they do."),
+    "purpose_measured": ("Measured, to {audience} when the purpose is {purpose}: median {median_words} "
+                         "words (90% under {p90_words}), over {messages} messages."),
+    "quoted": ("Share of self-01's messages to {audience} holding each word quoted in the rules above: "
+               "{shares}. Most messages use none of them: use one only where the examples for this message do "
+               "(a word the brief needs is always fine)."),
+    "never_say": "self-01 never or almost never writes: {phrases}",
+    "never_say_max": 80,
+}
 
 
 def render(g, stats, audience, purposes, d=None):
-    """The guide text a draft for audience and purposes reads: the same
-    sections voice-runtime's `guide` gives (validation drafts with it), with
-    the audience's drafting notes from the drafter's settings d (the state's
-    voice/drafter.json by default). Phrases the owner struck are left off
-    the never-say list."""
+    """The guide text a draft for audience and purposes reads, with the
+    audience's drafting notes from the drafter's settings d (the state's
+    voice/drafter.json by default) and the wording from the settings'
+    render section. voice-runtime's `guide` gives the same text from the
+    build (render_text is the rule both follow). Phrases the owner struck
+    are left off the never-say list."""
     from . import drafter, settings
     d = d or drafter.load()
-    rare_below = settings.get("style")["quoted_rare_below"]
     stats, _ = strike_stats(stats)
+    corpus = audience in settings.corpus_audiences()
+    return render_text(g, stats, audience, purposes, d["notes"].get(audience, []),
+                       audience in d["quoted_rates_for"], settings.get("style")["quoted_rare_below"],
+                       settings.get("render"), corpus)
+
+
+def render_text(g, stats, audience, purposes, notes, quoted_on, rare_below, w, corpus):
+    """The guide text from its parts and the wording w. An audience with no
+    corpus (Jira) gets the owner's rules, its notes and its own rules only."""
+    from .settings import fill
+    from .voicestats import quoted
+    bl = lambda rs: "\n".join(f"- {r}" for r in rs)
     out = []
     if g.get("own_rules"):
-        out.append("self-01's own rules (these win over every rule below):\n" +
-                   "\n".join(f"- {r}" for r in g["own_rules"]))
-    if d["notes"].get(audience):
-        out.append("How to write it:\n" + "\n".join(f"- {r}" for r in d["notes"][audience]))
-    if audience == "jira":
-        out.append("Jira comments:\n" + "\n".join(f"- {r}" for r in g.get("jira", [])))
+        out.append(w["own_rules"] + "\n" + bl(g["own_rules"]))
+    if notes:
+        out.append(w["notes"] + "\n" + bl(notes))
+    if not corpus:
+        out.append(w["jira"] + "\n" + bl(g.get("jira", [])))
         return "\n\n".join(out)
     if g.get("general"):
-        out.append("Every audience:\n" + "\n".join(f"- {r}" for r in g["general"]))
+        out.append(w["general"] + "\n" + bl(g["general"]))
     a = g.get("audiences", {}).get(audience, {})
     if a.get("rules"):
-        out.append(f"Writing to {audience}:\n" + "\n".join(f"- {r}" for r in a["rules"]))
+        out.append(fill(w["audience"], audience=audience) + "\n" + bl(a["rules"]))
     for p in purposes:
         if a.get("purposes", {}).get(p):
-            out.append(f"When the purpose is {p}:\n" + "\n".join(f"- {r}" for r in a["purposes"][p]))
+            out.append(fill(w["purpose"], purpose=p) + "\n" + bl(a["purposes"][p]))
     if len(purposes) > 1 and g.get("combinations"):
-        out.append("Combining purposes:\n" + "\n".join(f"- {r}" for r in g["combinations"]))
+        out.append(w["combining"] + "\n" + bl(g["combinations"]))
     st = (stats or {}).get("audiences", {}).get(audience)
     if st:
-        out.append(f"Measured, to {audience}: median {st['median_words']} words (90% under "
-                   f"{st['p90_words']}); {int(st['lowercase_start'] * 100)}% start lower case; "
-                   f"{int(st['full_stop_end'] * 100)}% end with a full stop; "
-                   f"{st['exclamation_per_message']} exclamation marks and "
-                   f"{st['emoji_per_message']} emoji per message.")
+        out.append(fill(w["measured"], audience=audience, median_words=st["median_words"],
+                        p90_words=st["p90_words"], lowercase_start=int(st["lowercase_start"] * 100),
+                        full_stop_end=int(st["full_stop_end"] * 100),
+                        exclamation_per_message=st["exclamation_per_message"],
+                        emoji_per_message=st["emoji_per_message"]))
         if st.get("style"):
-            out.append(f"Share of self-01's messages to {audience} holding each: " +
-                       ", ".join(f"{k} {v:.0%}" for k, v in st["style"].items()) +
-                       ". Use each about as often as that: put one in only where the examples for "
-                       "this message have it, and keep it where they do.")
+            out.append(fill(w["style"], audience=audience,
+                            shares=", ".join(f"{k} {v:.0%}" for k, v in st["style"].items())))
         for p in purposes:
             sp = st.get("purposes", {}).get(p)
             if sp:
-                out.append(f"Measured, to {audience} when the purpose is {p}: median {sp['median_words']} "
-                           f"words (90% under {sp['p90_words']}), over {sp['messages']} messages.")
+                out.append(fill(w["purpose_measured"], audience=audience, purpose=p,
+                                median_words=sp["median_words"], p90_words=sp["p90_words"],
+                                messages=sp["messages"]))
     shown_rules = list(g.get("general", [])) + list(a.get("rules", []))
     for p in purposes:
         shown_rules += a.get("purposes", {}).get(p, [])
     if len(purposes) > 1:
         shown_rules += list(g.get("combinations", []))
-    from .voicestats import quoted
-    rates = (stats or {}).get("quoted", {}).get(audience, {}) if audience in d["quoted_rates_for"] else {}
+    rates = (stats or {}).get("quoted", {}).get(audience, {}) if quoted_on else {}
     rare = sorted({q for r in shown_rules for q in quoted(r) if q in rates and rates[q] < rare_below},
                   key=lambda q: (rates[q], q))
     if rare:
-        out.append(f"Share of self-01's messages to {audience} holding each word quoted in the rules above: " + ", ".join(f'"{q}" {rates[q]:.1%}' for q in rare) +
-                   ". Most messages use none of them: use one only where the examples for this message do "
-                   "(a word the brief needs is always fine).")
+        out.append(fill(w["quoted"], audience=audience,
+                        shares=", ".join(f'"{q}" {rates[q]:.1%}' for q in rare)))
     ns = [x["phrase"] for x in (stats or {}).get("never_say", [])]
     if ns:
-        out.append("self-01 never or almost never writes: " + "; ".join(f'"{p}"' for p in ns[:80]))
+        out.append(fill(w["never_say"], phrases="; ".join(f'"{p}"' for p in ns[:w["never_say_max"]])))
     return "\n\n".join(out)

@@ -281,6 +281,13 @@ Not sources:
 | 1:1 colleagues | one-to-one DMs |
 | Jira | none: rules only, no exemplars (§3.1) |
 
+- The audiences are the defaults in this table; the state's
+  `settings.json` can add, rename or split them (each with its slug, its
+  name on the mapping page, whether the corpus has messages for it, and
+  where a draft goes for it). A build carries the list, and voice-runtime
+  and its skill take the audiences and routing from it. A change needs the
+  mapping page, a fresh holdout, `voice guide` and validation, not a
+  release.
 - Each conversation is assigned by its name and members; the owner checks
   the mapping.
 - Other group DMs are assigned one by one on the review page's audience
@@ -306,7 +313,7 @@ Not sources:
   counts, including those too short or code-heavy to be exemplars.
 - Audience comes from the conversation (§3.2). Sonnet 5.5 labels purposes on
   anonymised messages, 20 items a call. The purposes, the labelling prompt
-  and each role's model are in the state's `voice/settings.json` (§3.7), and
+  and each role's model are in the state's `settings.json` (§3.7), and
   the prompt can also be added to through `labelling-notes.md`; `voice label
   --redo <purposes>` resends the items either model gave one of those
   purposes.
@@ -381,8 +388,9 @@ Not sources:
   exemplar count.
 - The drafter's settings live in the state, in `voice/drafter.json`, not in
   the code, so changing them needs no release: the drafter's and the brief
-  writer's system prompts, each audience's drafting notes, and the audiences
-  shown the share of messages holding each word the guide's rules quote. The
+  writer's system and per-message prompts and how much conversation each is
+  shown, each audience's drafting notes, and the audiences shown the share
+  of messages holding each word the guide's rules quote. The
   file is written with defaults the first time it is read: the two prompts,
   and no notes or quoted-word shares for any audience; notes are added to
   the owner's file only. `voice drafter` lists each audience's method and
@@ -390,19 +398,29 @@ Not sources:
   and the purpose ids in `stats.json`; the runtime's guide gives the prompt
   and each audience's notes, and its skill drafts by that prompt, so the
   runtime drafts as validation did.
-- Every other voice setting that is tuned rather than built lives in the
-  state's `voice/settings.json`, written with defaults the first time it is
-  read, so changing one needs no release: the purposes and the labelling
-  prompt; the guide writer's prompt and how many examples it is shown; the
-  judge's prompt and the 1–5 grade wording; the pass rule below and its
-  sizes; the marks of style, the quoted-word cutoff and the never-say
-  thresholds; and the model for each role. A key left out takes its
-  default; a malformed file is refused with what is wrong. `voice settings`
-  lists what differs from the defaults. The marks of style, the cutoff, the
-  never-say thresholds and the drafter's and brief writer's models change
-  what the drafter is shown, so where they differ from the defaults they join
-  every audience's draft method. The anonymiser's rules, secret patterns and
-  public hosts stay in code, as they decide what leaks.
+- Every other setting that is tuned rather than built lives in the state's
+  `settings.json`, written with defaults the first time it is read, so
+  changing one needs no release: the audiences (§3.2); the purposes, the
+  labelling prompt, each item's text, its context sizes and the label-check
+  sizes; the guide writer's prompts and how many examples it is shown; the
+  wording round the guide a draft reads; the judge's prompts, context size
+  and 1–5 grade wording; the pass rule below and its sizes; the marks of
+  style, the quoted-word cutoff and the never-say thresholds; the per-purpose
+  minimum, the spelling pairs and the generic never-say phrases; the
+  build's fallback exemplar count; the model calls' retries, timeout and
+  usage-limit words; the extraction windows, cutoffs and caps; the review
+  batch size and Mining's client cap; and the model for each role. The
+  holdout share sits beside the exemplar pool's thresholds in
+  `voice-config.json`. A key left out takes its default; a malformed file is
+  refused with what is wrong. `voice settings` lists what differs from the
+  defaults. What changes what the drafter is shown (the wording, the style,
+  the statistics, the per-message prompts and context sizes, the drafter's
+  and brief writer's models) joins every audience's draft method where it
+  differs from the defaults; the labeller's item text and context sizes join
+  the label prompt version the same way. A build carries the wording, and
+  voice-runtime's guide renders the same text by the same rule. The
+  anonymiser's rules, secret patterns and public hosts stay in code, as they
+  decide what leaks.
 - Every audience's drafter is shown the share of its messages holding each
   mark of style: a spaced dash, an exclamation mark, an emoji, `_emphasis_`
   or `*bold*`, a list, a swear word (`voicestats.STYLE`), and is told to use
@@ -442,7 +460,7 @@ Not sources:
 - A model judge, Fable 5.2, scores every draft against the real message,
   mostly on voice, given the same brief. The owner also reviews the judge's
   20 worst-scored drafts and 10 random ones each run.
-- Pass: the defaults below, changed in `voice/settings.json`; each change is
+- Pass: the defaults below, changed in `settings.json`; each change is
   recorded with the run it applies to (`validation/pass-rule.jsonl`), and
   the report says from which run the rule applies. Every gate passes on its
   own. The spotting rate is right picks minus

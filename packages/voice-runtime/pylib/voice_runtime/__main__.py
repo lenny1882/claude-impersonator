@@ -348,18 +348,31 @@ def cmd_install_build(a):
 
 # --- guide -------------------------------------------------------------------
 
-def build_purposes():
-    """The purposes the installed build was labelled with (stats.json's
-    drafting.purposes), else this release's own list. A build that can't be
-    read gives this release's list here; the command's own read refuses it."""
+def build_drafting():
+    """stats.json's drafting section of the installed build, or {} when no
+    build can be read (the command's own read then refuses it)."""
     try:
-        dr = Build().file("stats.json").get("drafting") or {}
+        return Build().file("stats.json").get("drafting") or {}
     except (Refusal, Failure):
-        return PURPOSES
-    ps = dr.get("purposes")
+        return {}
+
+
+def build_purposes():
+    """The purposes the installed build was labelled with, else this
+    release's own list."""
+    ps = build_drafting().get("purposes")
     if isinstance(ps, list) and ps and all(isinstance(p, str) and p for p in ps):
         return tuple(ps)
     return PURPOSES
+
+
+def build_audiences():
+    """[{slug, corpus, routing}] of the installed build, else this release's
+    own audiences, jira the one without a corpus."""
+    au = build_drafting().get("audiences")
+    if isinstance(au, list) and au and all(isinstance(a, dict) and isinstance(a.get("slug"), str) for a in au):
+        return au
+    return [{"slug": a, "corpus": a != "jira", "routing": []} for a in AUDIENCES]
 
 
 def split_purposes(s):
@@ -374,23 +387,16 @@ def split_purposes(s):
 
 
 def check_audience(a):
-    if a not in AUDIENCES:
-        raise Failure("unknown audience %s; audiences are: %s" % (a, ", ".join(AUDIENCES)))
+    known = [x["slug"] for x in build_audiences()]
+    if a not in known:
+        raise Failure("unknown audience %s; audiences are: %s" % (a, ", ".join(known)))
     return a
-
-
-def bullets(out, title, items):
-    items = [x for x in (items or []) if isinstance(x, str) and x.strip()]
-    if not items:
-        return
-    out.append("## " + title)
-    out.extend("- " + x for x in items)
-    out.append("")
 
 
 # The pipeline's rule for the words a guide rule quotes (voicestats.quoted):
 # up to 3 words of letters only, so their shares can be shown beside the rules.
-QUOTE = re.compile(r"(?:(?<=^)|(?<=[\s(]))['\"\u2018\u201c]([^'\"\u2019\u201d]{2,40}?)['\"\u2019\u201d](?=[\s,.;:)!?]|$)")
+QUOTE = re.compile(r"(?:(?<=^)|(?<=[\s(]))['\"‘“]([^'\"’”]{2,40}?)['\"’”](?=[\s,.;:)!?]|$)")
+SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 
 
 def quoted(rule):
@@ -402,86 +408,95 @@ def quoted(rule):
     return out
 
 
+def fill(template, **slots):
+    """The pipeline's settings.fill: each {name} replaced once."""
+    return SLOT.sub(lambda m: str(slots[m.group(1)]) if m.group(1) in slots else m.group(0), template)
+
+
+def render_text(g, stats, audience, purposes, notes, quoted_on, rare_below, w, corpus):
+    """The pipeline's guide.render_text, the guide a validation draft read,
+    with the wording w the build carries."""
+    bl = lambda rs: "\n".join("- %s" % r for r in rs)
+    out = []
+    if g.get("own_rules"):
+        out.append(w["own_rules"] + "\n" + bl(g["own_rules"]))
+    if notes:
+        out.append(w["notes"] + "\n" + bl(notes))
+    if not corpus:
+        out.append(w["jira"] + "\n" + bl(g.get("jira", [])))
+        return "\n\n".join(out)
+    if g.get("general"):
+        out.append(w["general"] + "\n" + bl(g["general"]))
+    a = g.get("audiences", {}).get(audience, {})
+    if a.get("rules"):
+        out.append(fill(w["audience"], audience=audience) + "\n" + bl(a["rules"]))
+    for p in purposes:
+        if a.get("purposes", {}).get(p):
+            out.append(fill(w["purpose"], purpose=p) + "\n" + bl(a["purposes"][p]))
+    if len(purposes) > 1 and g.get("combinations"):
+        out.append(w["combining"] + "\n" + bl(g["combinations"]))
+    st = (stats or {}).get("audiences", {}).get(audience)
+    if st:
+        out.append(fill(w["measured"], audience=audience, median_words=st["median_words"],
+                        p90_words=st["p90_words"], lowercase_start=int(st["lowercase_start"] * 100),
+                        full_stop_end=int(st["full_stop_end"] * 100),
+                        exclamation_per_message=st["exclamation_per_message"],
+                        emoji_per_message=st["emoji_per_message"]))
+        if st.get("style"):
+            out.append(fill(w["style"], audience=audience,
+                            shares=", ".join("%s %s" % (k, format(v, ".0%")) for k, v in st["style"].items())))
+        for p in purposes:
+            sp = st.get("purposes", {}).get(p)
+            if sp:
+                out.append(fill(w["purpose_measured"], audience=audience, purpose=p,
+                                median_words=sp["median_words"], p90_words=sp["p90_words"],
+                                messages=sp["messages"]))
+    shown_rules = list(g.get("general", [])) + list(a.get("rules", []))
+    for p in purposes:
+        shown_rules += a.get("purposes", {}).get(p, [])
+    if len(purposes) > 1:
+        shown_rules += list(g.get("combinations", []))
+    rates = (stats or {}).get("quoted", {}).get(audience, {}) if quoted_on else {}
+    rare = sorted({q for r in shown_rules for q in quoted(r) if q in rates and rates[q] < rare_below},
+                  key=lambda q: (rates[q], q))
+    if rare:
+        out.append(fill(w["quoted"], audience=audience,
+                        shares=", ".join('"%s" %s' % (q, format(rates[q], ".1%")) for q in rare)))
+    ns = [x["phrase"] for x in (stats or {}).get("never_say", []) if isinstance(x, dict) and x.get("phrase")]
+    if ns:
+        out.append(fill(w["never_say"], phrases="; ".join('"%s"' % p for p in ns[:w["never_say_max"]])))
+    return "\n\n".join(out)
+
+
+RENDER_KEYS = ("own_rules", "notes", "jira", "general", "audience", "purpose", "combining", "measured",
+               "style", "purpose_measured", "quoted", "never_say", "never_say_max")
+
+
 def cmd_guide(a):
     audience = check_audience(a.audience)
     purposes = split_purposes(a.purposes)
     b = Build()
     g = b.file("guide.json")
     st = b.file("stats.json")
-    cell = (g.get("audiences") or {}).get(audience) or {}
-
-    out = ["# Voice guide: %s; %s (build %s)" % (audience, ", ".join(purposes), b.build_time), ""]
     dr = st.get("drafting") or {}
-    ds = dr.get("draft_system")
-    if isinstance(ds, str) and ds.strip():
-        out.append("## How to draft (the prompt this build was validated with)")
-        out.append(ds.strip())
-        out.append("")
-    bullets(out, "self-01's own rules (these win over every rule below)", g.get("own_rules"))
-    bullets(out, "How to write it", (dr.get("notes") or {}).get(audience))
-    if audience == "jira":
-        bullets(out, "Jira comments", g.get("jira"))
-    bullets(out, "General", g.get("general"))
-    bullets(out, "Audience: %s" % audience, cell.get("rules"))
-    for p in purposes:
-        bullets(out, "Purpose: %s" % p, (cell.get("purposes") or {}).get(p))
-    shown = [r for r in (g.get("general") or []) + (cell.get("rules") or []) if isinstance(r, str)]
-    for p in purposes:
-        shown += [r for r in (cell.get("purposes") or {}).get(p) or [] if isinstance(r, str)]
-    if len(purposes) > 1:
-        bullets(out, "Combining purposes", g.get("combinations"))
-        shown += [r for r in g.get("combinations") or [] if isinstance(r, str)]
-
-    s = (st.get("audiences") or {}).get(audience)
-    if s:
-        out.append("## How self-01 writes to %s (measured over %s messages)"
-                   % (audience, s.get("messages", "?")))
-        out.append("- length: median %s words, 90%% under %s"
-                   % (s.get("median_words", "?"), s.get("p90_words", "?")))
-        for key, label in (("lowercase_start", "start in lower case"),
-                           ("full_stop_end", "end with a full stop")):
-            if isinstance(s.get(key), (int, float)):
-                out.append("- %d%% %s" % (round(100 * s[key]), label))
-        for key, label in (("exclamation_per_message", "exclamation marks"),
-                           ("emoji_per_message", "emoji")):
-            if isinstance(s.get(key), (int, float)):
-                out.append("- %s per message: %.2f" % (label, s[key]))
-        style = s.get("style") or {}
-        if style:
-            out.append("- share of messages holding each: %s. Use each about as often: put one in "
-                       "only where the exemplars for this message have it, and keep it where they do"
-                       % ", ".join("%s %d%%" % (k, round(100 * v)) for k, v in style.items()
-                                   if isinstance(v, (int, float))))
-        for key, label in (("openings", "openings"), ("signoffs", "sign-offs")):
-            pairs = [p for p in s.get(key) or [] if isinstance(p, list) and len(p) == 2]
-            if pairs:
-                out.append("- %s: %s" % (label, ", ".join('"%s" (%s)' % (w, n) for w, n in pairs)))
-        out.append("")
-    if audience in (dr.get("quoted_rates_for") or []):
-        rates = (st.get("quoted") or {}).get(audience) or {}
-        below = dr.get("rare_below", 0)
-        rare = sorted({q for r in shown for q in quoted(r)
-                       if isinstance(rates.get(q), (int, float)) and rates[q] < below},
-                      key=lambda q: (rates[q], q))
-        if rare:
-            out.append("## Words the rules quote, by share of messages holding them")
-            out.append("- " + ", ".join('"%s" %.1f%%' % (q, 100 * rates[q]) for q in rare) +
-                       ". Most messages use none of them: use one only where the exemplars for "
-                       "this message do (a word the content needs is always fine).")
-            out.append("")
-    sp = st.get("spelling") or {}
-    if sp:
-        out.append("## Spelling: British %s, American %s" % (sp.get("british", 0), sp.get("american", 0)))
-        out.append("")
-    never = [x for x in st.get("never_say") or [] if isinstance(x, dict) and x.get("phrase")]
-    if never:
-        out.append("## Never say (self-01's count; how common it is elsewhere)")
-        for x in never:
-            out.append('- "%s": self-01 %s, %s %s' % (x["phrase"], x.get("self", 0),
-                                                    x.get("reference", "reference"),
-                                                    x.get("reference_count", "?")))
-        out.append("")
+    w = dr.get("render")
+    if not isinstance(w, dict) or any(k not in w for k in RENDER_KEYS) or not isinstance(dr.get("draft_system"), str):
+        raise Refusal("voice model unavailable: build %s carries no drafting wording. Fix: voice-decision-pipeline voice build, then "
+                      "publish and builds-sync install" % b.build_time)
+    corpus = next((x.get("corpus", True) for x in build_audiences() if x["slug"] == audience), True)
+    text = render_text(g, st, audience, purposes, (dr.get("notes") or {}).get(audience) or [],
+                       audience in (dr.get("quoted_rates_for") or []), dr.get("rare_below", 0), w, corpus)
+    out = ["# Voice guide: %s; %s (build %s)" % (audience, ", ".join(purposes), b.build_time), "",
+           "## How to draft (the prompt this build was validated with)", dr["draft_system"].strip(), "",
+           "## The guide", text]
     sys.stdout.write("\n".join(out).rstrip("\n") + "\n")
+
+
+def cmd_audiences(a):
+    """The build's audiences and where a draft goes for each."""
+    for x in build_audiences():
+        routing = [r for r in x.get("routing") or [] if isinstance(r, str)]
+        print("%s: %s" % (x["slug"], "; ".join(routing) if routing else "(no routing given)"))
 
 
 # --- search ------------------------------------------------------------------
@@ -684,6 +699,8 @@ def parser():
     s.set_defaults(fn=cmd_save_final)
     s = sub.add_parser("status")
     s.set_defaults(fn=cmd_status)
+    s = sub.add_parser("audiences", help="the build's audiences and where a draft goes for each")
+    s.set_defaults(fn=cmd_audiences)
     return p
 
 

@@ -20,7 +20,8 @@ from collections import defaultdict
 from . import labels, state, voice
 
 HOLDOUT_SHARE = 0.10
-DEFAULTS = {"min_words": 4, "max_code_share": 0.5}
+# voice-config.json in the state wins over these.
+DEFAULTS = {"min_words": 4, "max_code_share": 0.5, "holdout_share": HOLDOUT_SHARE}
 
 
 def config():
@@ -46,11 +47,12 @@ def holdout(fresh=False, log=print):
         raise SystemExit("voice-decision-pipeline: nothing labelled yet; run 'voice label' first")
     run = (cur or {}).get("run", 0) + 1
     rnd = random.Random(f"holdout-{run}")
+    share = config()["holdout_share"]
     ids = []
     for aud in sorted(by_aud):
         xs = sorted(by_aud[aud])
         rnd.shuffle(xs)
-        ids.extend(xs[:max(1, round(len(xs) * HOLDOUT_SHARE))])
+        ids.extend(xs[:max(1, round(len(xs) * share))])
     d = {"run": run, "ids": sorted(ids)}
     state.write_json(holdout_file(), d)
     log(f"  ok    holdout run {run}: {len(ids)} items held back")

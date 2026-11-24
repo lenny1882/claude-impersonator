@@ -7,7 +7,7 @@ every purpose a message carries, in the order they appear. Results go to
 labels/<pass>.jsonl, one line per item, written after each batch, so a
 stopped pass resumes after the last finished batch.
 
-The labelling prompt and the purposes are the state's voice/settings.json
+The labelling prompt and the purposes are the state's settings.json
 (settings.py, defaults here and in voice.PURPOSES), plus labelling-notes.md in the state:
 whatever is written there is added to the prompt, which is how the prompt
 is changed between passes (never during one) after a failed label check or
@@ -37,10 +37,15 @@ from collections import Counter, defaultdict
 
 from . import model, state, voice
 
+# The defaults of these, SYSTEM, ITEM and BATCH_END; the state's
+# settings.json "labels" section wins (settings.py).
 BATCH = 20
 SAMPLE = 120
 SAMPLE_MAX_WRONG = 6
 DISAGREE_SAMPLE = 60
+BEFORE_CHARS, AFTER_CHARS = 2500, 800
+ITEM = "### Item {n} (audience: {audience})\n{before}Message by self-01:\n{message}\n{after}"
+BATCH_END = "\nGive the purposes for items 1 to {n}."
 PASSES = {"labeller": "labeller", "second": "second"}
 
 def schema():
@@ -59,7 +64,7 @@ def notes_file():
     return state.path("labelling-notes.md")
 
 
-# The default; the state's voice/settings.json "labels.system" wins, with
+# The default; the state's settings.json "labels.system" wins, with
 # {purposes} replaced by the purposes, one "- id: definition" line each.
 SYSTEM = """You label the purposes of messages written by one person, self-01, at work.
 Names in the text are pseudonyms (colleague-07, client-03, product-04); [url], [email],
@@ -99,16 +104,22 @@ def purpose_tip(p):
 
 
 def prompt_version():
-    return hashlib.sha1(system_prompt().encode()).hexdigest()[:12]
+    """The labelling prompt's version: the system prompt, and the item text
+    and context sizes where they differ from the defaults."""
+    from . import settings
+    extra = settings.label_inputs()
+    text = system_prompt() + (json.dumps(extra, sort_keys=True) if extra else "")
+    return hashlib.sha1(text.encode()).hexdigest()[:12]
 
 
-def item_prompt(n, it):
-    before = voice.render_context(it["before"], 2500)
-    after = voice.render_context(it["after"], 800, keep="start")
-    return (f"### Item {n} (audience: {it['audience']})\n"
-            + (f"Before:\n{before}\n" if before else "")
-            + f"Message by self-01:\n{it['text']}\n"
-            + (f"After:\n{after}\n" if after else ""))
+def item_prompt(n, it, lb=None):
+    from . import settings
+    lb = lb or settings.get("labels")
+    before = voice.render_context(it["before"], lb["before_chars"])
+    after = voice.render_context(it["after"], lb["after_chars"], keep="start")
+    return settings.fill(lb["item"], n=n, audience=it["audience"], message=it["text"],
+                         before=f"Before:\n{before}\n" if before else "",
+                         after=f"After:\n{after}\n" if after else "")
 
 
 def labels_file(which):
@@ -144,8 +155,11 @@ def run(which, redo=(), log=print):
     items = voice.load()
     done = read(which)
     redo = set(redo)
+    from . import settings
+    lb = settings.get("labels")
     system = system_prompt()
     pv = prompt_version()
+    batch = lb["batch"]
     if redo:
         bad = sorted(redo - set(voice.purposes()))
         if bad:
@@ -159,12 +173,12 @@ def run(which, redo=(), log=print):
     else:
         todo = [it for it in items if it["id"] not in done]
     log(f"== label {which}: {len(todo)} of {len(items)} items to send, "
-        f"{(len(todo) + BATCH - 1) // BATCH} calls, prompt {pv}")
+        f"{(len(todo) + batch - 1) // batch} calls, prompt {pv}")
     sent = 0
-    for i in range(0, len(todo), BATCH):
-        chunk = todo[i:i + BATCH]
-        prompt = "\n".join(item_prompt(n + 1, it) for n, it in enumerate(chunk))
-        prompt += f"\nGive the purposes for items 1 to {len(chunk)}."
+    for i in range(0, len(todo), batch):
+        chunk = todo[i:i + batch]
+        prompt = "\n".join(item_prompt(n + 1, it, lb) for n, it in enumerate(chunk))
+        prompt += settings.fill(lb["batch_end"], n=len(chunk))
         try:
             ans = model.call(PASSES[which], system, prompt, schema(), log=log)
         except model.UsageLimit as e:
@@ -181,7 +195,7 @@ def run(which, redo=(), log=print):
                 f.write(json.dumps(r, sort_keys=True) + "\n")
         sent += len(chunk)
         missing = len(chunk) - len(lines)
-        log(f"  batch {i // BATCH + 1}: {len(lines)} labelled" + (f", {missing} left for the next run" if missing else "")
+        log(f"  batch {i // batch + 1}: {len(lines)} labelled" + (f", {missing} left for the next run" if missing else "")
             + f" ({sent}/{len(todo)})")
     log(f"  ok    label {which}: {len(read(which))} items labelled")
     return 0
@@ -250,7 +264,8 @@ def draw_sample(new=False):
     if not pool:
         raise SystemExit("voice-decision-pipeline: nothing labelled yet; run 'voice label' first")
     n = (cur or {}).get("round", 0) + 1
-    ids = spread_sample(pool, SAMPLE, seed=f"label-check-{n}")
+    from . import settings
+    ids = spread_sample(pool, settings.get("labels")["sample"], seed=f"label-check-{n}")
     d = {"round": n, "prompt": prompt_version(), "ids": ids, "answers": {}}
     if cur:
         d["previous"] = (cur.get("previous") or []) + [{k: cur[k] for k in ("round", "prompt", "ids", "answers")}]
@@ -262,11 +277,13 @@ def check_result():
     d = state.read_json(check_file(), None)
     if not d:
         return {"drawn": False}
+    from . import settings
+    lb = settings.get("labels")
     ans = {i: a for i, a in d["answers"].items() if i in set(d["ids"])}
     wrong = sum(1 for a in ans.values() if a.get("verdict") == "wrong")
     return {"drawn": True, "round": d["round"], "size": len(d["ids"]), "answered": len(ans),
             "wrong": wrong, "done": len(ans) == len(d["ids"]),
-            "passed": len(ans) == len(d["ids"]) and wrong <= SAMPLE_MAX_WRONG * len(d["ids"]) / SAMPLE}
+            "passed": len(ans) == len(d["ids"]) and wrong <= lb["sample_max_wrong"] * len(d["ids"]) / lb["sample"]}
 
 
 def disagreements():
@@ -313,7 +330,9 @@ def draw_disagree_sample(ds, new=False):
     rnd = random.Random(f"disagreements-{n}")
     ids = [d["id"] for d in ds]
     rnd.shuffle(ids)
-    d = {"round": n, "prompt": prompt_version(), "ids": sorted(ids[:DISAGREE_SAMPLE]), "answers": {}}
+    from . import settings
+    d = {"round": n, "prompt": prompt_version(), "ids": sorted(ids[:settings.get("labels")["disagree_sample"]]),
+         "answers": {}}
     if cur:
         prev = {"round": cur.get("round", 1), "prompt": cur.get("prompt"), "ids": cur["ids"], "answers": cur["answers"]}
         d["previous"] = (cur.get("previous") or []) + [prev]

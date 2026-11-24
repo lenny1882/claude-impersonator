@@ -25,6 +25,8 @@ from collections import Counter, defaultdict
 from . import inputs, record, state, textutil
 
 API = os.environ.get("VDP_BITBUCKET_API", "https://api.bitbucket.org/2.0")
+# CUTOFF and CODE_CONTEXT are the defaults; the state's settings.json
+# "extraction" section wins.
 CUTOFF = "2019-01-01"
 CODE_CONTEXT = 5
 CALLS = [0]  # API requests made by this process, retries included
@@ -137,7 +139,9 @@ def code_under(diff, path, line_to, line_from):
                 lines.append((old, new, ln)); old += 1; new += 1
         for i, (o, n, _) in enumerate(lines):
             if (line_to and n == line_to) or (not line_to and line_from and o == line_from):
-                a, b = max(0, i - CODE_CONTEXT), i + CODE_CONTEXT + 1
+                from . import settings
+                cc = settings.get("extraction")["bitbucket_code_context"]
+                a, b = max(0, i - cc), i + cc + 1
                 return "\n".join(x[2] for x in lines[a:b])
     return None
 
@@ -179,6 +183,8 @@ def clear_progress():
 
 
 def extract(d, counts=None):
+    from . import settings
+    cutoff = settings.get("extraction")["bitbucket_cutoff"]
     counts = counts if counts is not None else Counter()
     me = inputs.me(d)
     me_ids = set(d.get("bitbucket_me") or [])
@@ -218,7 +224,7 @@ def extract(d, counts=None):
             continue
         calls_before = CALLS[0]
         meta = get(f"/repositories/{slug}?fields=full_name,updated_on")
-        if (meta.get("updated_on") or "")[:10] < CUTOFF:
+        if (meta.get("updated_on") or "")[:10] < cutoff:
             stats["repos-before-2019"] += 1
             print(f"  skip  {slug}: last updated {meta.get('updated_on')}, before 2019")
             continue

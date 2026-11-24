@@ -214,8 +214,9 @@ def cmd_voice(a):
         from . import settings
         d = settings.load()
         ch = settings.changed(d)
-        print(f"voice settings: {settings.file()}")
+        print(f"settings: {settings.file()}")
         print("  differs from the defaults: " + (", ".join(ch) if ch else "nothing"))
+        print("  audiences: " + ", ".join(a["slug"] + ("" if a["corpus"] else " (no corpus)") for a in d["audiences"]))
         print(f"  purposes: {', '.join(d['labels']['purposes'])}")
         print("  models: " + ", ".join(f"{k} {v}" for k, v in d["models"].items()))
         r = d["pass_rule"]

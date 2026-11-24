@@ -18,18 +18,41 @@ from . import batches, state
 from .anonymise import anon_id
 from .index import VOICE_SOURCES, voice_item
 
-AUDIENCES = {
-    "clients": "clients",
-    "project team": "project-team",
-    "technical team": "technical-team",
-    "senior/management": "senior",
-    "1:1 colleagues": "one-to-one",
-}
+# The defaults; the state's settings.json "audiences" wins (settings.py):
+# slug, the mapping page's name, whether the corpus has messages for it,
+# whether a hand-written audience starting with the name maps to it, and
+# where a draft goes for it (voice-runtime's routing table).
+AUDIENCE_LIST = [
+    {"slug": "clients", "name": "clients", "corpus": True, "match_prefix": True,
+     "routing": ["a client channel, or a DM with a client-side contact"]},
+    {"slug": "project-team", "name": "project team", "corpus": True, "match_prefix": True,
+     "routing": ["an internal project channel, or any other internal channel"]},
+    {"slug": "technical-team", "name": "technical team", "corpus": True, "match_prefix": True,
+     "routing": ["a technical channel; any Bitbucket PR description or review comment"]},
+    {"slug": "senior", "name": "senior/management", "corpus": True, "match_prefix": False,
+     "routing": ["a senior or management channel, or a group DM with those people"]},
+    {"slug": "one-to-one", "name": "1:1 colleagues", "corpus": True, "match_prefix": True,
+     "routing": ["a one-to-one DM with a colleague"]},
+    {"slug": "jira", "name": "jira", "corpus": False, "match_prefix": False,
+     "routing": ["a Jira comment"]},
+]
+AUDIENCES = {a["name"]: a["slug"] for a in AUDIENCE_LIST if a["corpus"]}
 CORPUS_AUDIENCES = tuple(AUDIENCES.values())
-ALL_AUDIENCES = CORPUS_AUDIENCES + ("jira",)
+
+
+def corpus_audiences():
+    """The slugs of the audiences with messages in the corpus, as the
+    settings give them, in order."""
+    from . import settings
+    return settings.corpus_audiences()
+
+
+def all_audiences():
+    from . import settings
+    return tuple(a["slug"] for a in settings.audiences())
 
 # PLAN §3.3: eleven purposes and "other", in this order. The defaults: the
-# state's voice/settings.json "labels.purposes" wins (purposes()).
+# state's settings.json "labels.purposes" wins (purposes()).
 PURPOSES = {
     "push-back": ("push back / disagree: objects to or corrects a proposal, a claim or a plan, "
                   "including stating a limit or requirement that rules out what someone wants. "
@@ -159,6 +182,8 @@ def load():
     source, audience (slug), text, tags, answered (anonymised text of the
     message it answers, or ""), before and after ([(author, text)] of its
     context, anonymised), ts."""
+    from . import settings
+    slugs = settings.audience_slugs()
     real, anon = {}, {}
     for s in VOICE_SOURCES:
         for r in state.read_jsonl(state.corpus_file(s)):
@@ -170,7 +195,7 @@ def load():
         if not voice_item(r):
             continue
         a = anon.get(anon_id(rid))
-        aud = AUDIENCES.get(r.get("audience") or "")
+        aud = slugs.get(r.get("audience") or "")
         if a is None or aud is None:
             continue
         ans = answered_id(r, real)

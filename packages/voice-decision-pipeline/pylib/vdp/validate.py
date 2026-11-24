@@ -66,7 +66,7 @@ from collections import Counter, defaultdict
 from . import drafter, guide, labels, model, pool, state, voice
 from .index import VOICE_SOURCES
 
-# The defaults of the pass rule and the judge; the state's voice/settings.json
+# The defaults of the pass rule and the judge; the state's settings.json
 # "pass_rule" and "judge" sections win (settings.py, rule(), judge_system()).
 COUNTS = (3, 5, 8)
 OVERALL_BAR, AUDIENCE_BAR = 0.10, 0.25
@@ -116,6 +116,22 @@ def rule():
     """The pass rule and its sizes, as the settings give them."""
     from . import settings
     return settings.get("pass_rule")
+
+# The judge's per-message prompt and context size: the defaults; the state's
+# settings.json "judge" section wins.
+JUDGE_PROMPT = """Conversation:
+{context}
+
+The message self-01 really wrote:
+{message}
+
+The brief the drafts were written from:
+{brief}
+
+{drafts}
+
+Score drafts 1 to {n}."""
+JUDGE_BEFORE_CHARS = 4000
 
 JUDGE_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["scores"],
                 "properties": {"scores": {"type": "array", "items": {
@@ -193,22 +209,32 @@ def situation(it):
 
 # -- drafting and judging -----------------------------------------------------
 
-def brief_prompt(it):
-    ctx = voice.render_context(it["before"], 2000) or "(no earlier messages)"
-    return (f"Conversation before it:\n{ctx}\n\nThe message:\n{voice.without_code(it['text'], it.get('tags') or [])}"
-            f"\n\nWrite its brief.")
+def brief_prompt(it, d=None):
+    from .settings import fill
+    d = d or drafter.load()
+    ctx = voice.render_context(it["before"], d["brief_before_chars"]) or "(no earlier messages)"
+    return fill(d["brief_prompt"], context=ctx, message=voice.without_code(it['text'], it.get('tags') or []))
 
 
-def draft_prompt(it, purposes, exs, brief):
-    ctx = voice.render_context(it["before"], 4000) or "(no earlier messages)"
+def draft_prompt(it, purposes, exs, brief, d=None):
+    from .settings import fill
+    d = d or drafter.load()
+    n = d["answering_chars"]
+    ctx = voice.render_context(it["before"], d["draft_before_chars"]) or "(no earlier messages)"
     shown = "\n\n---\n\n".join(
-        (f"(answering: {e['answered'][:300]})\n" if e["answered"] else "") + e["text"] for e in exs)
-    return (f"Examples of messages self-01 wrote to this audience:\n\n{shown}\n\n"
-            f"Conversation so far ({'Bitbucket pull request' if it['source'] == 'bitbucket' else 'Slack'}):\n{ctx}\n\n"
-            f"What the message has to say (a brief, not its wording):\n{brief}\n\n"
-            f"Write self-01's next message, saying what the brief says in self-01's own words, and "
-            f"nothing more: no question, offer, mention, pleasantry or sign-off the brief doesn't list. "
-            f"Audience: {it['audience']}. Purposes, in order: {', '.join(purposes)}.")
+        (f"(answering: {e['answered'][:n]})\n" if e["answered"] else "") + e["text"] for e in exs)
+    return fill(d["draft_prompt"], examples=shown, context=ctx, brief=brief, audience=it["audience"],
+                purposes=", ".join(purposes),
+                source="Bitbucket pull request" if it["source"] == "bitbucket" else "Slack")
+
+
+def judge_prompt(it, brief, drafts):
+    """The judge's prompt for one message: drafts is [text], in order."""
+    from . import settings
+    j = settings.get("judge")
+    return settings.fill(j["prompt"], context=voice.render_context(it["before"], j["before_chars"]) or "(none)",
+                         message=it["text"], brief=brief, n=len(drafts),
+                         drafts="\n\n".join(f"Draft {i}:\n{t}" for i, t in enumerate(drafts, 1)))
 
 
 def read_lines(name):
@@ -295,7 +321,7 @@ def stale_audiences():
     pr = state.read_json(pairs_file(), None) or {}
     run = run_no()
     out = []
-    for a in voice.CORPUS_AUDIENCES:
+    for a in voice.corpus_audiences():
         mine = [p for p in active(pr) if p["audience"] == a]
         if any(pair_method(p) != cur[a] for p in mine) or (not mine and _batch_entry(a, run) is not None):
             out.append(a)
@@ -330,7 +356,7 @@ def batch(log=print):
     cur = state.read_json(batch_file(), None) or {}
     stored = dict(cur.get("ids") or {}) if cur.get("run") == run else {}
     out = {}
-    for a in voice.CORPUS_AUDIENCES:
+    for a in voice.corpus_audiences():
         m = drafter.method(a)
         had = _batch_entry(a, run)
         if had is not None:
@@ -402,7 +428,7 @@ def drafts_and_judge(counts=None, limit=None, only_batch=False, log=print):
         method = mth[it["audience"]]
         try:
             if it["id"] not in briefs:
-                ans = model.call("brief", d["brief_system"], brief_prompt(it), BRIEF_SCHEMA, log=log)
+                ans = model.call("brief", d["brief_system"], brief_prompt(it, d), BRIEF_SCHEMA, log=log)
                 briefs[it["id"]] = ans["brief"]
                 append("briefs.jsonl", [{"run": run, "method": method, "id": it["id"], "brief": ans["brief"]}])
             brief = briefs[it["id"]]
@@ -410,17 +436,13 @@ def drafts_and_judge(counts=None, limit=None, only_batch=False, log=print):
                 if (it["id"], k) in have:
                     continue
                 exs = search(ex, m, np.asarray(qv, "float32"), it["audience"], ps, k)
-                ans = model.call("drafter", system, draft_prompt(it, ps, exs, brief), DRAFT_SCHEMA, log=log)
+                ans = model.call("drafter", system, draft_prompt(it, ps, exs, brief, d), DRAFT_SCHEMA, log=log)
                 append("drafts.jsonl", [{"run": run, "method": method, "id": it["id"], "k": k, "text": ans["text"],
                                          "exemplars": [e["id"] for e in exs]}])
                 have.add((it["id"], k))
             ds = {r["k"]: r["text"] for r in rows("drafts.jsonl", run) if r["id"] == it["id"]}
             ks = [k for k in counts if k in ds]
-            jp = (f"Conversation:\n{voice.render_context(it['before'], 4000) or '(none)'}\n\n"
-                  f"The message self-01 really wrote:\n{it['text']}\n\n"
-                  f"The brief the drafts were written from:\n{brief}\n\n" +
-                  "\n\n".join(f"Draft {i}:\n{ds[k]}" for i, k in enumerate(ks, 1)) +
-                  f"\n\nScore drafts 1 to {len(ks)}.")
+            jp = judge_prompt(it, brief, [ds[k] for k in ks])
             ans = model.call("judge", jsys, jp, JUDGE_SCHEMA, log=log)
         except model.UsageLimit as e:
             log(f"  stop  usage limit after {n - 1} messages: {e}; run the same command again to resume")
@@ -487,7 +509,7 @@ def make_pairs(audience=None, log=print):
     items = {it["id"]: it for it in voice.load()}
     lab = labels.final()
     drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run) if r["k"] == k}
-    for aud in ([audience] if audience else voice.CORPUS_AUDIENCES):
+    for aud in ([audience] if audience else voice.corpus_audiences()):
         _draw(cur, key, used, items, lab, drafts, aud, rule()["pairs_per_audience"])
     state.write_json(key_file(), key)
     state.write_json(pairs_file(), cur)
@@ -551,9 +573,9 @@ def drop_pairs(ids, reason, log=print):
 
 
 def _audience(aud):
-    if aud not in voice.CORPUS_AUDIENCES:
+    if aud not in voice.corpus_audiences():
         raise SystemExit(f"voice-decision-pipeline: not an audience: {aud}; "
-                         f"one of {', '.join(voice.CORPUS_AUDIENCES)}")
+                         f"one of {', '.join(voice.corpus_audiences())}")
 
 
 def redraw(aud, log=print):

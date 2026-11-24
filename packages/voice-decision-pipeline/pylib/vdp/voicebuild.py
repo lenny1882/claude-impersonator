@@ -46,7 +46,8 @@ def build(log=print):
     from . import drafter
     stats = {**stats, "drafting": drafter.for_build()}
     ex = pool.exemplars()
-    k = validate.best_count() or DEFAULT_COUNT
+    from . import settings
+    k = validate.best_count() or settings.get("build")["default_exemplar_count"]
     try:
         import embedding_lib as el
         ident = el.identity()

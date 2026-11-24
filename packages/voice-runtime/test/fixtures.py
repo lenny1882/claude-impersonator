@@ -47,6 +47,68 @@ def pair(answered, text):
     return answered + "\n\n" + text
 
 
+# The pipeline's default guide wording and audiences, as a build carries them.
+RENDER = {
+ "own_rules": "self-01's own rules (these win over every rule below):",
+ "notes": "How to write it:",
+ "jira": "Jira comments:",
+ "general": "Every audience:",
+ "audience": "Writing to {audience}:",
+ "purpose": "When the purpose is {purpose}:",
+ "combining": "Combining purposes:",
+ "measured": "Measured, to {audience}: median {median_words} words (90% under {p90_words}); {lowercase_start}% start lower case; {full_stop_end}% end with a full stop; {exclamation_per_message} exclamation marks and {emoji_per_message} emoji per message.",
+ "style": "Share of self-01's messages to {audience} holding each: {shares}. Use each about as often as that: put one in only where the examples for this message have it, and keep it where they do.",
+ "purpose_measured": "Measured, to {audience} when the purpose is {purpose}: median {median_words} words (90% under {p90_words}), over {messages} messages.",
+ "quoted": "Share of self-01's messages to {audience} holding each word quoted in the rules above: {shares}. Most messages use none of them: use one only where the examples for this message do (a word the brief needs is always fine).",
+ "never_say": "self-01 never or almost never writes: {phrases}",
+ "never_say_max": 80
+}
+AUDIENCES = [
+ {
+  "slug": "clients",
+  "corpus": True,
+  "routing": [
+   "a client channel, or a DM with a client-side contact"
+  ]
+ },
+ {
+  "slug": "project-team",
+  "corpus": True,
+  "routing": [
+   "an internal project channel, or any other internal channel"
+  ]
+ },
+ {
+  "slug": "technical-team",
+  "corpus": True,
+  "routing": [
+   "a technical channel; any Bitbucket PR description or review comment"
+  ]
+ },
+ {
+  "slug": "senior",
+  "corpus": True,
+  "routing": [
+   "a senior or management channel, or a group DM with those people"
+  ]
+ },
+ {
+  "slug": "one-to-one",
+  "corpus": True,
+  "routing": [
+   "a one-to-one DM with a colleague"
+  ]
+ },
+ {
+  "slug": "jira",
+  "corpus": False,
+  "routing": [
+   "a Jira comment"
+  ]
+ }
+]
+
+
 def exemplar(i, aud, purposes, text, answered):
     return {"id": i, "audience": aud, "purposes": purposes, "text": text,
             "answered": answered,
@@ -90,6 +152,7 @@ def build(out, bt, variant="a", schema=None, listed=None):
                 "openings": [["hi", 5]], "signoffs": [["thanks", 2]]}},
             "quoted": {"clients": {"kindly": 0.001}, "technical-team": {"kindly": 0.001}},
             "drafting": {"draft_system": "DRAFT-SYSTEM draft as self-01.\n",
+                         "render": RENDER, "audiences": AUDIENCES,
                          "notes": {"clients": ["CLIENT-NOTE as few words"]},
                          "quoted_rates_for": ["clients"], "rare_below": 0.02},
             "spelling": {"british": 30, "american": 1},

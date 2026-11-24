@@ -54,14 +54,27 @@ def audience(raw):
     if not raw:
         return None
     key = raw.strip().lower()
-    if key in CANONICAL_AUDIENCES:
-        return CANONICAL_AUDIENCES[key]
-    # An audience that starts with a canonical one maps to it;
-    # one with a condition (" if ") waits for the mapping page.
-    m = re.match(r"^(project team|technical team|clients|1:1 colleagues)\b", key)
-    if m and " if " not in key:
-        return CANONICAL_AUDIENCES[m.group(1)]
+    canon = canonical_audiences()
+    if key in canon:
+        return canon[key]
+    # An audience that starts with a canonical one marked match_prefix maps
+    # to it; one with a condition (" if ") waits for the mapping page.
+    for name in prefix_names():
+        if re.match(r"^" + re.escape(name) + r"\b", key) and " if " not in key:
+            return canon[name]
     return None
+
+
+def canonical_audiences():
+    """{lower-case name: name} of the corpus audiences, as the settings
+    give them (CANONICAL_AUDIENCES by default)."""
+    from . import settings
+    return {a["name"].lower(): a["name"] for a in settings.audiences() if a["corpus"]}
+
+
+def prefix_names():
+    from . import settings
+    return [a["name"].lower() for a in settings.audiences() if a["corpus"] and a["match_prefix"]]
 
 
 def audiences_hash(d):
@@ -75,7 +88,7 @@ def audiences_hash(d):
 def set_audience(conv_id, value):
     """The owner's choice on the mapping page (PLAN §3.2). The hand-written rule
     it replaces is kept beside it as `audience_rule`."""
-    if value not in CANONICAL_AUDIENCES:
+    if value not in canonical_audiences():
         raise ValueError(f"unknown audience {value!r}")
     d = load()
     for c in d.get("conversations", []):

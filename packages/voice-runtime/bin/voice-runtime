@@ -51,9 +51,12 @@ USAGE
       record the version you approved, or that you discarded it
   voice-runtime status
       the installed build and whether it can be used, as JSON
+  voice-runtime audiences
+      the build's audiences and where a draft goes for each
 
-Audiences: clients, project-team, technical-team, senior, one-to-one, jira.
-Purposes: push-back, decline, ask, chase, status, explain, approve,
+Audiences and purposes are the installed build's; without one:
+audiences clients, project-team, technical-team, senior, one-to-one, jira;
+purposes push-back, decline, ask, chase, status, explain, approve,
 own-mistake, thank, escalate, small-talk, other.
 Destination: slack:<conversation>, bitbucket:<repo>#<pr>, jira:<key>, other.
 
@@ -73,7 +76,7 @@ case "${1:-}" in
   install-build|search)
     [ -x "$EL_VPY" ] || refuse "voice model unavailable: embedding-lib is not installed or not set up ($EL_VPY is missing). Fix: install embedding-lib, then run: embedding-lib setup"
     run_on "$EL_VPY" "$@" ;;
-  guide|save-draft|save-final|status)
+  guide|save-draft|save-final|status|audiences)
     if [ -x "$EL_VPY" ]; then run_on "$EL_VPY" "$@"; else run_on python3 "$@"; fi ;;
   *) printf 'unknown command: %s\n' "$1" >&2; usage >&2; exit 2 ;;
 esac

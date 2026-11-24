@@ -19,6 +19,7 @@ from collections import Counter, defaultdict
 
 from . import inputs, record, textutil
 
+# The defaults; the state's settings.json "extraction" section wins.
 WINDOW_SECONDS = 2 * 3600
 WINDOW_MAX = 20
 
@@ -89,6 +90,9 @@ def extract(d, counts=None):
     struck = set(d["struck_conversations"])
     struck_authors = set(d["struck_authors"])
     agreement = AGREEMENT | set(d.get("agreement_reactions_extra") or [])
+    from . import settings
+    ex = settings.get("extraction")
+    wsec, wmax = ex["slack_window_seconds"], ex["slack_window_max"]
     out = {}
     stats = Counter()
 
@@ -122,10 +126,10 @@ def extract(d, counts=None):
             if i is None:
                 return []
             t0 = float(m["ts"])
-            before = [x for x in top[max(0, i - WINDOW_MAX):i]
-                      if t0 - float(x["ts"]) <= WINDOW_SECONDS]
-            after = [x for x in top[i + 1:i + 1 + WINDOW_MAX]
-                     if float(x["ts"]) - t0 <= WINDOW_SECONDS]
+            before = [x for x in top[max(0, i - wmax):i]
+                      if t0 - float(x["ts"]) <= wsec]
+            after = [x for x in top[i + 1:i + 1 + wmax]
+                     if float(x["ts"]) - t0 <= wsec]
             return before + after
 
         def agreed(m):

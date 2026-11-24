@@ -62,6 +62,16 @@ def _page(title, body):
 shown = voice.shown
 
 
+def lb_size():
+    from . import settings
+    return settings.get("labels")["sample"]
+
+
+def lb_max():
+    from . import settings
+    return settings.get("labels")["sample_max_wrong"]
+
+
 def grade_text(n):
     """A grade's meaning on the judge's scale, worded for the owner."""
     return validate.grades()[n].replace("self-01's", "your").replace("self-01", "you")
@@ -85,7 +95,7 @@ def reveal(real):
 def voice_nav(items):
     """Tabs for All and each audience, each with how many are left, and a
     button to the next one not yet answered: the Mining page's pattern."""
-    auds = [a for a in voice.CORPUS_AUDIENCES if any(x == a for x in items)]
+    auds = [a for a in voice.corpus_audiences() if any(x == a for x in items)]
     tabs = [("", "All")] + [(a, a) for a in auds]
     return ("<nav class=tabs>" + "".join(
         f"<button class=tab data-tab='{a}' onclick=\"vtab('{a}')\">{E(label)} <span class=n data-left='{a}'></span></button>"
@@ -140,7 +150,7 @@ def overview():
 <p><a href='/voice/labels'>Label check</a>: """ + (
         "not drawn yet: it is drawn after the first labelling pass." if not c.get("drawn") else
         f"round {c['round']}, {c['answered']} of {c['size']} answered, {c['wrong']} wrong "
-        f"({'passed' if c['passed'] else 'over 6 wrong fails' if c['done'] else 'in progress'}).") + f"""</p>
+        f"({'passed' if c['passed'] else f'over {lb_max()} wrong fails' if c['done'] else 'in progress'}).") + f"""</p>
 <p><a href='/voice/disagree'>Disagreements</a>: """ + (
         f"round {g['round']}, {g['answered']} of {g['size']} graded." if g.get("drawn") else
         "not drawn yet: it is drawn once both passes have labelled.") + f"""</p>
@@ -176,7 +186,7 @@ def labels_page():
                     f"aria-pressed={'true' if v == 'wrong' else 'false'} onclick=\"lc('{i}','wrong')\">Wrong</button></td></tr>")
     c = labels.check_result()
     return _page("Label check", f"""<p>Round {d['round']}: {c['answered']} of {c['size']} answered,
-{c['wrong']} wrong. More than 6 wrong of 120 fails: the labelling prompt is changed and the pass rerun,
+{c['wrong']} wrong. More than {lb_max()} wrong of {lb_size()} fails: the labelling prompt is changed and the pass rerun,
 then a fresh sample is drawn. Mark a label set wrong if any purpose is missing, extra or out of
 order; tick the right ones under "correct it" first, and the correction is used in place of the
 labeller's. Each click is saved.</p><table>{''.join(rows)}</table>""")

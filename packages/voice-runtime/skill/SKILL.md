@@ -21,22 +21,15 @@ voice-runtime search --audience <a> --purposes <p,...> --situation "<text>"
 voice-runtime save-draft --audience <a> --purposes <p,...> --destination <d> --text-file <f>
 voice-runtime save-final --id <draft id> --text-file <f> [--status approved|discarded]
 voice-runtime status
+voice-runtime audiences
 ```
 
 ## Steps
 
-1. **Work out the audience** from where the draft is going:
-
-   | Going to | Audience |
-   |---|---|
-   | a client channel, or a DM with a client-side contact | `clients` |
-   | an internal project channel, or any other internal channel | `project-team` |
-   | a technical channel; any Bitbucket PR description or review comment | `technical-team` |
-   | a senior or management channel, or a group DM with those people | `senior` |
-   | a one-to-one DM with a colleague | `one-to-one` |
-   | a Jira comment | `jira` |
-
-   For a group DM of anyone else, ask the user which audience it is.
+1. **Work out the audience** from where the draft is going: `voice-runtime
+   audiences` lists the build's audiences and where a draft goes for each.
+   Where nothing it lists fits (a group DM of anyone else, say), ask the user
+   which audience it is.
 
 2. **Work out the purposes** from the request, in the order the message
    will carry them: `push-back`, `decline`, `ask`, `chase`, `status`,
@@ -68,14 +61,10 @@ voice-runtime status
    use an exclamation mark to that audience, the draft does too. The
    CLAUDE.md rules still govern everything said to the user around the draft.
 
-   Draft by the guide's "How to draft" section: it is the drafter prompt
-   the build was validated with, word for word, and it wins over this
-   step's wording where they differ. Match the length and register of the
-   exemplars, and follow the guide's "How to write it" section where it has
-   one. Use each mark of style the
-   guide measures (spaced dash, exclamation mark, emoji, emphasis, list,
-   swear word) about as often as its share of messages: only where the
-   exemplars for this moment have one, and keep it where they do.
+   Draft by the guide's "How to draft" section and the guide under it:
+   they are the prompt and guide text validation drafted with, word for
+   word, and they win over this step's wording where they differ. Match the
+   length and register of the exemplars.
 
    Where a tool sets the format, keep the tool's structure and write only the
    wording inside it in the user's voice: the PR description templates in

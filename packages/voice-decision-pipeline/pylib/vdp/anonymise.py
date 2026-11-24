@@ -810,12 +810,14 @@ def mine(recs, rep, ner, convs_by_client, decisions=None):
         c["term"] = decided.get(k) or forms[k].most_common(1)[0][0]
     cands = {k: c for k, c in cands.items() if not junk_term(c["term"])}
     hits, spread = term_spread(recs, list(cands), convs_by_client)
+    from . import settings
+    max_clients = settings.get("review")["mining_max_clients"]
     out = []
     for k, c in cands.items():
         pc = spread[k]
         # Gone from the corpus, or spread over three clients or more: it
         # can't point at any one client.
-        if not hits[k] or len(pc) >= MINING_MAX_CLIENTS:
+        if not hits[k] or len(pc) >= max_clients:
             continue
         total = sum(pc.values())
         top, n = pc.most_common(1)[0] if pc else (None, 0)
@@ -836,6 +838,7 @@ def mine(recs, rep, ner, convs_by_client, decisions=None):
     return sorted(out, key=lambda c: (order[c.get("suggest")], -c["count"], c["term"]))
 
 
+# The default; the state's settings.json "review.mining_max_clients" wins.
 MINING_MAX_CLIENTS = 3
 
 

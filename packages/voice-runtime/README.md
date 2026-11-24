@@ -28,16 +28,18 @@ waits for your approval of the exact text. Nothing is sent without it. Once
 you approve or drop it, the final version is recorded.
 
 `guide` gives the drafter prompt the build was validated with, then the
-owner's own rules, the audience's drafting notes where
-the build has them, the guide's rules for the audience and purposes, and the
-measured style: length, capitals, end marks, and the share of messages
-holding each mark of style (spaced dash, exclamation mark, emoji, emphasis,
-list, swear word); for an audience the build names, the share of messages
-holding each word the rules quote.
+guide text a validation draft read, rendered from the build's parts and
+wording by the pipeline's own rule: the owner's own rules, the audience's
+drafting notes where the build has them, the guide's rules for the audience
+and purposes, and the measured style: length, capitals, end marks, and the
+share of messages holding each mark of style; for an audience the build
+names, the share of messages holding each word the rules quote; and the
+never-say list. A build without that wording is refused.
 
-The purposes `guide`, `search` and `save-draft` accept are the build's own
-list, carried in `stats.json`; a build without one gets the twelve this
-release knows.
+The audiences and purposes `guide`, `search` and `save-draft` accept are the
+build's own, carried in `stats.json`; a build without them gets the ones
+this release knows. `audiences` lists the build's audiences and where a
+draft goes for each, which the skill uses to pick one.
 
 When the voice model can't be used, the skill says so first, with the reason
 and its fix, and offers a draft marked as not in your voice:
@@ -54,6 +56,7 @@ The commands:
                                                                        prints the draft's id
     voice-runtime save-final --id <id> --text-file <f> [--status approved|discarded]
     voice-runtime status                                               installed build, usable or why not
+    voice-runtime audiences                                            the build's audiences and where a draft goes
 
 Exit 3 is a refusal, with one line saying why: no build installed yet, an
 index embedded by an embedding-lib setup unlike this machine's, or a file

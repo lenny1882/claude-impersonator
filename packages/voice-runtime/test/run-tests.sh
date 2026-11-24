@@ -207,7 +207,7 @@ out=$("$VR" guide --audience technical-team --purposes status,ask)
 first=$(printf '%s\n' "$out" | grep -n -m1 'RULE' | cut -d: -f2-)
 printf '%s' "$first" | grep -q OWN-RULE && ok "the owner's own rules come first" || no "the owner's own rules come first" "$first"
 missing=""
-for r in GENERAL-RULE TECH-RULE TECH-STATUS-RULE TECH-ASK-RULE COMBINE-RULE "median 14 words" "Never say" "hope this helps" "British 30"; do
+for r in GENERAL-RULE TECH-RULE TECH-STATUS-RULE TECH-ASK-RULE COMBINE-RULE "median 14 words" "never or almost never writes" "hope this helps" "How to draft" "DRAFT-SYSTEM"; do
   printf '%s' "$out" | grep -q "$r" || missing="$missing [$r]"
 done
 [ -z "$missing" ] && ok "guide holds general, audience, purpose, combination rules and the stats" || no "guide holds general, audience, purpose, combination rules and the stats" "missing:$missing"
@@ -217,7 +217,7 @@ printf '%s' "$out" | grep -q 'COMBINE-RULE\|TECH-ASK-RULE' && no "one purpose: n
 out=$("$VR" guide --audience jira --purposes status)
 printf '%s' "$out" | grep -q JIRA-RULE && ! printf '%s' "$out" | grep -q TECH-RULE && ok "jira gets the Jira section" || no "jira gets the Jira section" "$out"
 out=$("$VR" guide --audience technical-team --purposes status)
-printf '%s' "$out" | grep -qE 'share of messages holding each: spaced dash [0-9]+[^0-9 ], exclamation mark [0-9]+' && ok "guide gives the audience's share of messages holding each mark of style" || no "guide gives the audience's share of messages holding each mark of style" "$out"
+printf '%s' "$out" | grep -qE "messages to technical-team holding each: spaced dash [0-9]+[^0-9 ], exclamation mark [0-9]+[^0-9 ]" && ok "guide gives the audience's share of messages holding each mark of style" || no "guide gives the audience's share of messages holding each mark of style" "$out"
 printf '%s' "$out" | grep -q 'CLIENT-NOTE\|How to write it\|Words the rules quote' && no "an audience without drafting notes gets none, nor quoted-word shares" "$out" || ok "an audience without drafting notes gets none, nor quoted-word shares"
 out=$("$VR" guide --audience clients --purposes decline)
 note=$(printf '%s\n' "$out" | grep -n -m1 'CLIENT-NOTE' | cut -d: -f1); rule=$(printf '%s\n' "$out" | grep -n -m1 'CLIENT-RULE' | cut -d: -f1)
@@ -231,6 +231,19 @@ g=$("$VR" guide --audience technical-team --purposes gossip 2>&1); grc=$?
 d=$("$VR" guide --audience technical-team --purposes decline 2>&1); drc=$?
 cp "$TMP/stats.purposes" "$ST/builds/$cur/stats.json"
 [ "$grc" = 0 ] && [ "$drc" = 1 ] && printf '%s' "$d" | grep -q 'purposes are: status, gossip' && ok "a build's own purpose list is the one guide accepts" || no "a build's own purpose list is the one guide accepts" "exit $grc/$drc: $d"
+out=$("$VR" audiences)
+printf '%s\n' "$out" | grep -q '^clients: a client channel' && printf '%s\n' "$out" | grep -q '^jira: a Jira comment' && ok "audiences lists the build's audiences and where a draft goes for each" || no "audiences lists the build's audiences and where a draft goes for each" "$out"
+cp "$ST/builds/$cur/stats.json" "$TMP/stats.render"
+jq 'del(.drafting.render)' "$TMP/stats.render" > "$ST/builds/$cur/stats.json"
+out=$("$VR" guide --audience technical-team --purposes status 2>&1); rc=$?
+cp "$TMP/stats.render" "$ST/builds/$cur/stats.json"
+[ "$rc" = 3 ] && printf '%s' "$out" | grep -q 'carries no drafting wording' && ok "a build without the drafting wording is refused" || no "a build without the drafting wording is refused" "exit $rc: $out"
+cp "$ST/builds/$cur/stats.json" "$TMP/stats.aud"
+jq '.drafting.audiences = [{"slug": "clients", "corpus": true, "routing": []}, {"slug": "partners", "corpus": true, "routing": ["a partner channel"]}]' "$TMP/stats.aud" > "$ST/builds/$cur/stats.json"
+p=$("$VR" guide --audience partners --purposes status 2>&1); prc=$?
+t=$("$VR" guide --audience technical-team --purposes status 2>&1); trc=$?
+cp "$TMP/stats.aud" "$ST/builds/$cur/stats.json"
+[ "$prc" = 0 ] && [ "$trc" = 1 ] && printf '%s' "$t" | grep -q 'audiences are: clients, partners' && ok "a build's own audience list is the one guide accepts" || no "a build's own audience list is the one guide accepts" "exit $prc/$trc: $t"
 out=$(EMBEDDING_LIB_HOME="$TMP/no-el" "$VR" guide --audience clients --purposes decline 2>&1)
 printf '%s' "$out" | grep -q CLIENT-DECLINE-RULE && ok "guide runs on the system python3 without embedding-lib" || no "guide runs on the system python3 without embedding-lib" "$out"
 

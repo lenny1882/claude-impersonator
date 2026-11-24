@@ -28,6 +28,8 @@ from .index import VOICE_SOURCES
 WORD = re.compile(r"[a-z]+(?:'[a-z]+)?")
 # Slack's :name: form, and the pictograph and dingbat blocks.
 EMOJI = re.compile(r":[a-z0-9_+\-]+:|[" + chr(0x1F300) + "-" + chr(0x1FAFF) + chr(0x2600) + "-" + chr(0x27BF) + "]")
+# SPELLING, PURPOSE_MIN and data/generic-phrases.txt are the defaults; the
+# state's settings.json "stats" section wins.
 SPELLING = [("colour", "color"), ("behaviour", "behavior"), ("organise", "organize"),
             ("organised", "organized"), ("realise", "realize"), ("realised", "realized"),
             ("analyse", "analyze"), ("apologise", "apologize"), ("prioritise", "prioritize"),
@@ -37,7 +39,7 @@ SPELLING = [("colour", "color"), ("behaviour", "behavior"), ("organise", "organi
             ("initialise", "initialize"), ("serialise", "serialize"), ("normalise", "normalize")]
 # Marks of style whose share of messages per audience the drafter is shown.
 # STYLE and the four never-say thresholds below are the defaults; the state's
-# voice/settings.json "style" section wins (settings.py).
+# settings.json "style" section wins (settings.py).
 STYLE = {
     "spaced dash": re.compile(r"\S\s[-\u2013\u2014]\s+\S"),
     "exclamation mark": re.compile(r"!"),
@@ -55,9 +57,8 @@ COLLEAGUE_TOP = 120
 
 
 def generic_phrases():
-    p = os.path.join(os.path.dirname(__file__), "data", "generic-phrases.txt")
-    with open(p, encoding="utf-8") as f:
-        return [l.strip().lower() for l in f if l.strip() and not l.startswith("#")]
+    from . import settings
+    return [p.lower() for p in settings.get("stats")["generic_phrases"]]
 
 
 def prose(text, tags):
@@ -134,6 +135,7 @@ def build(items=None, log=print):
     from . import labels, settings
     marks = settings.style_marks()
     ns = settings.get("style")["never_say"]
+    sts = settings.get("stats")
     items = items or voice.load()
     words = dictionary()
     final = labels.final()
@@ -163,12 +165,12 @@ def build(items=None, log=print):
             "signoffs": [[w, c] for w, c in signs.most_common(10) if c >= 3],
             # Length per purpose, where at least PURPOSE_MIN messages carry it.
             "purposes": {p: {"messages": len(xs), "median_words": median(xs), "p90_words": pct(xs, 0.9)}
-                         for p, xs in sorted(by_pur[aud].items()) if len(xs) >= PURPOSE_MIN},
+                         for p, xs in sorted(by_pur[aud].items()) if len(xs) >= sts["purpose_min"]},
         }
     mine = [prose(it["text"], it["tags"]).lower() for it in items]
     alltext = " ".join(mine)
     spelling = {"british": 0, "american": 0}
-    for b, a in SPELLING:
+    for b, a in sts["spelling"]:
         spelling["british"] += len(re.findall(rf"\b{b}\b", alltext))
         spelling["american"] += len(re.findall(rf"\b{a}\b", alltext))
     theirs = [t.lower() for t in others()]

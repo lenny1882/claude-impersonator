@@ -28,7 +28,7 @@ import os
 import subprocess
 import time
 
-# The defaults; the state's voice/settings.json "models" wins (settings.py).
+# The defaults; the state's settings.json "models" wins (settings.py).
 MODELS = {
     # PLAN §3.4, §3.7
     "labeller": "claude-sonnet-5-5",
@@ -45,6 +45,8 @@ MODELS = {
     "guide": "claude-opus-5-5",
 }
 
+# RETRIES, TIMEOUT and LIMIT_WORDS are the defaults; the state's
+# settings.json "calls" section wins.
 RETRIES = 3
 TIMEOUT = 900
 # Claude Code words a limit several ways: "Claude AI usage limit reached",
@@ -115,13 +117,16 @@ def call(role, system, prompt, schema, log=print):
            "--json-schema", json.dumps(schema), "--no-session-persistence",
            "--tools", "", "--setting-sources", "", "--strict-mcp-config",
            "--disable-slash-commands", "--system-prompt", system]
+    from . import settings
+    ca = settings.get("calls")
+    retries, timeout, limit_words = ca["retries"], ca["timeout"], [w.lower() for w in ca["limit_words"]]
     last = ""
-    for attempt in range(1, RETRIES + 1):
+    for attempt in range(1, retries + 1):
         try:
             p = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                               timeout=TIMEOUT, cwd=os.environ.get("TMPDIR") or "/tmp")
+                               timeout=timeout, cwd=os.environ.get("TMPDIR") or "/tmp")
         except subprocess.TimeoutExpired:
-            last = f"no answer in {TIMEOUT}s"
+            last = f"no answer in {timeout}s"
             continue
         out = (p.stdout or "").strip()
         try:
@@ -136,9 +141,9 @@ def call(role, system, prompt, schema, log=print):
             except ValueError as e:
                 last = f"answer didn't match the schema: {e}"
         else:
-            if any(w in msg.lower() for w in LIMIT_WORDS):
+            if any(w in msg.lower() for w in limit_words):
                 raise UsageLimit(msg.strip()[:300])
             last = (d.get("terminal_reason") or "error") + ": " + msg.strip()[:300]
-        log(f"  retry {role} call {attempt}/{RETRIES}: {last}")
+        log(f"  retry {role} call {attempt}/{retries}: {last}")
         time.sleep(min(30, 2 ** attempt))
-    raise CallFailed(f"{role} call failed {RETRIES} times: {last}")
+    raise CallFailed(f"{role} call failed {retries} times: {last}")

@@ -28,7 +28,13 @@ from . import SOURCES, inputs, state
 from .record import flags
 from .urls import VERSION as URLS_VERSION
 
+# The default; the state's settings.json "review.batch_size" wins.
 BATCH_SIZE = 50
+
+
+def batch_size():
+    from . import settings
+    return settings.get("review")["batch_size"]
 
 
 def review_file():
@@ -119,7 +125,7 @@ def draw(source, seed=None):
     if not pool:
         raise SystemExit(f"voice-decision-pipeline: no unreviewed items left in {source}")
     rng = random.Random(seed if seed is not None else time.time_ns())
-    picked = rng.sample(pool, min(BATCH_SIZE, len(pool)))
+    picked = rng.sample(pool, min(batch_size(), len(pool)))
     n = len(st["batches"]) + 1
     name = f"{source}-{n:03d}"
     items = []

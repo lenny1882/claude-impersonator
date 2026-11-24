@@ -33,8 +33,14 @@ REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
 COMMAND = re.compile(r"<command-name>(.*?)</command-name>", re.S)
 COMMAND_ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.S)
 BASH_INPUT = re.compile(r"<bash-input>(.*?)</bash-input>", re.S)
+# The defaults; the state's settings.json "extraction" section wins.
 REPLY_CAP = 8000
 SUMMARY_CAP = 160
+
+
+def reply_cap():
+    from . import settings
+    return settings.get("extraction")["transcript_reply_cap"]
 
 
 def default_roots():
@@ -88,8 +94,10 @@ def tool_summary(block):
               or i.get("url") or i.get("skill") or i.get("description")
               or i.get("query") or i.get("prompt") or "")
     detail = " ".join(str(detail).split())
-    if len(detail) > SUMMARY_CAP:
-        detail = detail[:SUMMARY_CAP] + "…"
+    from . import settings
+    cap = settings.get("extraction")["transcript_summary_cap"]
+    if len(detail) > cap:
+        detail = detail[:cap] + "…"
     return f"{name}: {detail}" if detail else name
 
 
@@ -141,7 +149,7 @@ def extract_file(path, machine, me, counts, out):
                         "answers": answers,
                         "annotations": tur.get("annotations") or {},
                         "preceding_reply": textutil.redact(
-                            "\n\n".join(reply)[-REPLY_CAP:], counts),
+                            "\n\n".join(reply)[-reply_cap():], counts),
                     })
                 continue
             p = prompt_text(rec)
@@ -156,7 +164,7 @@ def extract_file(path, machine, me, counts, out):
                 source_fields={
                     "machine": machine, "project": project, "cwd": rec.get("cwd"),
                     "git_branch": rec.get("gitBranch"),
-                    "preceding_reply": textutil.redact("\n\n".join(reply)[-REPLY_CAP:], counts),
+                    "preceding_reply": textutil.redact("\n\n".join(reply)[-reply_cap():], counts),
                     "tool_calls": [textutil.redact(x, counts) for x in tools],
                 })
             reply, tools = [], []

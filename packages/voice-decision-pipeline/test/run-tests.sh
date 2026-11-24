@@ -1515,7 +1515,7 @@ finally:
     if keep is not None:
         open(df, "w").write(keep)
 EOF
-check "the voice settings are written with the defaults, which give the prompts and methods the code always gave; overrides apply, are recorded and refused when malformed" vpy <<'EOF'
+check "the settings are written with the defaults, which give the prompts and methods the code always gave; overrides apply, are recorded and refused when malformed" vpy <<'EOF'
 import json, os, subprocess, sys
 from vdp import drafter, guide, labels, model, settings, state, validate, voice, voicestats
 f = settings.file()
@@ -1584,6 +1584,86 @@ finally:
         open(log, "w").write(keep_log)
     elif os.path.exists(log):
         os.remove(log)
+EOF
+check "the prompts, context sizes, wording, audiences, sizes, calls and extraction values come from the settings; what reaches the drafter or labeller moves its method or version" vpy <<'EOF'
+import json, os
+from vdp import drafter, guide, inputs, labels, settings, state, validate, voice
+f, df = settings.file(), drafter.file()
+keep = {p: open(p).read() for p in (f, df) if os.path.exists(p)}
+try:
+    os.path.exists(f) and os.remove(f)
+    base, pv = drafter.methods(), labels.prompt_version()
+    it = {"id": "x", "audience": "clients", "source": "slack", "text": "hi {brief}", "tags": [],
+          "before": [("colleague-01", "q?")], "after": [], "answered": "q?", "answered_tags": []}
+    assert "B {audience} x" in validate.draft_prompt(it, ["ask"], [], "B {audience} x"), "a slot is filled once"
+    d = json.load(open(df)) if os.path.exists(df) else {}
+    d = {**drafter.DEFAULTS, **d, "draft_prompt": "EX {examples} BR {brief} AUD {audience}"}
+    state.write_json(df, d)
+    assert validate.draft_prompt(it, ["ask"], [], "B").startswith("EX  BR B AUD clients")
+    after = drafter.methods()
+    assert all(after[a] != base[a] for a in after), "a changed draft prompt drafts every audience again"
+    state.write_json(df, {**d, "draft_prompt": "no slots"})
+    try:
+        drafter.load(); raise AssertionError("accepted")
+    except SystemExit as e:
+        assert "draft_prompt must be a string holding {examples}, {brief}" in str(e), e
+    state.write_json(df, {k: v for k, v in d.items() if k not in drafter.PROMPT_DEFAULTS} | {"draft_prompt": drafter.DEFAULT_DRAFT_PROMPT})
+    assert drafter.methods() == base, "a file without the new keys keeps the defaults and the methods"
+    state.write_json(f, {"schema_version": 1, "render": {"notes": "HOW:"}})
+    assert drafter.methods() != base and "HOW:\n- N" in guide.render({}, {}, "clients", ["ask"], {**drafter.load(), "notes": {"clients": ["N"]}})
+    state.write_json(f, {"schema_version": 1, "labels": {"before_chars": 10}})
+    assert labels.prompt_version() != pv and drafter.methods() == base
+    state.write_json(f, {"schema_version": 1, "judge": {"prompt": "J {message} / {drafts} / {n}"}})
+    assert validate.judge_prompt(it, "B", ["a", "b"]) == "J hi {brief} / Draft 1:\na\n\nDraft 2:\nb / 2"
+    auds = settings.defaults()["audiences"]
+    auds.insert(1, {"slug": "partners", "name": "partners", "corpus": True, "match_prefix": True, "routing": ["a partner channel"]})
+    state.write_json(f, {"schema_version": 1, "audiences": auds})
+    assert voice.corpus_audiences()[:2] == ("clients", "partners") and "jira" not in voice.corpus_audiences()
+    assert inputs.audience("Partners") == "partners" and inputs.audience("partners and friends") == "partners"
+    assert inputs.audience("partners if they ask") is None and "partners" in drafter.methods()
+    assert inputs.audience("senior/management extra") is None, "senior/management matches only whole"
+    b = drafter.for_build()
+    assert [a["slug"] for a in b["audiences"]][:2] == ["clients", "partners"] and b["render"] == settings.get("render")
+    state.write_json(f, {"schema_version": 1, "extraction": {"bitbucket_cutoff": "2021-06-01", "slack_window_max": 3},
+                         "calls": {"limit_words": ["quota gone"]}, "review": {"batch_size": 7},
+                         "labels": {"sample": 50, "sample_max_wrong": 2}, "build": {"default_exemplar_count": 4}})
+    from vdp import batches, model
+    assert batches.batch_size() == 7 and settings.get("extraction")["bitbucket_cutoff"] == "2021-06-01"
+    for bad, why in (({"schema_version": 1, "extraction": {"bitbucket_cutoff": "June"}}, "must be a date"),
+                     ({"schema_version": 1, "audiences": [{"slug": "x"}]}, "exactly slug, name"),
+                     ({"schema_version": 1, "audiences": [dict(a, corpus=False) for a in auds]}, "at least one must have corpus"),
+                     ({"schema_version": 1, "guide": {"audience_prompt": "no slots"}}, "must hold {audience}, {examples}"),
+                     ({"schema_version": 1, "stats": {"spelling": [["colour"]]}}, "british, american")):
+        state.write_json(f, bad)
+        try:
+            settings.load(); raise AssertionError(bad)
+        except SystemExit as e:
+            assert why in str(e), (why, str(e))
+finally:
+    for p in (f, df):
+        if p in keep:
+            open(p, "w").write(keep[p])
+        elif os.path.exists(p):
+            os.remove(p)
+EOF
+check "voice-runtime gives the guide text validation drafted with, from the same parts and wording" vpy <<EOF
+import importlib.util, os, sys
+from vdp import guide, settings
+rt = "$REPO/../voice-runtime/pylib"
+if not os.path.isdir(rt):
+    print("voice-runtime isn't beside this checkout; nothing to compare"); sys.exit(0)
+sys.path.insert(0, rt)
+from voice_runtime import __main__ as vr
+g = {"own_rules": ["OWN"], "general": ["GEN 'kindly' x"], "combinations": ["COMB"], "jira": ["J1"],
+     "audiences": {"clients": {"rules": ["CR 'kindly'"], "purposes": {"ask": ["AR"], "status": ["SR"]}}}}
+st = {"audiences": {"clients": {"median_words": 14, "p90_words": 41, "lowercase_start": 0.83, "full_stop_end": 0.2,
+      "exclamation_per_message": 0.05, "emoji_per_message": 0.1, "style": {"spaced dash": 0.14, "list": 0.02},
+      "purposes": {"ask": {"messages": 12, "median_words": 9, "p90_words": 30}}}},
+      "quoted": {"clients": {"kindly": 0.001}}, "never_say": [{"phrase": "hope this helps"}, {"phrase": "per my"}]}
+w = settings.get("render")
+for aud, ps, corpus in (("clients", ["ask", "status"], True), ("clients", ["ask"], True), ("jira", ["status"], False), ("senior", ["ask"], True)):
+    args = (g, st, aud, ps, ["NOTE"], True, 0.02, w, corpus)
+    assert guide.render_text(*args) == vr.render_text(*args), aud
 EOF
 check "validate --batch drafts one batch per audience of messages never shown, once; pairs --redraw all draws from it" vpy <<EOF
 import json, os, subprocess, sys

@@ -571,7 +571,7 @@ def mapping():
         buttons = "".join(
             f"<button class=keep data-a='{a}' aria-pressed={'true' if cur == a else 'false'} "
             f"onclick=\"setaud(this,'{cid}','{a}')\">{a}</button>"
-            for a in inputs.CANONICAL_AUDIENCES)
+            for a in inputs.canonical_audiences())
         out.append(
             f"<div class=card><b>{html.escape(c.get('name') or c['id'])}</b>"
             f"<div class=meta>{html.escape(c.get('kind') or '')} · {cid} · {len(items)} of your items"
@@ -602,7 +602,7 @@ def batch_page(source):
                 if st["approved"] and not st["stopped"] else "")
         draw = ("" if st["stopped"] or gates else
                 f"<button onclick=\"post('/api/draw',{{source:'{source}'}}).then(()=>location.reload())\">"
-                f"Draw the next batch of {batches.BATCH_SIZE}</button>")
+                f"Draw the next batch of {batches.batch_size()}</button>")
         return page(f"{source}: review batches", f"""
 <p>{st['approved']} approved{'; stopped' if st['stopped'] else ''}.</p>
 <ul>{done}</ul>{('<ul>' + g + '</ul>') if g else ''}<p class=row>{draw} {stop}</p>""")
