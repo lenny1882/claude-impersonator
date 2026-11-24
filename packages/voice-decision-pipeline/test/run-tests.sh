@@ -1646,6 +1646,38 @@ finally:
         elif os.path.exists(p):
             os.remove(p)
 EOF
+check "voice settings --save copies each changed hand-edited settings file to its next number, once, owner-only, and logs it" vpy <<'EOF'
+import os, subprocess, sys
+from vdp import drafter, settings, state
+root = state.root()
+made = []
+try:
+    settings.load(); drafter.load()
+    open(state.path("own-rules.md"), "w").write("- RULE ONE\n")
+    pre = {f for f in os.listdir(root)} | {"voice/" + f for f in os.listdir(state.path("voice"))}
+    vv = lambda: subprocess.run([sys.executable, "-m", "vdp", "voice", "settings", "--save"], capture_output=True, text=True)
+    out = vv()
+    assert out.returncode == 0, out.stderr
+    now = {f for f in os.listdir(root)} | {"voice/" + f for f in os.listdir(state.path("voice"))}
+    made = sorted(now - pre)
+    assert {"settings-1.json", "voice/drafter-1.json", "own-rules-1.md"} <= set(made), made
+    for n in ("labelling-notes", "struck-rules"):
+        assert (n + "-1.md" in made) == os.path.exists(state.path(n + ".md")), (n, made)
+    assert open(state.path("own-rules-1.md")).read() == "- RULE ONE\n"
+    assert oct(os.stat(state.path("own-rules-1.md")).st_mode & 0o777) == "0o600"
+    h = open(settings.history_file()).read()
+    assert "## Saved with voice settings --save" in h and "own-rules-1.md: copy of own-rules.md" in h
+    out = vv()
+    assert "unchanged since own-rules-1.md" in out.stdout and not os.path.exists(state.path("own-rules-2.md")), out.stdout
+    open(state.path("own-rules.md"), "w").write("- RULE TWO\n")
+    vv()
+    assert open(state.path("own-rules-2.md")).read() == "- RULE TWO\n" and not os.path.exists(state.path("settings-2.json"))
+    made.append("own-rules-2.md")
+finally:
+    for m in made + ["settings-history.md"]:
+        p = os.path.join(root, m)
+        os.path.exists(p) and os.remove(p)
+EOF
 check "voice-runtime gives the guide text validation drafted with, from the same parts and wording" vpy <<EOF
 import importlib.util, os, sys
 from vdp import guide, settings

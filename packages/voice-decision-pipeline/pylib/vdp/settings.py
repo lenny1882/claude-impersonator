@@ -409,3 +409,61 @@ def record_pass_rule(run):
         f.write(json.dumps(row, sort_keys=True) + "\n")
     os.chmod(pass_rule_log(), 0o600)
     return run
+
+
+# -- saved copies ------------------------------------------------------------
+#
+# `voice settings --save` keeps the history of the hand-edited files: each one
+# whose text differs from its newest saved copy is copied to the next number
+# beside it (settings-11.json, voice/drafter-7.json, own-rules-1.md), owner-only,
+# and settings-history.md gets a line saying what was saved when.
+
+SAVED = (("settings.json", ""), ("drafter.json", "voice"), ("labelling-notes.md", ""),
+         ("own-rules.md", ""), ("struck-rules.md", ""))
+
+
+def history_file():
+    return state.path("settings-history.md")
+
+
+def _copies(name, sub):
+    stem, ext = os.path.splitext(name)
+    d = os.path.dirname(state.path(sub, name)) if sub else state.root()
+    rx = re.compile(re.escape(stem) + r"-(\d+)" + re.escape(ext) + r"$")
+    found = sorted((int(m.group(1)), f) for f in os.listdir(d) for m in [rx.match(f)] if m)
+    return d, stem, ext, found
+
+
+def save_copies(log=print):
+    """[(saved path, source path)]: the next numbered copy of each file whose
+    text has changed since its newest copy. Files that don't exist are skipped."""
+    import time
+    out = []
+    for name, sub in SAVED:
+        src = state.path(sub, name) if sub else state.path(name)
+        if not os.path.exists(src):
+            continue
+        with open(src, encoding="utf-8") as f:
+            text = f.read()
+        d, stem, ext, found = _copies(name, sub)
+        if found:
+            with open(os.path.join(d, found[-1][1]), encoding="utf-8") as f:
+                if f.read() == text:
+                    log(f"  --    {name}: unchanged since {found[-1][1]}")
+                    continue
+        n = found[-1][0] + 1 if found else 1
+        dest = os.path.join(d, f"{stem}-{n}{ext}")
+        state.write_text(dest, text)
+        out.append((dest, src))
+        log(f"  ok    {name} saved as {os.path.relpath(dest, state.root())}")
+    if out:
+        hf = history_file()
+        head = "## Saved with voice settings --save"
+        cur = open(hf, encoding="utf-8").read() if os.path.exists(hf) else "# Settings history\n"
+        if head not in cur:
+            cur = cur.rstrip("\n") + "\n\n" + head + "\n\n"
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        cur += "".join(f"- {os.path.relpath(dst, state.root())}: copy of {os.path.relpath(s, state.root())}, {ts}\n"
+                       for dst, s in out)
+        state.write_text(hf, cur)
+    return out

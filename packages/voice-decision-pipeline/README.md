@@ -184,6 +184,10 @@ Run in order, each in your own shell (each logs to
    windows and cutoffs, the review batch size, and each role's model. It is
    written with the defaults the first time it is read; a key left out takes
    its default. `voice settings` lists what differs from the defaults.
+   `voice settings --save`, run before an edit, copies each of these files and
+   `labelling-notes.md`, `own-rules.md` and `struck-rules.md` that changed
+   since its newest copy to the next number beside it, and notes it in
+   `settings-history.md`.
    A change to what the drafter is shown changes every audience's method.
    Four calls a message;
    `--limit N` does the first N, and a later run carries on from there.
@@ -247,6 +251,7 @@ files 600), never backed up:
 | `voice/drafter.json` | the drafter's and brief writer's prompts and context sizes, each audience's drafting notes |
 | `settings.json` | every other tuned setting: audiences, purposes, prompts, guide wording, pass rule, statistics, calls, extraction, review, models |
 | `voice-config.json` | the exemplar pool's thresholds and the holdout share |
+| `settings-N.json`, `voice/drafter-N.json`, `*-N.md`, `settings-history.md` | earlier versions of the settings files, numbered oldest first, and what each was |
 | `validation/pass-rule.jsonl` | each pass rule used, with the run it applies from |
 | `label-check.json`, `disagreement-grades.json` | your label check and disagreement grades |
 | `holdouts.json` | the held-back items and the validation run |

@@ -212,6 +212,9 @@ def cmd_voice(a):
         return 0
     if step == "settings":
         from . import settings
+        if a.save:
+            settings.save_copies()
+            return 0
         d = settings.load()
         ch = settings.changed(d)
         print(f"settings: {settings.file()}")
@@ -294,6 +297,7 @@ def main(argv=None):
     s.add_argument("--redo", help="label: send again items either model gave one of these purposes")
     s.add_argument("--new-sample", action="store_true", help="label: draw a fresh label-check sample and disagreement-grade sample")
     s.add_argument("--fresh", action="store_true", help="holdout: draw a fresh holdout (a new validation run)")
+    s.add_argument("--save", action="store_true", help="settings: save the next numbered copy of each hand-edited settings file that changed")
     s.add_argument("--limit", type=int, help="validate: only the first N held-back messages")
     s.add_argument("--more", help="pairs: 12 more pairs for this audience; holdout: hold back more of it")
     s.add_argument("--count", type=int, default=12, help="holdout --more: how many more to hold back")
