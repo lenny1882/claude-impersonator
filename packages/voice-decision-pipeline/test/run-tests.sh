@@ -1427,6 +1427,30 @@ for p, t in json.load(open(f)).items():
     open(p, "w").write(t)
 os.remove(f)
 EOF
+check "validate --batch draws no batch for an audience a KEPT method keeps" vpy <<'EOF'
+import os
+from vdp import state, validate, voice
+f = validate.batch_file()
+saved = open(f).read() if os.path.exists(f) else None
+old = validate.KEPT
+try:
+    a = voice.CORPUS_AUDIENCES[0]
+    validate.KEPT = {"brief-old": (a,)}
+    os.path.exists(f) and os.remove(f)
+    b = validate.batch(log=lambda *x: None)
+    assert a not in b and set(b) == set(voice.CORPUS_AUDIENCES) - {a}, sorted(b)
+    try:
+        validate.redraw(a, log=lambda *x: None)
+        raise AssertionError("redraw of a kept audience went through")
+    except SystemExit as e:
+        assert "keeps its pairs" in str(e), e
+finally:
+    validate.KEPT = old
+    if saved is None:
+        os.path.exists(f) and os.remove(f)
+    else:
+        open(f, "w").write(saved)
+EOF
 check "validate --batch drafts one batch per audience of messages never shown, once; pairs --redraw all draws from it" vpy <<EOF
 import json, os, subprocess, sys
 from vdp import pool, state, validate
@@ -1488,7 +1512,7 @@ try:
     assert "== validate run 1: 0 of " in again.stdout, again.stdout
     r = vv("pairs", "--redraw", "all")
     assert r.returncode == 0, r.stderr
-    assert r.stdout.count("dropped ") == 5, r.stdout
+    assert r.stdout.count("dropped ") == len(validate.drafted_audiences()), r.stdout
     new = {p["id"] for p in validate.active(state.read_json(validate.pairs_file()))}
     assert new <= ids, (new - ids)
 finally:

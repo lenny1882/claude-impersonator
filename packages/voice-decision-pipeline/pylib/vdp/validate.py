@@ -77,10 +77,10 @@ DRAWS = 20000
 # the case rule (PLAN §8.1).
 # "brief-8": each audience's own drafting notes (guide.DRAFTING_NOTES) and
 # style shares (voicestats.STYLE).
-METHOD = "brief-8"
+METHOD = "brief-9"
 # Audiences listed under a KEPT method keep that method's drafts, pairs and
 # answers; the rest are drafted under METHOD.
-KEPT = {}
+KEPT = {"brief-8": ("project-team", "technical-team", "senior", "one-to-one")}
 PAIRS_PER_AUDIENCE = 12
 WORST, RANDOM = 20, 10
 
@@ -270,6 +270,13 @@ def shown_before():
     return out
 
 
+def drafted_audiences():
+    """The corpus audiences drafted under METHOD: all but those a KEPT method
+    keeps, whose drafts, pairs and answers stand."""
+    kept = {a for auds in KEPT.values() for a in auds}
+    return [a for a in voice.CORPUS_AUDIENCES if a not in kept]
+
+
 def batch_file():
     return vdir(f"batch-{METHOD}.json")
 
@@ -288,7 +295,7 @@ def batch(log=print):
     aud = _COUNTED["aud"]
     seen = shown_before()
     out = {}
-    for a in voice.CORPUS_AUDIENCES:
+    for a in drafted_audiences():
         cand = {i: (a, lab[i]) for i in sorted(ok) if aud[i] == a and i in lab and i not in seen}
         if len(cand) < PAIRS_PER_AUDIENCE:
             # Short of a batch: hold back more of the audience, only messages
@@ -509,6 +516,9 @@ def redraw(aud, log=print):
     'voice pairs --more' draws the batch. Dropped pairs and their answers
     stay in the files, marked with why."""
     _audience(aud)
+    if aud not in drafted_audiences():
+        raise SystemExit(f"voice-decision-pipeline: {aud} keeps its pairs under a KEPT method; "
+                         f"nothing to draw again")
     run = run_no()
     cur = state.read_json(pairs_file(), None)
     if not cur or cur["run"] != run:

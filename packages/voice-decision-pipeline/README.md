@@ -190,7 +190,8 @@ Run in order, each in your own shell (each logs to
    judge review, the label check or the disagreement grading), holding back
    more that the guide never saw where an audience is short; the batch is
    kept in `validation/batch-<method>.json`. `voice pairs --redraw all` then
-   drops every audience's pairs and draws its batch from them.
+   drops every audience's pairs and draws its batch from them. An audience a
+   KEPT method keeps gets no batch, and `--redraw` leaves its pairs alone.
 7. `voice build`: guide.json, exemplars.json, stats.json and build.json in a
    tarball in the state; the leak check reads them first and stops on any
    real name, all but build.json's `embedding_identity`. The terms it finds

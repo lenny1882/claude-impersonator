@@ -357,11 +357,12 @@ RARE_QUOTED = 0.02
 # blind test passed with them get them; the rest draft from the guide alone.
 DRAFTING_NOTES = {
     "clients": [
-        "Match the examples' word count. Omit what the conversation already makes clear: "
-        "no softener, no restated context, no reason the brief doesn't give.",
+        "Be as brief as the examples. Leave out what the conversation already makes clear: "
+        "no softener, no restated context, and no reason, example or detail the brief doesn't give.",
         "Word a request like the examples for this audience: often an instruction or a bare question, "
         "with \"please\" only where they have it.",
-        "Keep the examples' loose phrasing; don't rewrite it as complete, polished sentences.",
+        "Keep the examples' loose phrasing and casual words; don't rewrite them as complete, "
+        "polished sentences.",
         "Prefer the examples' vocabulary to generic business wording.",
         "Use a word the guide quotes only where the examples for this moment use it; most messages "
         "hold none.",

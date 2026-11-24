@@ -200,7 +200,7 @@ def cmd_voice(a):
     if step == "pairs":
         with state.lock():
             if a.redraw == "all":
-                for aud in voice.CORPUS_AUDIENCES:
+                for aud in validate.drafted_audiences():
                     validate.redraw(aud)
             elif a.redraw:
                 validate.redraw(a.redraw)
