@@ -11,18 +11,20 @@ with the best mean score is the build's exemplar count.
 Only held-back messages the exemplar pool's rule would keep are drafted,
 scored or paired (counted()); the rest are held back but count for nothing.
 
-Rows carry METHOD; rows written without a brief have none and are ignored,
-so a run resumes only its own method. KEPT names older methods whose rows
-still count for some audiences: a message there with no METHOD row keeps its
-old drafts, so a drafter change can be validated for one audience alone, and
-'voice pairs --redraw' drops that audience's pairs and draws a fresh batch
-from messages never paired.
+The drafter's settings are the state's voice/drafter.json (drafter.py). Rows
+carry their audience's draft method, a hash of the settings its drafts
+depend on; only rows of an audience's current method count, so changing one
+audience's notes drafts and pairs only that audience again, and the other
+audiences' drafts, pairs and answers stand. Rows written without a method
+are ignored.
 
-'voice validate --batch' drafts only one batch per audience: PAIRS_PER_AUDIENCE
-held-back messages the owner has never been shown (in a pair, the judge
-review, the label check or the disagreement grading), drawn once per METHOD
-and kept in validation/batch-<METHOD>.json; 'voice pairs --redraw all' then
-draws every audience's batch from them.
+'voice validate --batch' drafts one batch for each audience with nothing
+judged under its current method: PAIRS_PER_AUDIENCE held-back messages the
+owner has never been shown (in a pair, the judge review, the label check or
+the disagreement grading), drawn once per method and kept in
+validation/batch.json. 'voice pairs --redraw all' then drops the pairs of
+every audience whose pairs were drafted under an older method and draws its
+batch.
 
 Exemplars are picked as voice-runtime picks them: the pool narrowed to the
 audience and to any of the purposes, then the closest by similarity to the
@@ -59,7 +61,7 @@ import random
 import time
 from collections import Counter, defaultdict
 
-from . import guide, labels, model, pool, state, voice
+from . import drafter, guide, labels, model, pool, state, voice
 from .index import VOICE_SOURCES
 
 COUNTS = (3, 5, 8)
@@ -67,43 +69,13 @@ OVERALL_BAR, AUDIENCE_BAR = 0.10, 0.25
 SURE, UNSURE = 0.80, 0.50
 GRADES_ALL, GRADES_AUDIENCE = 0.80, 0.70
 DRAWS = 20000
-# "brief-2": the drafter says only what the brief says, lengths per purpose,
-# and the brief says how a message addresses someone.
-# "brief-5": the never-say list without pseudonym words, contraction tails,
-# emoji names or placeholders.
-# "brief-6": the drafter writes as briefly and loosely as self-01, asks as
-# plainly, and is shown how rarely the guide's quoted words appear.
-# "brief-7": the drafter above, drafting from anonymised copies that apply
-# the case rule (PLAN §8.1).
-# "brief-8": each audience's own drafting notes (guide.DRAFTING_NOTES) and
-# style shares (voicestats.STYLE).
-METHOD = "brief-9"
-# Audiences listed under a KEPT method keep that method's drafts, pairs and
-# answers; the rest are drafted under METHOD.
-KEPT = {"brief-8": ("project-team", "technical-team", "senior", "one-to-one")}
 PAIRS_PER_AUDIENCE = 12
 WORST, RANDOM = 20, 10
 
-DRAFT_SYSTEM = """You draft a message as self-01, in self-01's own voice, following the guide below
-and matching the example messages self-01 really wrote. Names are pseudonyms (colleague-07,
-client-03, product-04); keep using them. [code] stands for code left out: write [code] where
-self-01 would paste code. Reply with the message text only: no preamble, no quotation marks.
-
-"""
 
 DRAFT_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["text"],
                 "properties": {"text": {"type": "string"}}}
 
-BRIEF_SYSTEM = """You write the brief for one message: what it says, never how it says it. The
-writer is self-01; names are pseudonyms (colleague-07, client-03, product-04); keep them.
-[url], [email], [code] and [REDACTED:...] stand for removed details; keep them where the
-message has them. List each point the message makes, in the order it makes them, one short
-note per line, in plain neutral words of your own: facts, questions, requests, decisions,
-names, numbers, dates. Never quote or echo its wording, and say nothing about its length,
-tone, punctuation, capitalisation, emoji or sign-off; where it greets, jokes or thanks, say
-so in a few words of your own ("a greeting", "a joke about the train being late"). Where it
-addresses someone, say how: an @mention, or their name in the text; where it names no one,
-say nothing about who it is for. Add nothing the message doesn't say."""
 
 BRIEF_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["brief"],
                 "properties": {"brief": {"type": "string"}}}
@@ -219,15 +191,13 @@ def read_lines(name):
 
 
 def rows(name, run):
-    """A file's rows for this run and METHOD, for held-back messages that count;
-    for a message with no METHOD row in the file, its rows of a KEPT method
-    that keeps its audience."""
+    """A file's rows for this run, for held-back messages that count, drafted
+    under their audience's current method."""
     ok = counted()
     aud = _COUNTED["aud"]
-    rs = [r for r in read_lines(name) if r["run"] == run and r["id"] in ok]
-    new = {r["id"] for r in rs if r.get("method") == METHOD}
-    return [r for r in rs if r.get("method") == METHOD
-            or (r["id"] not in new and aud[r["id"]] in KEPT.get(r.get("method"), ()))]
+    cur = drafter.methods()
+    return [r for r in read_lines(name) if r["run"] == run and r["id"] in ok
+            and drafter.normal(r.get("method"), aud[r["id"]]) == cur.get(aud[r["id"]])]
 
 
 _COUNTED = {}
@@ -270,32 +240,78 @@ def shown_before():
     return out
 
 
-def drafted_audiences():
-    """The corpus audiences drafted under METHOD: all but those a KEPT method
-    keeps, whose drafts, pairs and answers stand."""
-    kept = {a for auds in KEPT.values() for a in auds}
-    return [a for a in voice.CORPUS_AUDIENCES if a not in kept]
+def judged_audiences(run=None):
+    """Audiences with a held-back message judged under their current method."""
+    run = run_no() if run is None else run
+    aud = (counted(), _COUNTED["aud"])[1]
+    return {aud[r["id"]] for r in rows("judge.jsonl", run)}
+
+
+def pair_method(p, run=None):
+    """The method a pair's draft was written under: as recorded when it was
+    drawn, or for an older pair, that of the drafts row whose text is on the
+    pair (a message can have drafts under several methods)."""
+    if p.get("method"):
+        return drafter.normal(p["method"], p["audience"])
+    run = run_no() if run is None else run
+    k = (state.read_json(pairs_file(), {}) or {}).get("k")
+    found = None
+    for r in read_lines("drafts.jsonl"):
+        if r["id"] == p["id"] and r["run"] == run and r["k"] == k and r["text"] in (p["a"], p["b"]):
+            found = drafter.normal(r.get("method"), p["audience"])
+    return found
+
+
+def stale_audiences():
+    """The audiences 'voice pairs --redraw all' draws again: those with a pair
+    in use drafted under an older method than their current one, and those
+    with no pair in use and a batch drawn under their current method."""
+    cur = drafter.methods()
+    pr = state.read_json(pairs_file(), None) or {}
+    run = run_no()
+    out = []
+    for a in voice.CORPUS_AUDIENCES:
+        mine = [p for p in active(pr) if p["audience"] == a]
+        if any(pair_method(p) != cur[a] for p in mine) or (not mine and _batch_entry(a, run) is not None):
+            out.append(a)
+    return out
 
 
 def batch_file():
-    return vdir(f"batch-{METHOD}.json")
+    return vdir("batch.json")
+
+
+def _batch_entry(a, run):
+    cur = state.read_json(batch_file(), None) or {}
+    e = (cur.get("ids") or {}).get(a)
+    if cur.get("run") == run and isinstance(e, dict) and e.get("method") == drafter.method(a):
+        return e["ids"]
+    return None
 
 
 def batch(log=print):
-    """{audience: [ids]}: one batch per corpus audience of counted held-back
-    messages the owner has never been shown, spread across purposes. Drawn
-    once per METHOD and run, then read back, so a resumed run drafts the same
+    """{audience: [ids]}: one batch for each corpus audience with nothing
+    judged under its current method, of counted held-back messages the owner
+    has never been shown, spread across purposes. Drawn once per audience
+    method and run, then read back, so a resumed run drafts the same
     messages."""
     run = run_no()
-    cur = state.read_json(batch_file(), None)
-    if cur and cur.get("run") == run and cur.get("method") == METHOD:
-        return cur["ids"]
     lab = labels.final()
     ok = counted()
     aud = _COUNTED["aud"]
     seen = shown_before()
+    done = judged_audiences(run)
+    cur = state.read_json(batch_file(), None) or {}
+    stored = dict(cur.get("ids") or {}) if cur.get("run") == run else {}
     out = {}
-    for a in drafted_audiences():
+    for a in voice.CORPUS_AUDIENCES:
+        m = drafter.method(a)
+        had = _batch_entry(a, run)
+        if had is not None:
+            out[a] = had
+            continue
+        if a in done:
+            continue
         cand = {i: (a, lab[i]) for i in sorted(ok) if aud[i] == a and i in lab and i not in seen}
         if len(cand) < PAIRS_PER_AUDIENCE:
             # Short of a batch: hold back more of the audience, only messages
@@ -309,10 +325,11 @@ def batch(log=print):
                 ok = counted()
                 aud = _COUNTED["aud"]
                 cand = {i: (a, lab[i]) for i in sorted(ok) if aud.get(i) == a and i in lab and i not in seen}
-        out[a] = sorted(labels.spread_sample(cand, PAIRS_PER_AUDIENCE, seed=f"batch-{METHOD}-{run}-{a}"))
+        out[a] = sorted(labels.spread_sample(cand, PAIRS_PER_AUDIENCE, seed=f"batch-{m}-{run}-{a}"))
+        stored[a] = {"method": m, "ids": out[a]}
         if len(out[a]) < PAIRS_PER_AUDIENCE:
             log(f"  --    {a}: only {len(out[a])} held-back messages never shown; a batch is {PAIRS_PER_AUDIENCE}")
-    state.write_json(batch_file(), {"run": run, "method": METHOD, "ids": out})
+    state.write_json(batch_file(), {"run": run, "ids": stored})
     return out
 
 
@@ -321,6 +338,8 @@ def drafts_and_judge(counts=COUNTS, limit=None, only_batch=False, log=print):
     voice.require_sendable()
     from . import voicestats
     g = guide.assemble("validation")
+    d = drafter.load()
+    mth = drafter.methods(d)
     items = voice.load()
     by_id = {it["id"]: it for it in items}
     lab = labels.final()
@@ -351,19 +370,20 @@ def drafts_and_judge(counts=COUNTS, limit=None, only_batch=False, log=print):
     qvs = el.embed([situation(it) or it["audience"] for it in todo]) if todo else []
     for n, (it, qv) in enumerate(zip(todo, qvs), 1):
         ps = lab[it["id"]]
-        system = DRAFT_SYSTEM + guide.render(g, stats, it["audience"], ps)
+        system = d["draft_system"] + guide.render(g, stats, it["audience"], ps, d)
+        method = mth[it["audience"]]
         try:
             if it["id"] not in briefs:
-                ans = model.call("brief", BRIEF_SYSTEM, brief_prompt(it), BRIEF_SCHEMA, log=log)
+                ans = model.call("brief", d["brief_system"], brief_prompt(it), BRIEF_SCHEMA, log=log)
                 briefs[it["id"]] = ans["brief"]
-                append("briefs.jsonl", [{"run": run, "method": METHOD, "id": it["id"], "brief": ans["brief"]}])
+                append("briefs.jsonl", [{"run": run, "method": method, "id": it["id"], "brief": ans["brief"]}])
             brief = briefs[it["id"]]
             for k in counts:
                 if (it["id"], k) in have:
                     continue
                 exs = search(ex, m, np.asarray(qv, "float32"), it["audience"], ps, k)
                 ans = model.call("drafter", system, draft_prompt(it, ps, exs, brief), DRAFT_SCHEMA, log=log)
-                append("drafts.jsonl", [{"run": run, "method": METHOD, "id": it["id"], "k": k, "text": ans["text"],
+                append("drafts.jsonl", [{"run": run, "method": method, "id": it["id"], "k": k, "text": ans["text"],
                                          "exemplars": [e["id"] for e in exs]}])
                 have.add((it["id"], k))
             ds = {r["k"]: r["text"] for r in rows("drafts.jsonl", run) if r["id"] == it["id"]}
@@ -381,7 +401,7 @@ def drafts_and_judge(counts=COUNTS, limit=None, only_batch=False, log=print):
             log(f"  skip  {it['id']}: {e}")
             continue
         sc = {x["draft"]: x for x in ans["scores"]}
-        append("judge.jsonl", [{"run": run, "method": METHOD, "id": it["id"], "k": k, "score": sc[i]["score"],
+        append("judge.jsonl", [{"run": run, "method": method, "id": it["id"], "k": k, "score": sc[i]["score"],
                                 "reason": sc[i]["reason"]} for i, k in enumerate(ks, 1) if i in sc])
         if n % 25 == 0 or n == len(todo):
             log(f"  {n}/{len(todo)} judged")
@@ -458,6 +478,7 @@ def _draw(cur, key, used, items, lab, drafts, aud, n):
         real_a = rnd.random() < 0.5
         pid = f"p{len(cur['pairs']) + 1:03d}"
         cur["pairs"].append({"pair": pid, "id": i, "audience": aud, "purposes": lab[i],
+                             "method": drafter.method(aud),
                              "context": voice.render_context(it["before"], 3000),
                              "a": it["text"] if real_a else drafts[i],
                              "b": drafts[i] if real_a else it["text"]})
@@ -508,7 +529,7 @@ def _audience(aud):
 
 
 def redraw(aud, log=print):
-    """After an audience's drafts are written again under a new METHOD: drop
+    """After an audience's drafts are written again under a new method: drop
     every pair of it still in use and draw a fresh batch of
     PAIRS_PER_AUDIENCE, never more, only from messages never in any pair, so
     the owner never judges a message whose real side they have seen. With fewer than a batch of those, it draws none and holds back as
@@ -516,9 +537,7 @@ def redraw(aud, log=print):
     'voice pairs --more' draws the batch. Dropped pairs and their answers
     stay in the files, marked with why."""
     _audience(aud)
-    if aud not in drafted_audiences():
-        raise SystemExit(f"voice-decision-pipeline: {aud} keeps its pairs under a KEPT method; "
-                         f"nothing to draw again")
+    m = drafter.method(aud)
     run = run_no()
     cur = state.read_json(pairs_file(), None)
     if not cur or cur["run"] != run:
@@ -528,34 +547,34 @@ def redraw(aud, log=print):
     for p in old:
         seen = any(q["id"] == p["id"] and q["pair"] != p["pair"] for q in cur["pairs"])
         cur["dropped"][p["pair"]] = ("its message was already in an earlier pair" if seen
-                                     else f"replaced: drafts written again under {METHOD}")
+                                     else f"replaced: drafts written again under {m}")
     key = state.read_json(key_file(), {}) or {}
     used = {p["id"] for p in cur["pairs"]}
     items = {it["id"]: it for it in voice.load()}
     lab = labels.final()
     drafts = {r["id"]: r["text"] for r in rows("drafts.jsonl", run)
-              if r["k"] == cur["k"] and r.get("method") == METHOD and r["id"] not in used
+              if r["k"] == cur["k"] and r["id"] not in used
               and r["id"] in items and items[r["id"]]["audience"] == aud}
     log(f"  ok    dropped {len(old)} {aud} pair{'' if len(old) == 1 else 's'}, kept in the files, marked")
     # A batch drawn by 'voice validate --batch', all of it drafted: its pairs
     # are what there is, even short of a full batch; nothing more is held
     # back, as that would change the pool the guide was written from.
-    b = state.read_json(batch_file(), None)
-    in_batch = bool(b) and b.get("method") == METHOD and b.get("run") == run
-    bids = set(b["ids"].get(aud, [])) if in_batch else set()
+    entry = _batch_entry(aud, run)
+    in_batch = entry is not None
+    bids = set(entry or [])
     whole = in_batch and bids <= set(drafts)
     if (len(drafts) >= PAIRS_PER_AUDIENCE or whole) and drafts:
         before = len(cur["pairs"])
         _draw(cur, key, used, items, lab, drafts, aud, min(PAIRS_PER_AUDIENCE, len(drafts)))
         new = [p["pair"] for p in cur["pairs"][before:]]
-        log(f"  ok    drew {len(new)} {aud} pairs from {METHOD} drafts of messages never paired: {new[0]} to {new[-1]}")
+        log(f"  ok    drew {len(new)} {aud} pairs from {m} drafts of messages never paired: {new[0]} to {new[-1]}")
     state.write_json(key_file(), key)
     state.write_json(pairs_file(), cur)
     if len(drafts) < PAIRS_PER_AUDIENCE and not whole:
-        judged = {r["id"] for r in rows("judge.jsonl", run) if r.get("method") == METHOD}
+        judged = {r["id"] for r in rows("judge.jsonl", run)}
         waiting = {i for i, a in _COUNTED["aud"].items() if a == aud and i not in judged and i not in used}
         need = PAIRS_PER_AUDIENCE - len(drafts) - len(waiting)
-        log(f"  --    {len(drafts)} {aud} message{'' if len(drafts) == 1 else 's'} drafted under {METHOD} and "
+        log(f"  --    {len(drafts)} {aud} message{'' if len(drafts) == 1 else 's'} drafted under {m} and "
             f"never paired, {len(waiting)} held back and not drafted yet; a batch is {PAIRS_PER_AUDIENCE}")
         if need > 0:
             pool.holdout_more(aud, need, log=log)

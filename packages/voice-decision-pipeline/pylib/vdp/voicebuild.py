@@ -43,7 +43,8 @@ def build(log=print):
                                     for x in stats.get("never_say", [])]}
     sm = guide.struck_summary(stats)
     stats, _ = guide.strike_stats(stats)
-    stats = {**stats, "drafting": guide.drafting()}
+    from . import drafter
+    stats = {**stats, "drafting": drafter.for_build()}
     ex = pool.exemplars()
     k = validate.best_count() or DEFAULT_COUNT
     try:

@@ -792,7 +792,7 @@ EOF
 for st in "$VE" "$TMP/vfresh"; do
   name=$([ "$st" = "$VE" ] && echo "empty state" || echo "state starting with nothing labelled")
   for step in "label" "label --second" "label --new-sample" "holdout" "holdout --fresh" "rules" "guide" \
-              "validate" "pairs" "pairs --more clients" "build" "publish" "status"; do
+              "drafter" "validate" "pairs" "pairs --more clients" "build" "publish" "status"; do
     out=$(VDP_STATE="$st" VDP_CLAUDE="$VBIN/claude" BUILDS_SYNC_HOME="$TMP/no-builds-sync" \
           PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp voice $step 2>&1); rc=$?
     if printf '%s' "$out" | grep -q Traceback || { [ "$rc" != 0 ] && [ "$(printf '%s\n' "$out" | wc -l)" -gt 3 ]; }; then
@@ -1121,9 +1121,11 @@ check "each holdout gets one brief of what it says, which the drafts and the jud
 from vdp import state, validate
 bs = list(state.read_jsonl(state.path("validation", "briefs.jsonl")))
 assert len(bs) == len(validate.counted()) and {b["id"] for b in bs} == validate.counted(), len(bs)
-assert all(b["brief"].startswith("brief: ") and b["method"] == validate.METHOD for b in bs)
+from vdp import drafter
+validate.counted(); aud = validate._COUNTED["aud"]; m = drafter.methods()
+assert all(b["brief"].startswith("brief: ") and b["method"] == m[aud[b["id"]]] for b in bs)
 for f in ("drafts.jsonl", "judge.jsonl"):
-    assert all(r["method"] == validate.METHOD for r in state.read_jsonl(state.path("validation", f)))
+    assert all(r["method"] == m[aud[r["id"]]] for r in state.read_jsonl(state.path("validation", f)))
 EOF
 check "a rerun of validate sends nothing more" \
   bash -c "VDP_STATE='$VST' VDP_CLAUDE='$VBIN/claude' PYTHONPATH='$REPO/pylib:$VPYL' '$PY' -m vdp voice validate | grep -q '== validate run 1: 0 of '"
@@ -1137,29 +1139,42 @@ txt = guide.render(guide.assemble("validation"), st, a, [p])
 assert f"Measured, to {a} when the purpose is {p}: median {v['median_words']} words" in txt, txt
 it = voice.load()[0]
 assert "nothing more: no question, offer, mention, pleasantry or sign-off" in validate.draft_prompt(it, ["ask"], [], "brief: x")
-assert "an @mention, or their name in the text" in validate.BRIEF_SYSTEM
+from vdp import drafter
+assert "an @mention, or their name in the text" in drafter.load()["brief_system"]
 EOF
-check "clients' drafts get their drafting notes and the quoted words' shares; other audiences get neither" vpy <<'EOF'
-from vdp import guide, state, validate, voice, voicestats
+check "an audience with drafting notes gets them before the guide's rules, and the quoted words' shares if listed; other audiences get neither" vpy <<'EOF'
+import json, os
+from vdp import drafter, guide, state, validate, voice, voicestats
 assert voicestats.quoted("Use 'Splendid tidings', 'Fair winds' or 'Quite possibly', not 'It'd snow on -', '**x**' or 'a b c d'.") == ["splendid tidings", "fair winds", "quite possibly"]
-g = state.read_json(state.path("voice", "corpus-guide.json"))
-g["general"] = list(g["general"]) + ["Thank with 'Splendid tidings'."]
-state.write_json(state.path("voice", "corpus-guide.json"), g)
-items = voice.load()
-st = voicestats.build(items, log=lambda *a: None)
-assert st["quoted"]["clients"]["splendid tidings"] == 0.0
-gd = guide.assemble("validation")
-txt = guide.render(gd, st, "clients", ["thank"])
-assert "Share of self-01's messages to clients holding each word quoted in the rules above: " in txt and '"splendid tidings" 0.0%' in txt, txt
-assert "How to write it:\n" + "\n".join("- " + r for r in guide.DRAFTING_NOTES["clients"]) in txt, txt
-assert txt.index("How to write it") < txt.index("Every audience:") and txt.index("own rules") < txt.index("How to write it") if "own rules" in txt else True
-other = [a for a in st["quoted"] if a != "clients"][0]
-assert st["quoted"][other]["splendid tidings"] == 0.0
-txt = guide.render(gd, st, other, ["thank"])
-assert "How to write it" not in txt and "holding each word quoted" not in txt, txt
-assert guide.DRAFTING_NOTES["clients"][0] not in validate.DRAFT_SYSTEM
-d = guide.drafting()
-assert d["notes"]["clients"] == guide.DRAFTING_NOTES["clients"] and d["quoted_rates_for"] == ["clients"]
+cgf = state.path("voice", "corpus-guide.json")
+keep = {f: open(f).read() for f in (cgf, drafter.file()) if os.path.exists(f)}
+try:
+    g = state.read_json(cgf)
+    g["general"] = list(g["general"]) + ["Thank with 'Splendid tidings'."]
+    state.write_json(cgf, g)
+    d = json.load(open(drafter.file()))
+    d["notes"] = {"clients": ["NOTE-ONE keep it short.", "NOTE-TWO keep it plain."]}
+    d["quoted_rates_for"] = ["clients"]
+    state.write_json(drafter.file(), d)
+    st = voicestats.build(voice.load(), log=lambda *a: None)
+    assert st["quoted"]["clients"]["splendid tidings"] == 0.0
+    gd = guide.assemble("validation")
+    txt = guide.render(gd, st, "clients", ["thank"])
+    assert "Share of self-01's messages to clients holding each word quoted in the rules above: " in txt and '"splendid tidings" 0.0%' in txt, txt
+    assert "How to write it:\n- NOTE-ONE keep it short.\n- NOTE-TWO keep it plain." in txt, txt
+    assert txt.index("How to write it") < txt.index("Every audience:")
+    if "own rules" in txt:
+        assert txt.index("own rules") < txt.index("How to write it")
+    other = [a for a in st["quoted"] if a != "clients"][0]
+    assert st["quoted"][other]["splendid tidings"] == 0.0
+    txt = guide.render(gd, st, other, ["thank"])
+    assert "How to write it" not in txt and "holding each word quoted" not in txt, txt
+    b = drafter.for_build()
+    assert b["notes"] == {"clients": d["notes"]["clients"]} and b["quoted_rates_for"] == ["clients"]
+    assert set(b["methods"]) == set(voice.CORPUS_AUDIENCES)
+finally:
+    for f, t in keep.items():
+        open(f, "w").write(t)
 EOF
 check "every audience's drafts are shown the share of its messages holding each mark of style" vpy <<'EOF'
 from vdp import guide, voice, voicestats
@@ -1345,29 +1360,33 @@ finally:
         open(p, "w").write(t)
     validate.answer("pair", first, pick=was)
 EOF
-check "a kept older method's rows count for its audiences; validate drafts only the rest again" vpy <<EOF
-import json, os, subprocess, sys
-from vdp import guide, pool, state, validate
+check "changing one audience's drafting notes drafts only it again; the other audiences' rows stand" vpy <<EOF
+import json, os
+from vdp import drafter, guide, pool, state, validate
 V = lambda n: state.path("validation", n)
-files = [V(n) for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl")] + [validate.pairs_file(), validate.key_file(), pool.holdout_file(), guide.shown_file()]
+drafter.load()
+files = [V(n) for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl")] + [validate.pairs_file(), validate.key_file(), pool.holdout_file(), guide.shown_file(), drafter.file()]
 open(os.environ["VDP_STATE"] + "/kept-test.json", "w").write(json.dumps({p: open(p).read() for p in files}))
-old = "brief-old"
-validate.KEPT = {old: ("project-team", "one-to-one", "technical-team", "senior")}
-for n in ("drafts.jsonl", "judge.jsonl", "briefs.jsonl"):
-    rs = [dict(json.loads(l), method=old) for l in open(V(n)).read().splitlines()]
-    open(V(n), "w").write("".join(json.dumps(r) + "\n" for r in rs))
 validate.counted(); aud = validate._COUNTED["aud"]
-kept = {i for i, a in aud.items() if a in validate.KEPT[old]}
-redo = set(aud) - kept
+a = sorted(set(aud.values()) - {"clients"})[0]
+before = drafter.methods()
+d = json.load(open(drafter.file()))
+d["notes"][a] = ["A test note."]
+state.write_json(drafter.file(), d)
+after = drafter.methods()
+assert after[a] != before[a] and all(after[x] == before[x] for x in after if x != a), (before, after)
+redo = {i for i, x in aud.items() if x == a}
+kept = set(aud) - redo
 assert kept and redo, (len(kept), len(redo))
 assert {r["id"] for r in validate.rows("judge.jsonl", 1)} == kept
+assert validate.stale_audiences() == [a], validate.stale_audiences()
 os.environ["VDP_CLAUDE"] = "$VBIN/claude"
 logs = []
 assert validate.drafts_and_judge(log=logs.append) == 0
 out = "\n".join(logs)
 assert f"== validate run 1: {len(redo)} of {len(aud)} " in out, out
 js = validate.rows("judge.jsonl", 1)
-assert len(js) == 3 * len(aud) and {r["id"] for r in js if r["method"] == validate.METHOD} == redo
+assert len(js) == 3 * len(aud) and {r["id"] for r in js if r["method"] == after[a]} == redo
 EOF
 check "--redraw drops an audience's pairs, marked with why, and draws at most one batch, only from messages never paired" vpy <<EOF
 import os, subprocess, sys
@@ -1375,9 +1394,9 @@ from vdp import pool, state, validate
 env = dict(os.environ, VDP_CLAUDE="$VBIN/claude")
 vv = lambda *a: subprocess.run([sys.executable, "-m", "vdp", "voice", *a], env=env, capture_output=True, text=True)
 pr = state.read_json(validate.pairs_file()); key = state.read_json(validate.key_file())
+from vdp import drafter
 validate.counted()
-kept = set().union(*validate.KEPT.values())
-a = sorted({p["audience"] for p in validate.active(pr)} - kept)[0]
+a = validate.stale_audiences()[0]
 mine = [p for p in validate.active(pr) if p["audience"] == a]
 x = mine[0]
 pr.setdefault("dropped", {})[x["pair"]] = "test"
@@ -1398,7 +1417,7 @@ out = vv("pairs", "--redraw", a)
 assert out.returncode == 0, out.stderr
 pr2 = state.read_json(validate.pairs_file())
 for p in mine[1:]:
-    assert pr2["dropped"][p["pair"]] == f"replaced: drafts written again under {validate.METHOD}", pr2["dropped"][p["pair"]]
+    assert pr2["dropped"][p["pair"]] == f"replaced: drafts written again under {drafter.method(a)}", pr2["dropped"][p["pair"]]
 assert pr2["dropped"]["p999"] == "its message was already in an earlier pair", pr2["dropped"]["p999"]
 assert [p["pair"] for p in validate.active(pr2) if p["audience"] != a] == others
 new = [p for p in validate.active(pr2) if p["audience"] == a]
@@ -1427,29 +1446,72 @@ for p, t in json.load(open(f)).items():
     open(p, "w").write(t)
 os.remove(f)
 EOF
-check "validate --batch draws no batch for an audience a KEPT method keeps" vpy <<'EOF'
-import os
-from vdp import state, validate, voice
-f = validate.batch_file()
-saved = open(f).read() if os.path.exists(f) else None
-old = validate.KEPT
+check "validate --batch draws no batch for an audience judged under its current method; a notes change draws one for that audience" vpy <<'EOF'
+import json, os
+from vdp import drafter, state, validate, voice
+f, df = validate.batch_file(), drafter.file()
+saved = {p: (open(p).read() if os.path.exists(p) else None) for p in (f, df)}
 try:
-    a = voice.CORPUS_AUDIENCES[0]
-    validate.KEPT = {"brief-old": (a,)}
     os.path.exists(f) and os.remove(f)
+    assert validate.batch(log=lambda *x: None) == {}, "every audience is judged under its current method"
+    assert validate.stale_audiences() == []
+    a = sorted(validate.judged_audiences())[0]
+    d = json.load(open(df)); d["notes"][a] = ["A test note."]; state.write_json(df, d)
     b = validate.batch(log=lambda *x: None)
-    assert a not in b and set(b) == set(voice.CORPUS_AUDIENCES) - {a}, sorted(b)
-    try:
-        validate.redraw(a, log=lambda *x: None)
-        raise AssertionError("redraw of a kept audience went through")
-    except SystemExit as e:
-        assert "keeps its pairs" in str(e), e
+    assert set(b) == {a}, sorted(b)
+    st = json.load(open(f))
+    assert st["ids"][a]["method"] == drafter.method(a) and st["ids"][a]["ids"] == b[a]
+    assert validate.batch(log=lambda *x: None) == b, "a second call reads the batch back"
 finally:
-    validate.KEPT = old
-    if saved is None:
-        os.path.exists(f) and os.remove(f)
-    else:
-        open(f, "w").write(saved)
+    for p, t in saved.items():
+        if t is None:
+            os.path.exists(p) and os.remove(p)
+        else:
+            open(p, "w").write(t)
+EOF
+check "an older pair's method is that of the drafts row whose text is on the pair" vpy <<'EOF'
+from vdp import state, validate
+pr = state.read_json(validate.pairs_file())
+p = dict(validate.active(pr)[0]); p.pop("method", None)
+rs = [r for r in validate.read_lines("drafts.jsonl") if r["id"] == p["id"] and r["k"] == pr["k"]]
+assert rs, "fixture pair has a drafts row"
+real = rs[-1]
+validate.append("drafts.jsonl", [dict(real, method="brief-older", text="another draft")])
+try:
+    assert validate.pair_method(p) == real["method"], validate.pair_method(p)
+    p["a" if p["a"] == real["text"] else "b"] = "another draft"
+    assert validate.pair_method(p) == "brief-older"
+finally:
+    f = validate.vdir("drafts.jsonl")
+    ls = open(f).read().splitlines(True)
+    open(f, "w").write("".join(ls[:-1]))
+EOF
+check "the drafter settings are written with the defaults when missing, refused when malformed, and listed by voice drafter" vpy <<EOF
+import json, os, subprocess, sys
+from vdp import drafter, state
+df = drafter.file()
+keep = open(df).read() if os.path.exists(df) else None
+try:
+    os.path.exists(df) and os.remove(df)
+    d = drafter.load()
+    assert os.path.exists(df) and oct(os.stat(df).st_mode & 0o777) == "0o600"
+    assert d["draft_system"] == drafter.DEFAULT_DRAFT_SYSTEM and d["notes"] == drafter.DEFAULT_NOTES
+    assert d["notes"] == {} and d["quoted_rates_for"] == []
+    assert drafter.normal("brief-8", "senior") == drafter.method("senior") and drafter.normal("brief-8", "clients") == "brief-8"
+    for bad, why in (({"schema_version": 1, "draft_system": "", "brief_system": "x"}, "draft_system"),
+                     ({"schema_version": 1, "draft_system": "x", "brief_system": "x", "notes": {"nobody": ["x"]}}, "unknown audience"),
+                     ({"schema_version": 2}, "schema_version")):
+        state.write_json(df, bad)
+        try:
+            drafter.load(); raise AssertionError(bad)
+        except SystemExit as e:
+            assert why in str(e), e
+    os.remove(df)
+    out = subprocess.run([sys.executable, "-m", "vdp", "voice", "drafter"], capture_output=True, text=True)
+    assert out.returncode == 0 and df in out.stdout and "clients: method d-" in out.stdout, out.stdout + out.stderr
+finally:
+    if keep is not None:
+        open(df, "w").write(keep)
 EOF
 check "validate --batch drafts one batch per audience of messages never shown, once; pairs --redraw all draws from it" vpy <<EOF
 import json, os, subprocess, sys
@@ -1469,7 +1531,7 @@ try:
         open(V(n), "w").write("".join(json.dumps(r) + "\n" for r in rs))
     pr = state.read_json(validate.pairs_file())
     shown = pr["pairs"][0]["id"]
-    state.write_json(validate.pairs_file(), {"run": 1, "k": pr["k"], "pairs": [pr["pairs"][0]]})
+    state.write_json(validate.pairs_file(), {"run": 1, "k": pr["k"], "pairs": [dict(pr["pairs"][0], method="brief-old")]})
     if os.path.exists(V("judge-review.json")):
         os.remove(V("judge-review.json"))
     # The fixture's label check saw every message: say it saw one, the
@@ -1501,18 +1563,19 @@ try:
     out = vv("validate", "--batch")
     assert out.returncode == 0, out.stderr
     b = state.read_json(validate.batch_file())
-    ids = {i for v in b["ids"].values() for i in v}
-    assert ids and not ids & seen and b["method"] == validate.METHOD, b
-    assert all(len(v) <= validate.PAIRS_PER_AUDIENCE for v in b["ids"].values()), b
+    from vdp import drafter
+    ids = {i for v in b["ids"].values() for i in v["ids"]}
+    assert ids and not ids & seen and all(v["method"] == drafter.method(a) for a, v in b["ids"].items()), b
+    assert all(len(v["ids"]) <= validate.PAIRS_PER_AUDIENCE for v in b["ids"].values()), b
     assert {r["id"] for r in validate.rows("judge.jsonl", 1)} == ids
     if free:
         added = set(state.read_json(pool.holdout_file())["ids"]) - held0
-        assert added and added <= set(free) and set(b["ids"][a0]) <= added, (len(added), b["ids"][a0])
+        assert added and added <= set(free) and set(b["ids"][a0]["ids"]) <= added, (len(added), b["ids"][a0])
     again = vv("validate", "--batch")
     assert "== validate run 1: 0 of " in again.stdout, again.stdout
     r = vv("pairs", "--redraw", "all")
     assert r.returncode == 0, r.stderr
-    assert r.stdout.count("dropped ") == len(validate.drafted_audiences()), r.stdout
+    assert r.stdout.count("dropped ") == len(voice.CORPUS_AUDIENCES), r.stdout
     new = {p["id"] for p in validate.active(state.read_json(validate.pairs_file()))}
     assert new <= ids, (new - ids)
 finally:

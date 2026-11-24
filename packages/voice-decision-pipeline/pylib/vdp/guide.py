@@ -352,44 +352,23 @@ def assemble(build_time):
 
 
 RARE_QUOTED = 0.02
-# Drafting notes per audience, shown before the guide's rules, and the
-# audiences shown how rarely each quoted word appears. Only the audiences a
-# blind test passed with them get them; the rest draft from the guide alone.
-DRAFTING_NOTES = {
-    "clients": [
-        "Be as brief as the examples. Leave out what the conversation already makes clear: "
-        "no softener, no restated context, and no reason, example or detail the brief doesn't give.",
-        "Word a request like the examples for this audience: often an instruction or a bare question, "
-        "with \"please\" only where they have it.",
-        "Keep the examples' loose phrasing and casual words; don't rewrite them as complete, "
-        "polished sentences.",
-        "Prefer the examples' vocabulary to generic business wording.",
-        "Use a word the guide quotes only where the examples for this moment use it; most messages "
-        "hold none.",
-    ],
-}
-QUOTED_RATES_FOR = frozenset(DRAFTING_NOTES)
 
 
-def drafting():
-    """The drafting notes as a build carries them in stats.json, so
-    voice-runtime's guide gives each audience the same notes and quoted-word
-    shares validation drafted with."""
-    return {"notes": {a: list(rs) for a, rs in sorted(DRAFTING_NOTES.items())},
-            "quoted_rates_for": sorted(QUOTED_RATES_FOR), "rare_below": RARE_QUOTED}
-
-
-def render(g, stats, audience, purposes):
+def render(g, stats, audience, purposes, d=None):
     """The guide text a draft for audience and purposes reads: the same
-    sections voice-runtime's `guide` gives (validation drafts with it).
-    Phrases the owner struck are left off the never-say list."""
+    sections voice-runtime's `guide` gives (validation drafts with it), with
+    the audience's drafting notes from the drafter's settings d (the state's
+    voice/drafter.json by default). Phrases the owner struck are left off
+    the never-say list."""
+    from . import drafter
+    d = d or drafter.load()
     stats, _ = strike_stats(stats)
     out = []
     if g.get("own_rules"):
         out.append("self-01's own rules (these win over every rule below):\n" +
                    "\n".join(f"- {r}" for r in g["own_rules"]))
-    if DRAFTING_NOTES.get(audience):
-        out.append("How to write it:\n" + "\n".join(f"- {r}" for r in DRAFTING_NOTES[audience]))
+    if d["notes"].get(audience):
+        out.append("How to write it:\n" + "\n".join(f"- {r}" for r in d["notes"][audience]))
     if audience == "jira":
         out.append("Jira comments:\n" + "\n".join(f"- {r}" for r in g.get("jira", [])))
         return "\n\n".join(out)
@@ -426,7 +405,7 @@ def render(g, stats, audience, purposes):
     if len(purposes) > 1:
         shown_rules += list(g.get("combinations", []))
     from .voicestats import quoted
-    rates = (stats or {}).get("quoted", {}).get(audience, {}) if audience in QUOTED_RATES_FOR else {}
+    rates = (stats or {}).get("quoted", {}).get(audience, {}) if audience in d["quoted_rates_for"] else {}
     rare = sorted({q for r in shown_rules for q in quoted(r) if q in rates and rates[q] < RARE_QUOTED},
                   key=lambda q: (rates[q], q))
     if rare:

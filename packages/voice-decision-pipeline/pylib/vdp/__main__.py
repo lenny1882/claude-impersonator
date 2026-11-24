@@ -194,13 +194,32 @@ def cmd_voice(a):
     if step == "guide":
         with state.lock():
             return 0 if guide.write() is not None else 6
+    if step == "drafter":
+        from . import drafter
+        d = drafter.load()
+        print(f"drafter settings: {drafter.file()}")
+        try:
+            judged, stale = validate.judged_audiences(), set(validate.stale_audiences())
+        except (SystemExit, OSError, KeyError):
+            judged, stale = set(), set()
+        pr = state.read_json(validate.pairs_file(), None) or {}
+        paired = {p["audience"] for p in validate.active(pr)}
+        for aud, m in drafter.methods(d).items():
+            pairs = "older method" if aud in stale else "current" if aud in paired else "none"
+            print(f"  {aud}: method {m}; notes {len(d['notes'].get(aud, []))} lines; "
+                  f"quoted-word shares {'yes' if aud in d['quoted_rates_for'] else 'no'}; "
+                  f"judged under it {'yes' if aud in judged else 'no'}; pairs {pairs}")
+        return 0
     if step == "validate":
         with state.lock():
             return validate.drafts_and_judge(limit=a.limit, only_batch=a.batch)
     if step == "pairs":
         with state.lock():
             if a.redraw == "all":
-                for aud in validate.drafted_audiences():
+                stale = validate.stale_audiences()
+                if not stale:
+                    print("  --    every audience's pairs are drafted under its current method; nothing to draw again")
+                for aud in stale:
                     validate.redraw(aud)
             elif a.redraw:
                 validate.redraw(a.redraw)
@@ -253,7 +272,7 @@ def main(argv=None):
     s = sub.add_parser("sendable"); s.add_argument("source", choices=SOURCES); s.set_defaults(f=cmd_sendable)
     s = sub.add_parser("probe"); s.set_defaults(f=cmd_probe)
     s = sub.add_parser("voice")
-    s.add_argument("step", choices=["label", "holdout", "rules", "guide", "validate", "pairs",
+    s.add_argument("step", choices=["label", "holdout", "rules", "guide", "drafter", "validate", "pairs",
                                     "build", "publish", "status"])
     s.add_argument("--second", action="store_true", help="label: the second model's blind pass")
     s.add_argument("--redo", help="label: send again items either model gave one of these purposes")

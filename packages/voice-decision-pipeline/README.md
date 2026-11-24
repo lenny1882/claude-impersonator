@@ -168,30 +168,33 @@ Run in order, each in your own shell (each logs to
    exemplar pool's own rule would keep (at least 4 words, under half code),
    with 4 words still left once links and code show as [url] and [code],
    are drafted, scored and paired. The drafter gets each audience's own
-   drafting notes (clients only, `guide.DRAFTING_NOTES`) and the share of
-   that audience's messages holding each mark of style (spaced dash,
-   exclamation mark, emoji, emphasis, list, swear word). Four calls a message;
+   drafting notes and the share of that audience's messages holding each
+   mark of style (spaced dash, exclamation mark, emoji, emphasis, list, swear
+   word). The prompts and notes are in the state's `voice/drafter.json`, not
+   the code: edit it to change the drafter, no release needed; `voice
+   drafter` lists each audience's method (a hash of its settings) and
+   whether it is judged and paired under it. Four calls a message;
    `--limit N` does the first N, and a later run carries on from there.
 6. `voice pairs`, then on the review page: 60 blind pairs (12 per audience),
    the judge's 20 worst and 10 random drafts, and the report: counts,
    spotting rate with its 95% range, confidence the pass holds.
    `voice pairs --drop p002,p010` leaves those pairs out of the result and
    draws as many new ones for the same audiences; the dropped pairs and their
-   answers stay in the files, marked. When the drafter changes for one
-   audience only, `voice validate` drafts that audience again (the others
-   keep their drafts under an older method `validate.KEPT` names), and
-   `voice pairs --redraw <audience>` drops all its pairs, marked with why,
+   answers stay in the files, marked. When `voice/drafter.json` changes for one
+   audience only, that audience's method changes and only it is drafted
+   again; the others keep their drafts, pairs and answers. `voice pairs
+   --redraw <audience>` drops all its pairs, marked with why,
    and draws one fresh batch of 12, only from messages never in any pair.
    With fewer than 12 of those it holds back as many more as the batch
    needs; then `voice validate` drafts them and `voice pairs --more
-   <audience>` draws the batch. When the copies change for every audience,
-   a new method and `voice validate --batch` draft only one batch of 12 per
-   audience, from held-back messages you were never shown (in a pair, the
+   <audience>` draws the batch. `voice validate --batch` drafts one batch of
+   12 for each audience with nothing judged under its current method, from
+   held-back messages you were never shown (in a pair, the
    judge review, the label check or the disagreement grading), holding back
    more that the guide never saw where an audience is short; the batch is
-   kept in `validation/batch-<method>.json`. `voice pairs --redraw all` then
-   drops every audience's pairs and draws its batch from them. An audience a
-   KEPT method keeps gets no batch, and `--redraw` leaves its pairs alone.
+   kept in `validation/batch.json`. `voice pairs --redraw all` then drops
+   the pairs of every audience paired under an older method and draws its
+   batch; an audience whose pairs are current is left alone.
 7. `voice build`: guide.json, exemplars.json, stats.json and build.json in a
    tarball in the state; the leak check reads them first and stops on any
    real name, all but build.json's `embedding_identity`. The terms it finds

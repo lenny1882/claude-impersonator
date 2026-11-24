@@ -377,20 +377,25 @@ Not sources:
   words; Opus 5.5 drafts from the brief, its context, audience and purposes,
   with 3, 5 and 8 exemplars. The best mean judge score sets the build's
   exemplar count.
-- Drafting notes are set per audience (`guide.DRAFTING_NOTES`), and only an
-  audience whose blind test passed with them gets them: clients' drafter gets
-  notes on length, requests, phrasing and idioms, and the share of messages
-  holding each word the guide's rules quote; the other audiences draft from
-  the guide alone. A build carries the notes in `stats.json`, so the
-  runtime's guide gives each audience the notes validation drafted with.
+- The drafter's settings live in the state, in `voice/drafter.json`, not in
+  the code, so changing them needs no release: the drafter's and the brief
+  writer's system prompts, each audience's drafting notes, and the audiences
+  shown the share of messages holding each word the guide's rules quote. The
+  file is written with defaults the first time it is read; by default only
+  clients has notes (length, requests, phrasing, vocabulary) and the
+  quoted-word shares, and the other audiences draft from the guide alone.
+  `voice drafter` lists each audience's method and state. A build carries
+  the notes and methods in `stats.json`, so the runtime's guide gives each
+  audience the notes validation drafted with.
 - Every audience's drafter is shown the share of its messages holding each
   mark of style: a spaced dash, an exclamation mark, an emoji, `_emphasis_`
   or `*bold*`, a list, a swear word (`voicestats.STYLE`), and is told to use
   each about as often, where the exemplars for the message have it.
-- Validation runs again if the drafting model changes. A drafter change can
-  be validated for one audience alone: only that audience is drafted and
-  paired again, and the other audiences' drafts, pairs and answers stand
-  (`validate.KEPT`).
+- Validation runs again if the drafting model changes. Each audience's draft
+  method is a hash of the settings its drafts depend on, so a change to one
+  audience's notes is validated for that audience alone: only it is drafted
+  and paired again, and the other audiences' drafts, pairs and answers
+  stand.
 - Blind pairs: the owner's real message and the draft, shuffled, 12 per
   audience across the five corpus audiences, covering as many purposes as
   each audience's held-back messages allow. The owner answers "A is mine",
