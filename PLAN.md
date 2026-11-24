@@ -1125,6 +1125,27 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 
 ### 8.2 Voice
 
+- Next: every voice setting that is tuned rather than built moves into state
+  files, so changing one needs no release, as the drafter's settings already
+  are (`voice/drafter.json`, §3.7):
+  - the label purposes (`voice.PURPOSES`) and the labeller's prompt;
+  - the guide writer's prompt and its rule counts (`guide.SYSTEM`,
+    `PER_PURPOSE`, `COMBINED`);
+  - the judge's prompt and the 1–5 grade wording (`validate.JUDGE_SYSTEM`,
+    `GRADES`);
+  - the pass rule: the overall and per-audience spotting bars, the pass and
+    fail confidence lines, the grade shares, pairs per audience, the
+    exemplar counts, and the judge review's sizes; a change is recorded with
+    the run it applies to;
+  - the marks of style and their word lists (`voicestats.STYLE`), the
+    quoted-word cutoff and the never-say thresholds, which join the drafter
+    method's hash because they change the prompt;
+  - the model for each role (`model.MODELS`).
+
+  A build carries the drafter's base prompt (`draft_system`) as well as the
+  notes, and voice-runtime's skill drafts by it, so the runtime drafts with
+  the prompt validation passed. The anonymiser's rules, secret patterns and
+  public hosts stay in code.
 - The line in `~/.claude/CLAUDE.md` that loads the voice skill; the owner
   approves its wording.
 - A test that a drafting subagent loads the skill, and whether
