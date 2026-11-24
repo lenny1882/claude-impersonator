@@ -184,10 +184,11 @@ Run in order, each in your own shell (each logs to
    windows and cutoffs, the review batch size, and each role's model. It is
    written with the defaults the first time it is read; a key left out takes
    its default. `voice settings` lists what differs from the defaults.
-   `voice settings --save`, run before an edit, copies each of these files and
-   `labelling-notes.md`, `own-rules.md` and `struck-rules.md` that changed
-   since its newest copy to the next number beside it, and notes it in
-   `settings-history.md`.
+   Every command first copies each of these files and `labelling-notes.md`,
+   `own-rules.md` and `struck-rules.md` that changed since its newest copy to
+   the next number beside it, and notes it in `settings-history.md`, so every
+   version a run used is kept; `voice settings --save` does the same on
+   demand.
    A change to what the drafter is shown changes every audience's method.
    Four calls a message;
    `--limit N` does the first N, and a later run carries on from there.

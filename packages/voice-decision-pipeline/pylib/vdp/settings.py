@@ -413,10 +413,12 @@ def record_pass_rule(run):
 
 # -- saved copies ------------------------------------------------------------
 #
-# `voice settings --save` keeps the history of the hand-edited files: each one
-# whose text differs from its newest saved copy is copied to the next number
-# beside it (settings-11.json, voice/drafter-7.json, own-rules-1.md), owner-only,
-# and settings-history.md gets a line saying what was saved when.
+# The history of the hand-edited files: each one whose text differs from its
+# newest saved copy is copied to the next number beside it (settings-11.json,
+# voice/drafter-7.json, own-rules-1.md), owner-only, and settings-history.md
+# gets a line saying what was saved when. Every command does this before it
+# runs (__main__.main), so each version a run used is kept; `voice settings
+# --save` does it on demand and says what it left unchanged.
 
 SAVED = (("settings.json", ""), ("drafter.json", "voice"), ("labelling-notes.md", ""),
          ("own-rules.md", ""), ("struck-rules.md", ""))
@@ -434,7 +436,7 @@ def _copies(name, sub):
     return d, stem, ext, found
 
 
-def save_copies(log=print):
+def save_copies(log=print, quiet=False):
     """[(saved path, source path)]: the next numbered copy of each file whose
     text has changed since its newest copy. Files that don't exist are skipped."""
     import time
@@ -449,7 +451,8 @@ def save_copies(log=print):
         if found:
             with open(os.path.join(d, found[-1][1]), encoding="utf-8") as f:
                 if f.read() == text:
-                    log(f"  --    {name}: unchanged since {found[-1][1]}")
+                    if not quiet:
+                        log(f"  --    {name}: unchanged since {found[-1][1]}")
                     continue
         n = found[-1][0] + 1 if found else 1
         dest = os.path.join(d, f"{stem}-{n}{ext}")

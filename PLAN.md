@@ -413,11 +413,13 @@ Not sources:
   holdout share sits beside the exemplar pool's thresholds in
   `voice-config.json`. A key left out takes its default; a malformed file is
   refused with what is wrong. `voice settings` lists what differs from the
-  defaults. `voice settings --save`, run before an edit, copies each of
-  `settings.json`, `voice/drafter.json`, `labelling-notes.md`, `own-rules.md`
-  and `struck-rules.md` whose text changed since its newest copy to the next
+  defaults. Every command first copies each of `settings.json`,
+  `voice/drafter.json`, `labelling-notes.md`, `own-rules.md` and
+  `struck-rules.md` whose text changed since its newest copy to the next
   number beside it (`settings-11.json`, `voice/drafter-7.json`,
-  `own-rules-1.md`), owner-only, and notes each in `settings-history.md`. What changes what the drafter is shown (the wording, the style,
+  `own-rules-1.md`), owner-only, and notes each in `settings-history.md`, so
+  every version a run used is kept; `voice settings --save` does the same on
+  demand. What changes what the drafter is shown (the wording, the style,
   the statistics, the per-message prompts and context sizes, the drafter's
   and brief writer's models) joins every audience's draft method where it
   differs from the defaults; the labeller's item text and context sizes join

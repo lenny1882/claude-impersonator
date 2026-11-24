@@ -1646,37 +1646,46 @@ finally:
         elif os.path.exists(p):
             os.remove(p)
 EOF
-check "voice settings --save copies each changed hand-edited settings file to its next number, once, owner-only, and logs it" vpy <<'EOF'
-import os, subprocess, sys
+check "a changed hand-edited settings file is copied to its next number, once, owner-only and logged, by any command and by voice settings --save" vpy <<'EOF'
+import os, re, subprocess, sys
 from vdp import drafter, settings, state
 root = state.root()
+vv = lambda *a: subprocess.run([sys.executable, "-m", "vdp", *a], capture_output=True, text=True)
+
+def top(stem, ext, sub=""):
+    d = state.path(sub, "x") if sub else state.path("x")
+    d = os.path.dirname(d)
+    ns = [int(m.group(1)) for f in os.listdir(d) for m in [re.match(re.escape(stem) + r"-(\d+)" + re.escape(ext) + "$", f)] if m]
+    return max(ns, default=0)
+
 made = []
+keep = open(state.path("own-rules.md")).read() if os.path.exists(state.path("own-rules.md")) else None
 try:
-    settings.load(); drafter.load()
-    open(state.path("own-rules.md"), "w").write("- RULE ONE\n")
-    pre = {f for f in os.listdir(root)} | {"voice/" + f for f in os.listdir(state.path("voice"))}
-    vv = lambda: subprocess.run([sys.executable, "-m", "vdp", "voice", "settings", "--save"], capture_output=True, text=True)
-    out = vv()
+    out = vv("voice", "settings", "--save")
     assert out.returncode == 0, out.stderr
-    now = {f for f in os.listdir(root)} | {"voice/" + f for f in os.listdir(state.path("voice"))}
-    made = sorted(now - pre)
-    assert {"settings-1.json", "voice/drafter-1.json", "own-rules-1.md"} <= set(made), made
-    for n in ("labelling-notes", "struck-rules"):
-        assert (n + "-1.md" in made) == os.path.exists(state.path(n + ".md")), (n, made)
-    assert open(state.path("own-rules-1.md")).read() == "- RULE ONE\n"
-    assert oct(os.stat(state.path("own-rules-1.md")).st_mode & 0o777) == "0o600"
-    h = open(settings.history_file()).read()
-    assert "## Saved with voice settings --save" in h and "own-rules-1.md: copy of own-rules.md" in h
-    out = vv()
-    assert "unchanged since own-rules-1.md" in out.stdout and not os.path.exists(state.path("own-rules-2.md")), out.stdout
+    n = top("own-rules", ".md")
+    open(state.path("own-rules.md"), "w").write("- RULE ONE\n")
+    out = vv("voice", "settings", "--save")
+    assert top("own-rules", ".md") == n + 1, out.stdout
+    p1 = state.path(f"own-rules-{n + 1}.md"); made.append(p1)
+    assert open(p1).read() == "- RULE ONE\n" and oct(os.stat(p1).st_mode & 0o777) == "0o600"
+    assert f"own-rules-{n + 1}.md: copy of own-rules.md" in open(settings.history_file()).read()
+    out = vv("voice", "settings", "--save")
+    assert f"unchanged since own-rules-{n + 1}.md" in out.stdout and top("own-rules", ".md") == n + 1, out.stdout
+    d0 = top("drafter", ".json", "voice")
     open(state.path("own-rules.md"), "w").write("- RULE TWO\n")
-    vv()
-    assert open(state.path("own-rules-2.md")).read() == "- RULE TWO\n" and not os.path.exists(state.path("settings-2.json"))
-    made.append("own-rules-2.md")
+    out = vv("voice", "status")
+    assert out.returncode == 0 and top("own-rules", ".md") == n + 2, out.stdout
+    made.append(state.path(f"own-rules-{n + 2}.md"))
+    assert "own-rules.md saved as own-rules-%d.md" % (n + 2) in out.stdout
+    assert top("drafter", ".json", "voice") == d0, "an unchanged file isn't copied again"
+    vv("voice", "status")
+    assert top("own-rules", ".md") == n + 2, "a second run saves nothing new"
 finally:
-    for m in made + ["settings-history.md"]:
-        p = os.path.join(root, m)
+    for p in made:
         os.path.exists(p) and os.remove(p)
+    if keep is not None:
+        open(state.path("own-rules.md"), "w").write(keep)
 EOF
 check "voice-runtime gives the guide text validation drafted with, from the same parts and wording" vpy <<EOF
 import importlib.util, os, sys

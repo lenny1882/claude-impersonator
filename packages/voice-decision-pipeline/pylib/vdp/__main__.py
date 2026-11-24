@@ -306,6 +306,14 @@ def main(argv=None):
     s.add_argument("--drop", help="pairs: leave these pairs out of the result and draw as many new ones")
     s.set_defaults(f=cmd_voice)
     a = p.parse_args(argv)
+    # Keep a numbered copy of each hand-edited settings file that changed
+    # since its last copy, before anything reads it (settings.py).
+    if a.f not in (cmd_probe, cmd_init_inputs) and not (a.f is cmd_voice and a.step == "settings" and a.save):
+        from . import settings
+        try:
+            settings.save_copies(quiet=True)
+        except OSError as e:
+            print(f"  warn  settings history not saved: {e}")
     return a.f(a) or 0
 
 
