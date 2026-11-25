@@ -100,8 +100,9 @@ Not sources:
 - Every package's state is owner-only: directories 700, files 600. Scripts
   set umask 077 before writing; each install creates its state directory as
   700 and its verify step checks the modes.
-- No backup. The drafts, the decision log and every machine's transcripts
-  reach S3, encrypted (§5); every key is held by AWS KMS.
+- The drafts, the decision log and every machine's transcripts reach S3,
+  encrypted (§5), and the build machine's pipeline state is backed up to
+  S3, encrypted (§5, Pipeline state); every key is held by AWS KMS.
 - State is kept until the owner deletes it. `forget <person|conversation>`
   (also a Bitbucket repo or PR) removes the items from the corpus and its
   index, rewrites the index matrix without them, and adds them to the struck
@@ -1078,6 +1079,17 @@ after install, because `update.sh` reruns the installer from it.
     encrypted directory whose key is wrapped by the pipeline state key. It
     is unwrapped with the build machine's one-hour credentials and mounted
     only while a pipeline command or the review page runs, then unmounted.
+    After each pipeline command the state is pushed, encrypted under the
+    pipeline state key, to its own S3 prefix, which only the build
+    machine's role can read.
+  - **Replacing the build machine:** the new machine (TPM, attended, not
+    rebuildable) is enrolled as usual; `replace-build-machine`, under the
+    1-hour admin session, revokes the old build machine first, grants the
+    new one's role the pipeline state key and the backup prefix, restores
+    the state into its encrypted directory, and prints the commit that
+    pins its public key in the workflow's branch, which the owner makes.
+    `--print` gives the same commands for doing it by hand. Only one
+    machine can read the state at a time.
   - **Revoking a machine:** delete its role or remove its certificate
     subject from the role's trust policy, so it gets no new credentials;
     revoke the role's active sessions with an IAM deny on token issue time,
@@ -1441,8 +1453,6 @@ the Claude Code facts hold for version 2.1.332:
   Claude in plan mode and a revised plan can be resubmitted, and that
   workflow agents fire `SubagentStart`, `PreToolUse` and `SubagentStop`:
   neither is documented.
-- Replacing a lost build machine: how a new one reaches the encrypted
-  pipeline state, and is pinned in the workflow's branch.
 - Whether every managed machine has a TPM 2.0. A firmware TPM (Intel
   PTT, AMD fTPM) may be switched off in the BIOS: the firmware then lists
   the TPM device with ACPI status 0, and no `/dev/tpm0` appears although
