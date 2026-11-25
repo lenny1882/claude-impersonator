@@ -999,7 +999,12 @@ after install, because `update.sh` reruns the installer from it.
     machines can't push to, since a push-triggered workflow runs the
     workflow file of the pushed commit. It logs in to AWS through GitHub's
     OIDC, so no secret is stored on GitHub. It checks each upload's
-    signature against the registered machine keys, re-encrypts the build
+    signature against the build machine's public key, pinned in the
+    workflow's own branch, which no machine and no AWS role can push to,
+    so a poisoned build needs both encrypt rights on the upload key and
+    the build machine's TPM key; it refuses a build id it has already
+    processed. Replacing the build machine is a commit by hand to that
+    branch. It then re-encrypts the build
     under a new data key from the distribution key with the build id as
     context, and writes it to S3 for the service.
   - **Reading:** the runtime embeds the situation locally and calls the
@@ -1034,7 +1039,27 @@ after install, because `update.sh` reruns the installer from it.
     subject from the role's trust policy, so it gets no new credentials;
     revoke the role's active sessions with an IAM deny on token issue time,
     so credentials it already holds stop at once; remove its signing key
-    from the registry, so its uploads are refused.
+    from the workflow's branch if it is the build machine, so its uploads
+    are refused.
+  - **Enrolling a machine:** the new machine makes its key (in its TPM, or
+    as a file), its enrolment id and a certificate request. `enrol
+    <request>` signs the certificate with the CA's KMS key and creates the
+    machine's role, run with a 1-hour IAM Identity Center admin session
+    with MFA from any machine or from AWS CloudShell; it signs out as its
+    last step, so no machine keeps admin rights, and an admin is never
+    signed in on an unattended machine. `enrol --print <request>` prints
+    the same AWS commands instead of running them, for doing it by hand in
+    CloudShell. A one-off bootstrap under the same admin login creates the
+    KMS keys, the CA (its certificate signed by its own KMS key), the
+    Roles Anywhere trust anchor, the bucket and the service; the first
+    machine is then enrolled like any other.
+  - **Switching a machine over**, in this order: enrol it; push its
+    existing main-session transcripts to S3 and check the build machine
+    reads them back; move session text into its encrypted directory and
+    delete the plaintext; on the build machine, move the pipeline state
+    into its encrypted directory; only then set `cleanupPeriodDays` to 7;
+    publish the first build through the new path, which deletes the
+    tarball.
   - **Session text:** `~/.claude/projects` (transcripts and project
     memory), `~/.claude/history.jsonl`, `~/.claude/paste-cache` and
     `~/.claude/file-history` hold the situations asked about and the drafts
