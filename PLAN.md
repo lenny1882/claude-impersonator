@@ -927,9 +927,16 @@ after install, because `update.sh` reruns the installer from it.
     decrypted: no build, no key, no live record. No machine holds a key that
     opens anything it stores. Revoking one machine leaves the others
     working, with no re-keying.
-  - **Machine identity:** every machine runs Linux and has a TPM 2.0. Each
-    machine's private key is generated inside its TPM and never leaves it.
-    A certificate authority whose signing key is a KMS asymmetric key issues
+  - **Machine kinds:** every machine runs Linux and runs every package.
+    Machines differ in three properties: a TPM 2.0 or none; attended boot
+    (someone may enter a PIN) or unattended (nothing at boot waits for
+    anyone); rebuildable (the root volume can be replaced while `/home` is
+    kept) or not. A managed machine has a TPM, boots attended and isn't
+    rebuildable; a cloud desktop such as an AWS WorkSpace has no TPM, boots
+    unattended and is rebuildable. What depends on a property says so.
+  - **Machine identity:** on a machine with a TPM, its private key is
+    generated inside the TPM and never leaves it; on one without, where the
+    key is held is in §8.6. A certificate authority whose signing key is a KMS asymmetric key issues
     each machine a certificate for that key. IAM Roles Anywhere exchanges the
     certificate for AWS credentials lasting at most an hour; nothing
     long-lived is stored on a machine. Each machine has its own IAM role,
@@ -1019,12 +1026,17 @@ after install, because `update.sh` reruns the installer from it.
     session-text key, with context `purpose=session-text, machine=<id>`. A
     systemd unit unwraps it at boot with the machine's one-hour credentials,
     before the owner's session and the Remote Control servers, and loads it
-    into the kernel keyring until shutdown; Claude Code starts only once it
-    is loaded. Retention stays at Claude Code's default. After revocation
-    and a reboot nothing in it decrypts.
-  - **Machine settings:** full-disk encryption unlocked by the TPM with a
-    PIN; swap encrypted with a random key on every boot; hibernation off; a
-    short screen-lock timeout, since a running machine's disk is unlocked.
+    into the kernel keyring until shutdown; Claude Code, and anything else
+    that reads `~/.claude/projects`, starts only once it is loaded. While
+    AWS can't be reached the unit retries, and they wait. On a rebuildable
+    machine the directory and its wrapped key are on `/home`, and the unit
+    is put back after a rebuild. Retention stays at Claude Code's default.
+    After revocation and a reboot nothing in it decrypts.
+  - **Machine settings:** on a machine with a TPM and attended boot,
+    full-disk encryption unlocked by the TPM with a PIN; swap encrypted with
+    a random key on every boot; hibernation off; a short screen-lock
+    timeout, since a running machine's disk is unlocked. Other kinds are
+    in §8.6.
   - **Limits:** what a machine has been shown can't be withdrawn. Session
     text is readable on a running machine while its key is loaded. Every model call's prompt goes
     to Anthropic's API.
@@ -1318,17 +1330,6 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   and its boot unit on every machine; the wrapped-key record and
   its shared wrap and unwrap functions, with a test that an unknown
   wrapper is refused.
-- Still to settle: whether the session-text key also takes a half sealed
-  in the machine's TPM (§5, Session text), so a KMS response read by
-  breaking TLS is useless without the TPM; whether it is re-keyed on a
-  schedule, which with fscrypt means a new directory under a new data key,
-  the files copied across and the old one deleted, since fscrypt can't
-  re-key a directory; that the index is built on the build machine inside
-  the build; the machine settings (full-disk encryption with a PIN,
-  encrypted swap, hibernation off, screen-lock timeout) on every machine;
-  whether the encrypted archive branch on GitHub is kept;
-  `decision-runtime`'s reads through the service, given its gating hooks
-  run on every edit and install command and would each add a call to AWS.
 - Session text, other ways considered: default retention with a screen
   lock, a shorter retention, a `SessionStart` scrub of old transcripts,
   deletion when credentials are refused, and drafting outside the session
@@ -1342,24 +1343,34 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   and a locked file can't be read even as ciphertext, so backups go through
   the unlocked view into a backup tool that encrypts them.
 
-#### Machines without a TPM
+#### Still to settle, by machine property
 
-- Some machines that run the packages may have no TPM, may not allow an
-  AWS credential that a session could read, may let sessions reach only a
-  fixed list of hosts, may run only managed hooks, may take packages only
-  as checksum-pinned release tarballs at their own install path, may be
-  rebuilt with a new root volume while `/home` is kept, and may be offline
-  for hours. Such a machine runs every package, as any other does. Still
-  to settle for it: how it gets AWS credentials unattended; whether AWS hosts reach its
-  sessions or only hooks and excluded commands; its install path; how its
-  transcripts reach the build machine; its session-text unlock retrying
-  until AWS answers, ordered before anything that reads `~/.claude/projects`;
-  a machine id that survives a rebuild; its machine settings.
-- For every machine: which AWS account carries the keys, bucket and
-  service; the TPM half on machines that have a TPM; whether every managed
-  machine has a TPM 2.0; `claude -p` from a skill under Claude Code's
+- A machine without a TPM: where its identity key is held, so it gets
+  one-hour credentials unattended.
+- A rebuildable machine: a machine id that survives a rebuild, used in its
+  role, certificate subject and encryption contexts.
+- A machine with a TPM: whether the session-text key also takes a half
+  sealed in the TPM, so a KMS response read by breaking TLS is useless
+  without it; a rebuild would lose that half.
+- Machine settings for each combination of TPM and attended boot.
+- The build machine: which kinds it may be, given `voice publish` signs
+  with its TPM key.
+- Every machine: whether AWS hosts reach sessions or only hooks and
+  excluded commands; which AWS account carries the keys, bucket and
+  service; the install path where `/mnt/sda` doesn't exist; how other
+  machines' transcripts reach the build machine; whether session text is
+  re-keyed on a schedule (fscrypt can't re-key a directory, so re-keying
+  means a new directory under a new data key, the files copied across and
+  the old one deleted); that the index is built on the build machine
+  inside the build; whether the encrypted archive branch on GitHub is
+  kept; `decision-runtime`'s reads through the service, given its gates
+  run on every edit and install command, and that the gates read approved
+  entries while `decision-log.jsonl` is write-only once encrypted; where
+  `questions.jsonl` lives; `claude -p` from a skill under Claude Code's
   auto-mode classifier, which can refuse it as creating an agent; the
-  Claude Code version §7's facts are checked against.
+  Slack connector where only listed MCP servers start; whether every
+  managed machine has a TPM 2.0; the Claude Code version §7's facts are
+  checked against.
 
 #### Moving off AWS
 
@@ -1410,4 +1421,4 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 8. Move the decision model up trust levels.
 9. The private builds repo, the AWS account's KMS keys, S3 bucket, service,
    Roles Anywhere trust anchor and per-machine roles exist; each machine has
-   a TPM key and a certificate.
+   its identity key (in its TPM where it has one) and a certificate.
