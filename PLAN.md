@@ -916,7 +916,8 @@ after install, because `update.sh` reruns the installer from it.
   `question-store` and `voice-decision-pipeline` in `~/.claude/<name>/`. No
   path or setting is configured or shared.
   - **One build machine:** the corpus is extracted, anonymised and built
-    on one machine only. Every machine the owner uses reaches the builds
+    on one machine only, which has a TPM, boots attended and isn't
+    rebuildable. Every machine the owner uses reaches the builds
     through an AWS service and never holds one. Nothing real may be in a
     build: the leak check runs on the built files (voice guide, exemplars,
     statistics, principles and their evidence quotes, tech positions, client
@@ -1362,8 +1363,6 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 
 - Whether machines that aren't rebuildable also take the enrolment id
   instead of the hostname.
-- The build machine: which kinds it may be, given `voice publish` signs
-  with its TPM key.
 - Every machine: whether AWS hosts reach sessions or only hooks and
   excluded commands; which AWS account carries the keys, bucket and
   service; the install path where `/mnt/sda` doesn't exist; how other
