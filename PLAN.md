@@ -935,8 +935,11 @@ after install, because `update.sh` reruns the installer from it.
     rebuildable; a cloud desktop such as an AWS WorkSpace has no TPM, boots
     unattended and is rebuildable. What depends on a property says so.
   - **Machine identity:** on a machine with a TPM, its private key is
-    generated inside the TPM and never leaves it; on one without, where the
-    key is held is in §8.6. A certificate authority whose signing key is a KMS asymmetric key issues
+    generated inside the TPM and never leaves it. On one without, it is a
+    file owned by the owner's user, mode 600, on `/home` where the machine
+    is rebuildable; sessions are denied reading it, and only the hooks,
+    excluded commands and boot unit use it, through the credential helper.
+    A certificate authority whose signing key is a KMS asymmetric key issues
     each machine a certificate for that key. IAM Roles Anywhere exchanges the
     certificate for AWS credentials lasting at most an hour; nothing
     long-lived is stored on a machine. Each machine has its own IAM role,
@@ -1345,8 +1348,6 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 
 #### Still to settle, by machine property
 
-- A machine without a TPM: where its identity key is held, so it gets
-  one-hour credentials unattended.
 - A rebuildable machine: a machine id that survives a rebuild, used in its
   role, certificate subject and encryption contexts.
 - A machine with a TPM: whether the session-text key also takes a half
