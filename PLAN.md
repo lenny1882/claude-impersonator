@@ -938,7 +938,12 @@ after install, because `update.sh` reruns the installer from it.
     CloudTrail logs every use. Each key's policy refuses deletion except by
     a named admin role, since deleting a key makes everything under it
     unreadable. Every build and every record segment has its own data key,
-    tagged with its id and purpose (encryption context). Keys:
+    tagged with its id and purpose (encryption context). Every wrapped data
+    key is stored as one record: `{"wrapper": "kms", "key": <KMS key ARN>,
+    "context": {...}, "wrapped": <base64>}`. One wrap and one unwrap
+    function, shared by `voice publish`, `builds-sync`, the service and the
+    boot unit, choose the wrapper by that field and refuse an unknown one.
+    Keys:
     - upload: the build machine may only encrypt with it;
     - distribution: only the re-encryption workflow encrypts and only the
       service decrypts;
@@ -1297,7 +1302,9 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   uploads and S3 records; `voice-runtime` reworked to read through the
   service and draft through `claude -p`; `voice build` embedding the index
   and `voice publish` signing, uploading and deleting the tarball; the
-  pipeline state in its encrypted directory.
+  pipeline state in its encrypted directory; the wrapped-key record and
+  its shared wrap and unwrap functions, with a test that an unknown
+  wrapper is refused.
 - Still to settle: how drafts and decisions held in session text are
   protected (options below); that the index is built on the build machine inside the build;
   the machine settings (full-disk encryption with a PIN, encrypted swap,
@@ -1347,8 +1354,8 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 
 - Every build, record segment, state directory and session-text directory
   is encrypted under a data key, and only the wrapped data key depends on
-  KMS. If each wrapped key is stored in one format that names the wrapper
-  that sealed it (`kms` today), moving is a script that unwraps each data key
+  KMS. Each wrapped key's record names the wrapper that sealed it (§5,
+  Keys), so moving is a script that unwraps each data key
   with the old wrapper and wraps it with the new one; no data is
   re-encrypted.
 - To another cloud (GCP Cloud KMS, Azure Key Vault): the wrapping keys, the
