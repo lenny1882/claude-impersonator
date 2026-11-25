@@ -1342,6 +1342,25 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   and a locked file can't be read even as ciphertext, so backups go through
   the unlocked view into a backup tool that encrypts them.
 
+#### Machines without a TPM
+
+- Some machines that run the packages may have no TPM, may not allow an
+  AWS credential that a session could read, may let sessions reach only a
+  fixed list of hosts, may run only managed hooks, may take packages only
+  as checksum-pinned release tarballs at their own install path, may be
+  rebuilt with a new root volume while `/home` is kept, and may be offline
+  for hours. Still to settle for such a machine: which packages it runs;
+  how it gets AWS credentials unattended; whether AWS hosts reach its
+  sessions or only hooks and excluded commands; its install path; how its
+  transcripts reach the build machine; its session-text unlock retrying
+  until AWS answers, ordered before anything that reads `~/.claude/projects`;
+  a machine id that survives a rebuild; its machine settings.
+- For every machine: which AWS account carries the keys, bucket and
+  service; the TPM half on machines that have a TPM; whether every managed
+  machine has a TPM 2.0; `claude -p` from a skill under Claude Code's
+  auto-mode classifier, which can refuse it as creating an agent; the
+  Claude Code version §7's facts are checked against.
+
 #### Moving off AWS
 
 - Every build, record segment, state directory and session-text directory
