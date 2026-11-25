@@ -58,7 +58,7 @@ as_dev "mkdir -p ~/.claude ~/.local/bin $WORK ~/.claude/skills/cp-wrapped ~/.cla
 as_dev "cat > ~/.local/bin/voice-probe" <<'EOF'
 #!/usr/bin/env bash
 # Stands in for voice-runtime's draft step: a one-off model call, no session file.
-exec claude -p --no-session-persistence --tools "" "Reply with exactly: PROBE-OK"
+exec claude -p "Reply with exactly: PROBE-OK" --no-session-persistence --tools "" </dev/null
 EOF
 as_dev "chmod +x ~/.local/bin/voice-probe"
 as_dev "cat > ~/.claude/skills/cp-wrapped/SKILL.md" <<'EOF'
@@ -77,7 +77,7 @@ description: Draft a probe message. Use when asked to draft a probe message the 
 ---
 Run this exact command with the Bash tool, then report its output word for word:
 
-    claude -p --no-session-persistence --tools "" "Reply with exactly: PROBE-OK"
+    claude -p "Reply with exactly: PROBE-OK" --no-session-persistence --tools "" </dev/null
 EOF
 before=$(as_dev 'find ~/.claude/projects -name "*.jsonl" 2>/dev/null | wc -l')
 
@@ -85,13 +85,13 @@ run() { # run <shape> <n>
   local f="$RESULTS/$1-$2.jsonl"
   as_dev "cd $WORK && timeout 300 claude -p --permission-mode auto --no-session-persistence \
           --output-format stream-json --verbose \
-          'Use the cp-$1 skill to draft a probe message, the $1 way.'" > "$f" 2>&1
+          'Use the cp-$1 skill to draft a probe message, the $1 way.' </dev/null" > "$f" 2>&1
   local rc=$?
-  if grep -q 'PROBE-OK' <(jq -r 'select(.type=="user") | .message.content[]? | select(.type=="tool_result") | .content | if type=="array" then .[].text else . end' "$f" 2>/dev/null); then
+  if grep -q 'PROBE-OK' <(grep '^{' "$f" | jq -r 'select(.type=="user") | .message.content[]? | select(.type=="tool_result") | .content | if type=="array" then .[].text else . end' 2>/dev/null); then
     result PASS "$1-$2" "the Bash call ran and returned PROBE-OK"
   else
     local why
-    why=$(jq -r 'select(.type=="user") | .message.content[]? | select(.type=="tool_result") | .content | if type=="array" then .[].text else . end' "$f" 2>/dev/null | tr '\n' ' ' | cut -c1-200)
+    why=$(grep '^{' "$f" | jq -r 'select(.type=="user") | .message.content[]? | select(.type=="tool_result") | .content | if type=="array" then .[].text else . end' 2>/dev/null | tr '\n' ' ' | cut -c1-200)
     result FAIL "$1-$2" "not run (exit $rc): ${why:-no tool result; see $(basename "$f")}"
   fi
 }
