@@ -1216,7 +1216,11 @@ the Claude Code facts hold for version 2.1.332:
   Sonnet 4.6 or later, Haiku 5.5 or a Fable model. Its classifier blocks
   launching an autonomous agent loop without human approval or a sandbox;
   `autoMode.allow` in user or managed settings (not project settings)
-  allows a routine pattern.
+  allows a routine pattern. In auto mode with the Bash sandbox on, a skill
+  may run `claude -p --no-session-persistence` from Bash, directly or
+  through an excluded command that runs it, and no session file is
+  written (`test/docker/claude-p-auto.sh` in `voice-runtime`). `--tools`
+  takes every argument after it, so the prompt goes before it.
 - GSD: `autonomous`'s smart discuss asks the owner to accept or override each
   grey area. `bm-executor` stops for architectural changes (Rule 4, returning
   what was found, the proposed change, why, impact and alternatives) and may
@@ -1407,9 +1411,6 @@ the Claude Code facts hold for version 2.1.332:
 
 - How the build machine fetches every machine's segments from S3 and reads
   them, settled when it is built.
-- `claude -p` from a skill under Claude Code's auto-mode classifier, which
-  can refuse it as creating an agent: tested on the Docker box before
-  `voice-runtime` is reworked.
 - Where only listed MCP servers start, the claude.ai Slack connector is
   listed there.
 - A test on 2.1.332 that a `PreToolUse` deny on `ExitPlanMode` keeps
