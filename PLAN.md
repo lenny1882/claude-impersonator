@@ -1389,7 +1389,13 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 - Where only listed MCP servers start, the claude.ai Slack connector is
   listed there.
 - §7's facts checked against the build machine's Claude Code version.
-- Whether every managed machine has a TPM 2.0.
+- Whether every managed machine has a TPM 2.0. A firmware TPM (Intel
+  PTT, AMD fTPM) may be switched off in the BIOS: the firmware then lists
+  the TPM device with ACPI status 0, and no `/dev/tpm0` appears although
+  the kernel's TPM drivers are built in. It is switched on in the BIOS's
+  security settings. A BIOS update or a TPM clear can wipe a firmware
+  TPM, which means re-enrolling the machine's identity key and losing its
+  session text.
 - Where `questions.jsonl` lives (§8.4).
 
 #### Moving off AWS
