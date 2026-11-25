@@ -1442,6 +1442,8 @@ the Claude Code facts hold for version 2.1.332:
   Claude in plan mode and a revised plan can be resubmitted, and that
   workflow agents fire `SubagentStart`, `PreToolUse` and `SubagentStop`:
   neither is documented.
+- Replacing a lost build machine: how a new one reaches the encrypted
+  pipeline state, and is pinned in the workflow's branch.
 - Whether every managed machine has a TPM 2.0. A firmware TPM (Intel
   PTT, AMD fTPM) may be switched off in the BIOS: the firmware then lists
   the TPM device with ACPI status 0, and no `/dev/tpm0` appears although
