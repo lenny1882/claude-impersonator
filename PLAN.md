@@ -127,7 +127,7 @@ Not sources:
   first name), Slack user ids and @mentions, client names from the inputs,
   email addresses (`[email]`), phone numbers (`[phone]`).
   - A first name is matched in any case, except under the case rule
-    (§8.1). A first name two people share becomes their role
+    (below). A first name two people share becomes their role
     (`colleague`, or `person` when their roles differ).
   - A name's pattern allows up to three separators between its words.
   - A form that matches a client or kept product's name once spaces,
@@ -244,6 +244,47 @@ Not sources:
   give the anonymised file to `bm-user-profiler`, keep the output in the
   pipeline's state, and answer "neither" to writing it into a CLAUDE.md.
   GSD's plugin files are not edited. It is rerun with every pipeline rebuild.
+
+#### Names that are also ordinary words
+
+- A name that is also an ordinary word (every word of it in the SCOWL
+  dictionary) is replaced only where it is the name, not wherever the word
+  appears. Labels don't depend on the pseudonym, so a change here needs
+  no relabelling.
+- `tools/ordinary-word-counts.py` counts each such replacement per
+  pseudonym (field, code, case, spaCy tag) and the labelled items,
+  exemplars and holdouts it touches, printing pseudonyms and counts only,
+  then ranks every term by occurrences with its places in the map entry's
+  alias list. `--spellings` adds the matched spellings on the terminal
+  only. `tools/term-spellings.sh` lists ranked single-word terms with
+  their spellings, most labelled items first; `tools/case-sensitive-names.py`
+  shows what case-sensitive matching changes per person term;
+  `tools/ordinary-word-examples.py` writes a local page of sample
+  occurrences per pseudonym and of the fields spaCy never tags. Each
+  prints real spellings to the terminal or a local page only, run by the
+  owner in their own terminal; their logs hold counts only.
+- Per term, the owner marks it a name, mostly an ordinary word, or both.
+  A spaCy name that is mostly an ordinary word is re-marked on the
+  Names tab; a mining keep that is no client product is reversed in its
+  decision and map entry; a client spelling that is mostly a word is
+  dropped from the client. Terms below 100 occurrences stay replaced.
+- A single-word person name matches case-sensitively, against the case of
+  its map spelling. A person term the owner marks on the review page's
+  Case tab matches in any case.
+- A term whose matched spellings are all several words is unchanged. A
+  multi-word client alias still matches with 0 to 3 separators, its
+  joined form included.
+- Fields spaCy never tags (repo, channel and reaction names, other source
+  fields) keep any-case matching of every map spelling: the case rule
+  covers only a record's text, `preceding_reply` and `title`. Voice reads
+  none of these fields; decision extraction may (§4.9), and a client keeps
+  one pseudonym across every source. Slack file names and attachment links
+  are replaced whole, by a stand-in per distinct value keyed with a local
+  secret.
+- A mining keep the owner strikes later is inactive from the next
+  `anonymise`: no longer replaced or searched for by the leak check, its
+  entry and number kept. Only an explicit strike does this. A client
+  spelling is dropped by editing the client on the review page's Clients.
 
 ### 2.4 Time
 
@@ -451,7 +492,7 @@ Not sources:
   used; a pair whose real side the owner has seen isn't blind.
   `voice pairs --redraw <audience>` drops an audience's pairs and draws one
   batch of 12 from messages never paired, holding back as many as needed.
-  After a change to the copies (§8.1), `voice validate --batch` drafts one
+  After a change to the copies (§2.3), `voice validate --batch` drafts one
   batch per audience under a new method, only from held-back messages the
   owner was never shown in a pair, the judge review, the label check or the
   disagreement grading, topped up from messages the guide never saw; `voice
@@ -946,6 +987,8 @@ after install, because `update.sh` reruns the installer from it.
     subject and its encryption contexts, is generated once at enrolment
     and stored on `/home` beside the key, so it survives a rebuild. Every
     machine uses such an enrolment id, never its hostname.
+  - **Slack drafts:** where a machine starts only listed MCP servers, the
+    claude.ai Slack connector is on its list.
   - **AWS account and reach:** the keys, bucket, service and Roles
     Anywhere live in an AWS account of their own. Only hooks, the
     packages' excluded commands and the boot unit reach AWS; no AWS host
@@ -1307,49 +1350,7 @@ the Claude Code facts hold for version 2.1.332:
 
 ### 8.1 Sources and corpus
 
-- A name that is also an ordinary word (every word of it in the SCOWL
-  dictionary) is replaced only where it is the name, not wherever the word
-  appears. The copies, guide, statistics and exemplars are then built again
-  from the fixed copies, followed by `voice guide` and a validation run.
-  Labels are kept: item ids and purposes don't depend on the pseudonym.
-- `tools/ordinary-word-counts.py` counts each such replacement per
-  pseudonym (field, code, case, spaCy tag) and the labelled items,
-  exemplars and holdouts it touches, printing pseudonyms and counts only,
-  then ranks every term by occurrences with its places in the map entry's
-  alias list. `--spellings` adds the matched spellings on the terminal
-  only. `tools/term-spellings.sh` lists ranked single-word terms with
-  their spellings, most labelled items first; `tools/case-sensitive-names.py`
-  shows what case-sensitive matching changes per person term;
-  `tools/ordinary-word-examples.py` writes a local page of sample
-  occurrences per pseudonym and of the fields spaCy never tags. Each
-  prints real spellings to the terminal or a local page only, run by the
-  owner in their own terminal; their logs hold counts only.
-- Per term, the owner marks it a name, mostly an ordinary word, or both;
-  a question about a term in a list of spellings names its place in the
-  list. A spaCy name that is mostly an ordinary word is re-marked on the
-  Names tab; a mining keep that is no client product is reversed in its
-  decision and map entry; a client spelling that is mostly a word is
-  dropped from the client. Terms below 100 occurrences stay replaced.
-- A single-word person name matches case-sensitively, against the case of
-  its map spelling. A person term the owner marks on the review page's
-  Case tab matches in any case.
-- A term whose matched spellings are all several words is unchanged. A
-  multi-word client alias still matches with 0 to 3 separators, its
-  joined form included.
-- Fields spaCy never tags (repo, channel and reaction names, other source
-  fields) keep any-case matching of every map spelling: the case rule
-  covers only a record's text, `preceding_reply` and `title`. Voice reads
-  none of these fields; decision extraction may (§4.9), and a client keeps
-  one pseudonym across every source. Slack file names and attachment links
-  are replaced whole, by a stand-in per distinct value keyed with a local
-  secret.
-- A mining keep the owner strikes later is inactive from the next
-  `anonymise`: no longer replaced or searched for by the leak check, its
-  entry and number kept. Only an explicit strike does this. A client
-  spelling is dropped by editing the client on the review page's Clients.
-- The rule ships in one release: the case rule and Case tab, the mining
-  reversals and client spelling drops, then re-anonymise, `voice guide`
-  and a validation run.
+- Decision extraction from every source (§4.9).
 
 ### 8.2 Voice
 
@@ -1436,8 +1437,6 @@ the Claude Code facts hold for version 2.1.332:
 
 - How the build machine fetches every machine's segments from S3 and reads
   them, settled when it is built.
-- Where only listed MCP servers start, the claude.ai Slack connector is
-  listed there.
 - A test on 2.1.332 that a `PreToolUse` deny on `ExitPlanMode` keeps
   Claude in plan mode and a revised plan can be resubmitted, and that
   workflow agents fire `SubagentStart`, `PreToolUse` and `SubagentStop`:
