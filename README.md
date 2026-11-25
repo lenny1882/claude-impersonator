@@ -18,7 +18,7 @@ own.
 | --- | --- |
 | [`embedding-lib`](packages/embedding-lib/) | Pinned local text embeddings (`bge-base-en-v1.5`, CPU) on a bundled Python 3.14, with an identity record each index stores so a mismatched one is refused |
 | [`voice-decision-pipeline`](packages/voice-decision-pipeline/) | Builds the corpus for the voice and decision models: four sources read, credentials redacted, an anonymised copy, per-source review batches and a local embedding index; then the voice model: labels, guide, exemplars, validation and a leak-checked build |
-| [`builds-sync`](packages/builds-sync/) | Carries builds and the runtimes' live records between machines through one `age`-encrypted git repo: manual installs, a daily newer-build notice, live records pushed at session end |
+| [`builds-sync`](packages/builds-sync/) | Carries builds from the build machine to the builds repo and every machine's live records to S3, encrypted under AWS KMS keys (PLAN §5); version 0.1.0 uses an `age`-encrypted git repo instead |
 | [`voice-runtime`](packages/voice-runtime/) | The skill that drafts in the owner's voice: the guide and exemplar search for an installed voice build, refusals when it can't be trusted, and the record of every draft and approved version |
 <!-- new-package.sh --monorepo adds a row above this line -->
 

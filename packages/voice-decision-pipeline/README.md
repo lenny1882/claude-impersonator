@@ -145,7 +145,10 @@ Run in order, each in your own shell (each logs to
    `--redo <purposes>` or in full, and `--new-sample` drawn), and 60 of the
    second model's disagreements to grade. `--new-sample` draws both samples
    afresh from the current labels, keeping earlier rounds' answers in their
-   files. The disagreement rate per purpose is on the same page.
+   files. The disagreement rate per purpose is on the same page. On the
+   label check, disagreement, pairs and overview pages each purpose name
+   carries a tooltip with its definition and any `labelling-notes.md` line
+   that names it; the correction checkboxes have none.
 3. `voice holdout`: 10% of each audience held back for validation. When an
    audience runs out of pairs, `voice holdout --more <audience>` holds back
    12 more (or `--count N`), only from messages that count and that the
@@ -227,7 +230,8 @@ carries about 1,100 tokens of Claude Code's own overhead.
 ## How it works
 
 State is `~/.claude/voice-decision-pipeline/`, owner-only (directories 700,
-files 600), never backed up:
+files 600). This version never backs it up; PLAN §5 adds an encrypted
+directory and an encrypted backup to S3 after each command:
 
 | Path | What |
 |---|---|

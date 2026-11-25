@@ -1,5 +1,10 @@
 # voice-runtime
 
+Version 0.1.0, described here, installs a build on the machine and embeds
+locally. The release design is PLAN §5's: no build on the machine; the
+guide and closest exemplars come from the AWS service, and drafts are
+written through `claude -p --no-session-persistence`.
+
 The voice guide and exemplar search Claude uses to draft Slack messages, PR
 descriptions, PR review comments and Jira comments in your voice, and the
 record of each draft and the version you approved.

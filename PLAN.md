@@ -172,9 +172,9 @@ Not sources:
     words that isn't concentrated in one client. Suggested keep: a term that
     isn't an ordinary word and sits mostly, or with at least half its uses,
     in one client's conversations.
-  - Keep means replace: a kept term gets a map entry, and every product entry
-    in the map is replaced whatever its decision says now. Reversing a keep
-    needs its decision and map entry edited in the state.
+  - Keep means replace: a kept term gets a map entry and is replaced. A
+    keep struck later stops being replaced from the next `anonymise`
+    (below).
   - Terms decided in an earlier run and not listed in the current one have
     their own section, each with its decision.
 - **Clients added by hand:** the review page takes a client name the lists
@@ -587,7 +587,7 @@ All generated from one source file, a `voice-decision-pipeline` output (§5).
 
 | Layer | Strength | Reaches |
 |---|---|---|
-| Gating hooks: deny dependency changes (manifest edits, installs), test-framework switches and edits under marked paths unless the decision log has an approved entry | enforced | every session and subagent |
+| Gating hooks: deny dependency changes (manifest edits, installs), test-framework switches and edits under marked paths unless the local record of asked entries has an approved one | enforced | every session and subagent |
 | `SubagentStart` block | advisory | every subagent, plugin and workflow agents included; read-only search and help agents (Explore, `claude-code-guide`) skipped by type; Plan agents and every agent that edits or recommends get it |
 | `SessionStart` block | advisory | the main session, every session |
 
@@ -747,7 +747,9 @@ plan text lives and which event marks it final:
 - Every decision made alone is logged with the agent and the principle ids
   it relied on, in `decision-runtime`'s log only, never in GSD's `STATE.md`.
 - Only an "asked" entry lets a gate through, until the owner lets at-bar
-  principles satisfy the gates (§4.12). Anything else is denied and the
+  principles satisfy the gates (§4.12). The gates read a local record of
+  asked entries (ids and scope only) in the session-text directory, since
+  `decision-log.jsonl` is write-only once encrypted (§5). Anything else is denied and the
   agent parks a question.
 - Answers to parked questions are copied in as "asked" entries by
   `decision-runtime` when it reads the answer, citing the question id. A
@@ -864,7 +866,13 @@ plan text lives and which event marks it final:
 - **Level 1:** decides alone in the three kinds, on principles that meet the
   evidence bar; everything logged.
 - **Level 2 and beyond:** steps the owner chooses, with the level-0 and
-  level-1 stats in front of them.
+  level-1 stats in front of them; none is decided. Examples: add a kind
+  (build and CI configuration, error handling and logging, API shape
+  within one service; small scope cuts excluded), which brings the
+  52-case floor and the 95% bar for it; lower the evidence bar; widen
+  approval scope faster; decide and tell, for easily undone decisions;
+  decide unless the owner objects within a set time; let at-bar principles
+  satisfy the gates; sampled reviews for principles with no overrides.
 - Up: only when the owner says so. Down: automatic; a confirmed confident
   wrong drops that principle back to "ask" until approved again.
 - Live stats (shadow agreement, override rate) come from the decision log.
@@ -932,7 +940,10 @@ after install, because `update.sh` reruns the installer from it.
   versions, answers, decision-log entries, review results) into their own
   state, which the pipeline reads at the next build. Building means producing
   files.
-- **Build order:** the voice model first, then the decision model.
+- **Build order:** the voice model first, then the decision model. Each
+  stage is built once its own questions are answered.
+- **How it is built:** with `claude-package-kit` in ordinary sessions; this
+  repo has no GSD and no `.planning/`.
 - **Model calls** go through `claude -p` on the logged-in account, with
   structured output against a JSON schema, checked again before use. Tools,
   settings files, MCP servers, slash commands and session files are turned
@@ -965,7 +976,9 @@ after install, because `update.sh` reruns the installer from it.
     through an AWS service and never holds one. Nothing real may be in a
     build: the leak check runs on the built files (voice guide, exemplars,
     statistics, principles and their evidence quotes, tech positions, client
-    constraints, cases, the agent block) before every upload, and a failure
+    constraints, cases, the agent block) before every upload; a build term
+    the owner clears on the leak page lets later builds through for builds
+    only, never for the anonymised copies; and a failure
     stops it.
   - **Revocation is complete:** a lost machine is cut off from elsewhere,
     without access to it, and afterwards nothing left on its disk can be
@@ -1210,7 +1223,8 @@ after install, because `update.sh` reruns the installer from it.
   - After a refusal (no build delivered yet, an embedding mismatch, or an
     unaccepted schema version) the runtimes carry on safely and say so.
     `decision-runtime`'s lookup returns "nothing covers this", so every
-    decision goes to the owner; the gates keep working from the decision log;
+    decision goes to the owner; the gates keep working from the local
+    record of asked entries;
     the reviewers skip; the `SessionStart` block shows the refusal in one
     line. `voice-runtime` says before drafting that the voice model is
     unavailable and why, and offers the draft marked as not in the owner's
@@ -1234,6 +1248,12 @@ after install, because `update.sh` reruns the installer from it.
 ## 6. Cost (estimates, input tokens)
 
 Token counts only; not priced. Output tokens are much smaller.
+
+The owner's time goes on the label check, the disagreement grading, the
+blind pairs, the held-back decision cases, the review pages before
+reruns, confirming inferred reasons and bulk-accepted records, conflict
+verdicts and the review sessions. No figure is given for any of them
+until it has been measured on first use.
 
 | Building, once | Tokens |
 |---|---|
@@ -1265,7 +1285,8 @@ From the Claude Code docs, the GSD plugin files and tests on this machine;
 the Claude Code facts hold for version 2.1.332:
 
 - `SubagentStart` can add context (`additionalContext`), matched by agent
-  type, plugin agents included; it can't see the subagent's prompt.
+  type, plugin agents included; it can't see the subagent's prompt. It
+  takes command, http and mcp_tool hooks only.
 - `SubagentStop` can block with a reason, which becomes the subagent's next
   instruction; `stop_hook_active` guards loops; 8 continuations at most.
 - Prompt and agent hook types exist on `Stop`, `SubagentStop` and
@@ -1282,6 +1303,9 @@ the Claude Code facts hold for version 2.1.332:
   `ExitPlanMode` (which receives `plan` and `planFilePath`) kept Claude in
   plan mode, and Claude resubmitted a plan revised to the deny's reason
   (`test/docker/hook-behaviour.sh plan`).
+- On `ExitPlanMode` the plan file's content replaces any `plan` argument
+  the model supplies, so the plan reviewer reads the hook's `plan` or
+  `planFilePath`, never the model's argument.
 - A `PreToolUse` hook on `ExitPlanMode` receives the plan text; a deny keeps
   Claude in plan mode, the reason reaches Claude, and the revised plan can be
   resubmitted.
@@ -1403,7 +1427,10 @@ the Claude Code facts hold for version 2.1.332:
 - When grill-with-docs is in use: its reader, and how its records are
   weighted.
 - A reminder when a deferred tool (grill-me, grill-with-docs, OpenSpec) is
-  installed, so its items here are picked up.
+  installed, so its items here are picked up: a `SessionStart` hook with a
+  watch list (the tool, how it is detected, the PLAN sections it opens)
+  that shows one line until the item is marked revisited. Which package
+  hosts it is open.
 
 ### 8.4 Questions to the owner (`question-store`)
 
@@ -1424,6 +1451,13 @@ the Claude Code facts hold for version 2.1.332:
 - The by-hand `/gsd:profile-user` run copies the sample
   (`{temp_dir}/profile-sample.jsonl`) and the agent's `<analysis>` block to
   the pipeline's state before the workflow deletes its temp directory.
+- The GSD extraction's default root (`gsd.py` `DEFAULT_ROOTS`) is a path
+  on the build machine; whether it stays a default or must always come
+  from the inputs' `gsd_roots` is open.
+- Changes owed to `claude-package-kit`: its installers don't log to a
+  file; `update.sh`'s confirmation prompt reads `/dev/tty`, which fails
+  under `!`; `update.sh` reads `versions.txt` through a CDN cache of up to
+  five minutes, so a just-cut release isn't seen at once.
 - Pipeline rebuilds are run by hand: the review page shows when enough new
   material has built up, with the command, and the owner runs it in their
   own shell; a failing leak check stops it before anything is sent.

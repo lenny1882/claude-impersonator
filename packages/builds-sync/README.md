@@ -1,5 +1,11 @@
 # builds-sync
 
+Version 0.1.0, described here, carries everything through an
+`age`-encrypted git repo. The release design is PLAN §5's: uploads to the
+builds repo under an AWS KMS key, live records to per-machine S3 prefixes,
+machines named by enrolment id, never hostname; `questions.jsonl` is left to
+`question-store`.
+
 Carries voice and decision builds, and the live records the runtimes write,
 between machines through one private git repo in which every file is
 encrypted with `age`.
