@@ -10,8 +10,12 @@
 # The box (test/docker/box.sh) must be up and logged in. A few model calls
 # on its account. Puts the box's settings.json back at the end.
 #
-#   packages are not needed; run from the repo root:
-#   test/docker/hook-behaviour.sh
+#   test/docker/hook-behaviour.sh [plan|workflow]   (both if none given)
+#
+# ExitPlanMode isn't offered in print mode, so the plan part drives an
+# interactive session in tmux inside the box; tmux is installed there if
+# missing, and the box's ~/.claude.json is marked onboarded and the test
+# folder trusted, then put back.
 #
 # Where to run it: your own terminal, or ! in Claude Code. Claude's Bash tool
 # can't reach the Docker socket.
@@ -23,6 +27,8 @@ set -uo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/lib.sh"
+PART=${1:-all}
+case $PART in plan|workflow|all) ;; *) echo "usage: $0 [plan|workflow]"; exit 2 ;; esac
 start_log hook-behaviour
 need_box
 
@@ -37,7 +43,9 @@ echo "  $(as_dev 'claude --version' | head -1)"
 WORK=$H/hook-probe
 LOG=$H/hook-probe.jsonl
 cleanup() {
-  as_dev "[ -f ~/.claude/settings.json.hook-probe ] && mv ~/.claude/settings.json.hook-probe ~/.claude/settings.json
+  as_dev "tmux -L hookprobe kill-server 2>/dev/null
+          [ -f ~/.claude.json.hook-probe ] && mv ~/.claude.json.hook-probe ~/.claude.json
+          [ -f ~/.claude/settings.json.hook-probe ] && mv ~/.claude/settings.json.hook-probe ~/.claude/settings.json
           rm -rf ~/.local/bin/hook-probe $WORK $LOG ~/.cache/hook-probe" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -70,10 +78,22 @@ as_dev "chmod +x ~/.local/bin/hook-probe
             PreToolUse:    [{matcher: \"*\", hooks: [{type: \"command\", command: \$c}]}]}' \
           ~/.claude/settings.json.hook-probe > ~/.claude/settings.json"
 
-echo "==> plan: deny the first ExitPlanMode"
-as_dev "cd $WORK && timeout 600 claude -p 'Plan how to create a file hello.txt containing the word hi in this directory. Write a short plan, then call ExitPlanMode. If it is rejected, do what the reason says and call ExitPlanMode again.' \
-        --permission-mode plan --no-session-persistence --output-format stream-json --verbose </dev/null" \
-  > "$RESULTS/plan.jsonl" 2>&1
+if [ "$PART" != workflow ]; then
+echo "==> plan: an interactive session in tmux; the hook denies the first ExitPlanMode"
+in_box "command -v tmux >/dev/null || { apt-get update -qq && apt-get install -y -qq tmux >/dev/null; }"
+as_dev "cp ~/.claude.json ~/.claude.json.hook-probe 2>/dev/null || echo '{}' > ~/.claude.json.hook-probe
+        jq --arg d $WORK '.hasCompletedOnboarding = true | .projects[\$d].hasTrustDialogAccepted = true' \
+          ~/.claude.json.hook-probe > ~/.claude.json
+        rm -f $LOG ~/.cache/hook-probe/denied
+        tmux -L hookprobe new-session -d -s plan -x 200 -y 50 -c $WORK \
+          \"claude --permission-mode plan 'Plan how to create a file hello.txt containing the word hi in this directory. Write a short plan, then call ExitPlanMode. If it is rejected, do what the reason says and call ExitPlanMode again.'\""
+for _ in $(seq 1 100); do
+  c=$(as_dev "grep -cE '\"tool_name\": ?\"ExitPlanMode\"' $LOG 2>/dev/null" || true)
+  [ "${c:-0}" -ge 2 ] && break
+  sleep 3
+done
+as_dev "tmux -L hookprobe capture-pane -p -t plan -S -200" > "$RESULTS/plan-pane.txt" 2>&1
+as_dev "tmux -L hookprobe kill-server" >/dev/null 2>&1
 as_dev "cat $LOG 2>/dev/null" > "$RESULTS/hooks-plan.jsonl"
 epm() { grep '^{' "$RESULTS/hooks-plan.jsonl" | jq -c 'select(.hook_event_name=="PreToolUse" and .tool_name=="ExitPlanMode")'; }
 n=$(epm | wc -l)
@@ -82,14 +102,16 @@ revised=$(epm | sed -n 2p | jq -r '.tool_input.plan // empty' 2>/dev/null | grep
 check plan-fields "the hook got the plan text and planFilePath" test "$fields" = true
 check plan-resubmit "after the deny Claude called ExitPlanMode again ($n calls)" test "$n" -ge 2
 check plan-reason "the second plan follows the deny reason (REVISED-PLAN)" test "$revised" -ge 1
+fi
 
+if [ "$PART" != plan ]; then
 echo "==> workflow: one workflow agent running Bash"
 as_dev "rm -f $LOG"
 as_dev "cd $WORK && timeout 900 claude -p 'Use a workflow. Run a workflow with exactly one agent, labelled probe, whose task is: run the shell command true with the Bash tool, then reply done. Pass the script inline.' \
         --permission-mode bypassPermissions --no-session-persistence --output-format stream-json --verbose </dev/null" \
   > "$RESULTS/workflow.jsonl" 2>&1
 as_dev "cat $LOG 2>/dev/null" > "$RESULTS/hooks-workflow.jsonl"
-cat "$RESULTS/hooks-plan.jsonl" "$RESULTS/hooks-workflow.jsonl" > "$RESULTS/hooks.jsonl"
+cat "$RESULTS"/hooks-*.jsonl > "$RESULTS/hooks.jsonl" 2>/dev/null
 ev() { grep '^{' "$RESULTS/hooks-workflow.jsonl" | jq -r "select(.hook_event_name==\"$1\") | (.agent_type // \"-\")" | sort -u | tr '\n' ' '; }
 used=$(grep '^{' "$RESULTS/workflow.jsonl" | jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="tool_use") | .name' | sort -u | tr '\n' ' ')
 echo "  tools the main session used: $used"
@@ -103,5 +125,6 @@ check workflow-ran "the main session used the Workflow tool" test "$wfused" -ge 
 check wf-start "a workflow agent fired SubagentStart" test -n "$starts"
 check wf-pretool "a workflow agent fired PreToolUse on Bash, with an agent_type" test "$agentbash" -ge 1
 check wf-stop "a workflow agent fired SubagentStop" test -n "$stops"
+fi
 
 echo "== finished: hook-behaviour, $PASSES passed, $FAILS failed (results in $RESULTS)"
