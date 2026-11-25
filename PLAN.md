@@ -1274,6 +1274,10 @@ the Claude Code facts hold for version 2.1.332:
 - Workflow agents fire `SubagentStart`, `PreToolUse` and `SubagentStop`
   (agent type `workflow-subagent`, or the `agentType` they were launched
   with). GSD plugin agents fire all three (agent type `gsd:bm-executor`).
+  On 2.1.332 a Workflow agent fired all three with `agent_type`
+  `workflow-subagent` (`test/docker/hook-behaviour.sh`).
+- `ExitPlanMode` isn't offered in print mode (`claude -p --permission-mode
+  plan`), so plan-mode review is tested in an interactive session.
 - A `PreToolUse` hook on `ExitPlanMode` receives the plan text; a deny keeps
   Claude in plan mode, the reason reaches Claude, and the revised plan can be
   resubmitted.
@@ -1449,10 +1453,9 @@ the Claude Code facts hold for version 2.1.332:
 
 - How the build machine fetches every machine's segments from S3 and reads
   them, settled when it is built.
-- A test on 2.1.332 that a `PreToolUse` deny on `ExitPlanMode` keeps
-  Claude in plan mode and a revised plan can be resubmitted, and that
-  workflow agents fire `SubagentStart`, `PreToolUse` and `SubagentStop`:
-  neither is documented.
+- A test on 2.1.332, in an interactive session, that a `PreToolUse` deny
+  on `ExitPlanMode` keeps Claude in plan mode and a revised plan can be
+  resubmitted: not documented.
 - Whether every managed machine has a TPM 2.0. A firmware TPM (Intel
   PTT, AMD fTPM) may be switched off in the BIOS: the firmware then lists
   the TPM device with ACPI status 0, and no `/dev/tpm0` appears although
