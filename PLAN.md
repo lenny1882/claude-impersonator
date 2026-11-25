@@ -946,6 +946,18 @@ after install, because `update.sh` reruns the installer from it.
       role decrypts;
     - pipeline state: only the build machine's role uses it;
     - certificate signing (asymmetric).
+
+    Keys are per purpose, shared by every machine, because each purpose has
+    a different set of principals that may decrypt. One symmetric key for
+    all purposes, conditioned on encryption context, would work (the signing
+    key must stay separate), but one missing condition would open every
+    purpose, `kms:ReEncrypt` could move ciphertext between contexts on the
+    same key, and disabling the key would stop everything. A key per machine
+    puts five purposes and three kinds of principal on the build machine's
+    key, has no machine for distribution to belong to, and needs key policy
+    edits for every new machine. Revocation never disables a key: refusing a
+    machine's credentials cuts it off from every key at once, and records it
+    already pushed stay readable to the build machine.
   - **Publishing a build:** `voice build` runs the leak check and embeds the
     exemplars, so the index ships inside the build. `voice publish`
     encrypts the build under a new data key from the upload key, signs it
@@ -1286,14 +1298,83 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   service and draft through `claude -p`; `voice build` embedding the index
   and `voice publish` signing, uploading and deleting the tarball; the
   pipeline state in its encrypted directory.
-- Still to settle: whether drafts and decisions stay in session transcripts
-  on the default retention or drafts are reviewed and sent outside the
-  session; that the index is built on the build machine inside the build;
+- Still to settle: how drafts and decisions held in session text are
+  protected (options below); that the index is built on the build machine inside the build;
   the machine settings (full-disk encryption with a PIN, encrypted swap,
   hibernation off, screen-lock timeout) on every machine; whether the
   encrypted archive branch on GitHub is kept; `decision-runtime`'s reads
   through the service, given its gating hooks run on every edit and
   install command and would each add a call to AWS.
+- Session text: the situations asked about and the drafts and decisions
+  returned sit in `~/.claude/projects` (transcripts and project memory),
+  `~/.claude/history.jsonl` (typed prompts), `~/.claude/paste-cache` and
+  `~/.claude/file-history` (snapshots of edited files). They are plain files
+  under full-disk encryption, and revocation does not touch them. Options:
+  1. Default retention (30 days) and a short screen-lock timeout.
+  2. Drafts written, reviewed and sent by a terminal command outside the
+     session; decisions still land in transcripts.
+  3. A `SessionStart` hook that strips drafts and decisions from old
+     transcripts; best effort, since the transcript format is internal.
+  4. The four paths in an fscrypt directory whose key is a per-machine data
+     key under a sixth KMS key (transcripts), with encryption context
+     `purpose=transcripts, machine=<id>`; each machine's role decrypts only
+     its own. A systemd unit unwraps it at boot, before the owner's session
+     and the Remote Control servers, and loads it into the kernel keyring
+     until shutdown; Claude Code starts only once it is loaded. Optionally
+     the key is derived from the KMS data key and a secret sealed in the
+     machine's TPM, so a KMS response read by breaking TLS is useless
+     without the TPM. fscrypt can't re-key a directory, so re-keying (for
+     example monthly) means a new directory under a new data key, the
+     files copied across and the old one deleted. After revocation and a
+     reboot nothing in it decrypts; a running machine stays readable.
+  5. Retention between one and 30 days; transcripts are imported for the
+     corpus before they expire.
+  6. Session text deleted when the machine is refused credentials, checked
+     at session start and on a timer; best effort, since an offline
+     machine never checks.
+
+  Only 4 leaves nothing readable on a revoked machine. It combines with 2, 3
+  or 5. For 4, fscrypt (kernel ext4 encryption, near disk speed, the raw key
+  passed straight to the keyring) over gocryptfs (FUSE): ext4's `encrypt`
+  feature is turned on once and can't be turned off; AES-XTS detects no
+  tampering; a locked file can't be read even as ciphertext, so backups
+  go through the unlocked view into a backup tool that encrypts them.
+  gocryptfs gives AES-GCM, a ciphertext directory that copies as files, and
+  a mount only its user sees, at the cost of FUSE on full-corpus reads and
+  a mount not yet tested through the Bash sandbox.
+
+#### Moving off AWS
+
+- Every build, record segment, state directory and session-text directory
+  is encrypted under a data key, and only the wrapped data key depends on
+  KMS. If each wrapped key is stored in one format that names the wrapper
+  that sealed it (`kms` today), moving is a script that unwraps each data key
+  with the old wrapper and wraps it with the new one; no data is
+  re-encrypted.
+- To another cloud (GCP Cloud KMS, Azure Key Vault): the wrapping keys, the
+  service, write-only record storage, the GitHub Actions login through OIDC
+  and the audit log carry over, and revocation still refuses the machine
+  new credentials. To check against current documentation: per-machine
+  separation by encryption context, which AWS conditions in IAM and the
+  others appear not to (a key per machine per purpose instead); TPM-held
+  keys for the credential exchange, with no ready-made helper; stopping
+  credentials already issued, which may wait out their expiry, up to an
+  hour. Steps: a new CA in the new cloud's KMS and a new certificate for
+  each machine's existing TPM key (the AWS signing key can't be exported);
+  rewrap every data key; copy the ciphertext unchanged; point the runtimes
+  and `builds-sync` at the new endpoints; schedule deletion of the AWS keys
+  (7–30 days).
+- To hardware keys (a YubiKey kept apart from every machine, a second one
+  as a spare): a machine on its own decrypts nothing, so a lost machine is
+  already cut off; revoking a machine deletes its key from its PIV slot.
+  Records stay add-only (machines encrypt to the build machine's public
+  key); pipeline state and session text are rewrapped by the YubiKey;
+  everything is encrypted to both YubiKeys, since keys made on one can't
+  be copied to the other. What changes: drafting decrypts the whole build on
+  the machine, so a compromised running machine can take every exemplar at
+  once, instead of a few per request until it is revoked. Unattended
+  running (boot, Remote Control servers) needs a solution, and no log of
+  use is kept.
 
 ## 9. Needs the owner when it runs
 
