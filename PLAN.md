@@ -1036,7 +1036,12 @@ after install, because `update.sh` reruns the installer from it.
     that reads `~/.claude/projects`, starts only once it is loaded. While
     AWS can't be reached the unit retries, and they wait. On a rebuildable
     machine the directory and its wrapped key are on `/home`, and the unit
-    is put back after a rebuild. Retention stays at Claude Code's default.
+    is put back after a rebuild. On a machine with a TPM that isn't
+    rebuildable, the fscrypt key is derived (HKDF-SHA256) from the KMS data
+    key and a 32-byte secret sealed in the TPM, without binding to boot
+    measurements, so a KMS response read by breaking TLS opens nothing
+    without that machine's TPM; clearing the TPM loses the session text.
+    Retention stays at Claude Code's default.
     After revocation and a reboot nothing in it decrypts.
   - **Machine settings:** on a machine with a TPM and attended boot,
     full-disk encryption unlocked by the TPM with a PIN; swap encrypted with
@@ -1353,9 +1358,6 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 
 - Whether machines that aren't rebuildable also take the enrolment id
   instead of the hostname.
-- A machine with a TPM: whether the session-text key also takes a half
-  sealed in the TPM, so a KMS response read by breaking TLS is useless
-  without it; a rebuild would lose that half.
 - Machine settings for each combination of TPM and attended boot.
 - The build machine: which kinds it may be, given `voice publish` signs
   with its TPM key.
