@@ -38,9 +38,10 @@ Not sources:
 - Struck conversations.
 - Git commit messages.
 - Subagent (sidechain) transcripts.
-- Transcripts from other machines and claude.ai cloud sessions.
-  `import-transcripts <dir>` reads another machine's `~/.claude/projects`
-  through the same anonymising and filters if one is copied here.
+- claude.ai cloud sessions. Other machines' main-session transcripts reach
+  the build machine encrypted through S3 (§5, Live records);
+  `import-transcripts <dir>` also reads a copied `~/.claude/projects`
+  through the same anonymising and filters.
 - New Slack data after the export ends. A later slackdump export goes through
   the same local steps. The Slack connector is not used for this: it would
   send real names before anonymising.
@@ -99,8 +100,8 @@ Not sources:
 - Every package's state is owner-only: directories 700, files 600. Scripts
   set umask 077 before writing; each install creates its state directory as
   700 and its verify step checks the modes.
-- No backup. The drafts and decision log reach S3, encrypted (§5); every key
-  is held by AWS KMS.
+- No backup. The drafts, the decision log and every machine's transcripts
+  reach S3, encrypted (§5); every key is held by AWS KMS.
 - State is kept until the owner deletes it. `forget <person|conversation>`
   (also a Bitbucket repo or PR) removes the items from the corpus and its
   index, rewrites the index matrix without them, and adds them to the struck
@@ -845,8 +846,9 @@ review sessions.
 ## 5. Packaging
 
 Packages in one monorepo, `claude-impersonator`, built with
-`claude-package-kit`, released as tarballs, each unpacked into
-`/mnt/sda/User/Programs/claude-tools/<package>`, whose installer places it
+`claude-package-kit`, released as tarballs, each unpacked into the
+machine's own tools directory (each machine has its own path), whose
+installer places it
 per the kit's layout (`claude-package-kit/skill/reference/layout.md`): a
 skill in `~/.claude/skills/<name>/`, a command's state in `~/.claude/<name>/`.
 Each gets an INVENTORY.md row when installed. The extracted directory stays
@@ -942,7 +944,12 @@ after install, because `update.sh` reruns the installer from it.
     excluded commands and boot unit use it, through the credential helper.
     A rebuildable machine's id, which names its role, its certificate
     subject and its encryption contexts, is generated once at enrolment
-    and stored on `/home` beside the key, so it survives a rebuild.
+    and stored on `/home` beside the key, so it survives a rebuild. Every
+    machine uses such an enrolment id, never its hostname.
+  - **AWS account and reach:** the keys, bucket, service and Roles
+    Anywhere live in an AWS account of their own. Only hooks, the
+    packages' excluded commands and the boot unit reach AWS; no AWS host
+    is on any session's sandbox allowlist.
     A certificate authority whose signing key is a KMS asymmetric key issues
     each machine a certificate for that key. IAM Roles Anywhere exchanges the
     certificate for AWS credentials lasting at most an hour; nothing
@@ -985,8 +992,8 @@ after install, because `update.sh` reruns the installer from it.
     with the build machine's TPM key, pushes it to the builds repo's upload
     branch, and deletes the plaintext tarball from the pipeline state.
   - **Builds repo:** a private GitHub repo, separate from this one, named in
-    `build-inputs.json` (`builds_repo`). It holds encrypted uploads and an
-    encrypted archive of the builds; nothing in it is plaintext except a
+    `build-inputs.json` (`builds_repo`). It holds encrypted uploads only;
+    S3 is the one archive of builds. Nothing in it is plaintext except a
     `README.md` with no content.
   - **Re-encryption workflow** (GitHub Actions): runs from a branch or repo
     machines can't push to, since a push-triggered workflow runs the
@@ -994,7 +1001,7 @@ after install, because `update.sh` reruns the installer from it.
     OIDC, so no secret is stored on GitHub. It checks each upload's
     signature against the registered machine keys, re-encrypts the build
     under a new data key from the distribution key with the build id as
-    context, and writes it to S3 for the service and to the archive branch.
+    context, and writes it to S3 for the service.
   - **Reading:** the runtime embeds the situation locally and calls the
     service (a Lambda in the owner's AWS account) with the machine's
     one-hour credentials. The service decrypts the build inside AWS, ranks
@@ -1006,16 +1013,19 @@ after install, because `update.sh` reruns the installer from it.
     holds the situation and the result, never the guide or exemplars. An
     older build is used by asking the service for its build id; S3 keeps
     every build.
-  - **Live records:** `drafts.jsonl` (`voice-runtime`) and
-    `decision-log.jsonl` (`decision-runtime`) are encrypted as they are
-    written, under the records key, so a machine can add records but never
+  - **Live records:** `drafts.jsonl` (`voice-runtime`),
+    `decision-log.jsonl` (`decision-runtime`) and the machine's
+    main-session transcripts are encrypted as they are written or pushed, under the records key, so a machine can add records but never
     read them back. Only record ids and hashes stay in plaintext, enough to
     match a final version to its draft. Each machine writes its segments to
     its own S3 prefix, where it may write and read nothing, then deletes the
     local copies. The pipeline reads every machine's segments through the
     build machine's role at the start of each build, joins them by push
     time, drops repeated records by id and applies the struck list.
-    `questions.jsonl` is settled with `question-store` (§8.4).
+    Pushes run on a timer as well as at session end, so an always-on
+    session's transcript reaches S3 before local retention removes it.
+    S3 keeps transcripts with no expiry; a lifecycle rule can shorten that
+    later. `questions.jsonl` is settled with `question-store` (§8.4).
   - **Pipeline state:** the build machine's pipeline state is kept in an
     encrypted directory whose key is wrapped by the pipeline state key. It
     is unwrapped with the build machine's one-hour credentials and mounted
@@ -1042,7 +1052,13 @@ after install, because `update.sh` reruns the installer from it.
     key and a 32-byte secret sealed in the TPM, without binding to boot
     measurements, so a KMS response read by breaking TLS opens nothing
     without that machine's TPM; clearing the TPM loses the session text.
-    Retention stays at Claude Code's default.
+    Every machine keeps transcripts 7 days (`cleanupPeriodDays`). Monthly,
+    the boot unit re-keys the directory before unlocking it: a new data
+    key, a new directory, the files copied across, the old one deleted, so
+    nothing running is interrupted. A machine overdue for a reboot shows
+    one line in each session's start-up block, and after a week overdue a
+    push notification through `question-store`'s channel; a re-key run by
+    hand stops sessions, so it asks first.
     After revocation and a reboot nothing in it decrypts.
   - **Machine settings:** full-disk encryption by kind: with a TPM and
     attended boot, unlocked by the TPM with a PIN; with a TPM and
@@ -1080,11 +1096,15 @@ after install, because `update.sh` reruns the installer from it.
       `exemplars.json`, `stats.json`, `index/`) is held encrypted in S3 and
       read through the service; the machine keeps `drafts.jsonl` segments,
       encrypted, until pushed, and plaintext record ids and hashes.
-    - `decision-runtime`: `builds/<build-time>/` (`principles.json`,
-      `priorities.json`, `tech-positions.json`, `client-constraints.json`,
-      `cases.json`, `agent-block.txt`), `manifest.json`,
-      `decision-log.jsonl`, the reviewed-changes record and gate state
-      (live).
+    - `decision-runtime`: no build on the machine. The lookup, the
+      reviewers and the start-up blocks read the decision build
+      (`principles.json`, `priorities.json`, `tech-positions.json`,
+      `client-constraints.json`, `cases.json`, `agent-block.txt`) through
+      the service; offline, the lookup returns "nothing covers this". The
+      gates read a local record of asked entries (ids and scope only), in
+      the session-text directory, so they work offline. The machine keeps
+      `decision-log.jsonl` segments, encrypted, until pushed, and the
+      reviewed-changes record.
     - `question-store`: `questions.jsonl` and delivery state (live).
     - `voice-decision-pipeline`: the corpus, the map, the corpus index,
       labelling output, holdouts and `validation-answers.jsonl`.
@@ -1359,26 +1379,18 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   and a locked file can't be read even as ciphertext, so backups go through
   the unlocked view into a backup tool that encrypts them.
 
-#### Still to settle, by machine property
+#### Still to settle
 
-- Whether machines that aren't rebuildable also take the enrolment id
-  instead of the hostname.
-- Every machine: whether AWS hosts reach sessions or only hooks and
-  excluded commands; which AWS account carries the keys, bucket and
-  service; the install path where `/mnt/sda` doesn't exist; how other
-  machines' transcripts reach the build machine; whether session text is
-  re-keyed on a schedule (fscrypt can't re-key a directory, so re-keying
-  means a new directory under a new data key, the files copied across and
-  the old one deleted); that the index is built on the build machine
-  inside the build; whether the encrypted archive branch on GitHub is
-  kept; `decision-runtime`'s reads through the service, given its gates
-  run on every edit and install command, and that the gates read approved
-  entries while `decision-log.jsonl` is write-only once encrypted; where
-  `questions.jsonl` lives; `claude -p` from a skill under Claude Code's
-  auto-mode classifier, which can refuse it as creating an agent; the
-  Slack connector where only listed MCP servers start; whether every
-  managed machine has a TPM 2.0; the Claude Code version §7's facts are
-  checked against.
+- How the build machine fetches every machine's segments from S3 and reads
+  them, settled when it is built.
+- `claude -p` from a skill under Claude Code's auto-mode classifier, which
+  can refuse it as creating an agent: tested on the Docker box before
+  `voice-runtime` is reworked.
+- Where only listed MCP servers start, the claude.ai Slack connector is
+  listed there.
+- §7's facts checked against the build machine's Claude Code version.
+- Whether every managed machine has a TPM 2.0.
+- Where `questions.jsonl` lives (§8.4).
 
 #### Moving off AWS
 
