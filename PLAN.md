@@ -1181,7 +1181,8 @@ corpus.
 
 ## 7. Verified facts this plan rests on
 
-From the Claude Code docs, the GSD plugin files and tests on this machine:
+From the Claude Code docs, the GSD plugin files and tests on this machine;
+the Claude Code facts hold for version 2.1.332:
 
 - `SubagentStart` can add context (`additionalContext`), matched by agent
   type, plugin agents included; it can't see the subagent's prompt.
@@ -1196,10 +1197,26 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 - A `PreToolUse` hook on `ExitPlanMode` receives the plan text; a deny keeps
   Claude in plan mode, the reason reaches Claude, and the revised plan can be
   resubmitted.
-- A `PreToolUse` command, http or mcp_tool hook that times out lets the call
-  through unless configured so its failure blocks.
+- A `PreToolUse` command, http or mcp_tool hook that times out doesn't
+  block: the call goes on through the normal permission flow, unless the
+  hook sets `onFailure: "block"`.
 - `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` forces the model of every subagent,
-  teammate and workflow agent.
+  teammate and workflow agent (from 2.1.257), except forks and skills that
+  run in a subagent with `model: inherit`.
+- `asyncRewake` runs a hook in the background and wakes Claude only when
+  it exits with code 2; its stderr (or stdout) is shown to Claude.
+- `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` are set
+  in each session; a message posted to the socket starts a new turn in an
+  idle session. Delivery follows the receiving session's cross-session
+  rules and can be held for approval; a bare-mode session binds no socket;
+  sandboxed Bash needs `sandbox.network.allowUnixSockets` to reach it.
+- `allowManagedHooksOnly` blocks user, project, local and plugin hooks,
+  except plugins force-enabled in managed `enabledPlugins`.
+- Auto mode works with `claude -p --permission-mode auto` on Opus 4.6,
+  Sonnet 4.6 or later, Haiku 5.5 or a Fable model. Its classifier blocks
+  launching an autonomous agent loop without human approval or a sandbox;
+  `autoMode.allow` in user or managed settings (not project settings)
+  allows a routine pattern.
 - GSD: `autonomous`'s smart discuss asks the owner to accept or override each
   grey area. `bm-executor` stops for architectural changes (Rule 4, returning
   what was found, the proposed change, why, impact and alternatives) and may
@@ -1243,10 +1260,17 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   `kms:Decrypt`). Requests to asymmetric keys are outside the free tier.
 - Claude Code: `claude -p --no-session-persistence` writes no session file.
   A `PostToolUse` hook's `updatedToolOutput` changes only what Claude sees;
-  the transcript format is internal and changes between versions, and
-  `SessionEnd` isn't documented to run when a session is killed.
-  `cleanupPeriodDays` has a minimum of 1 and defaults to 30.
-- claude.ai cloud sessions load none of `~/.claude`; they are not covered.
+  the transcript format is internal and changes between versions.
+  `SessionEnd` hooks run on SIGTERM, sharing a 1.5-second budget; nothing
+  documents them under a forced kill. `cleanupPeriodDays` has a minimum of
+  1 and defaults to 30. It removes transcripts with their subagent
+  transcripts, `file-history`, `paste-cache`, `plans`, `tasks` and
+  `tool-results` older than that; it never removes `history.jsonl` or
+  project memory.
+- claude.ai cloud sessions read neither `~/.claude/CLAUDE.md` nor
+  `~/.claude/settings.json`, nor user skills, agents or commands (skills
+  enabled on claude.ai and server-managed settings do load); they are not
+  covered.
   Sessions started from claude.ai through Remote Control servers on the
   owner's machines are.
 
@@ -1388,7 +1412,10 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   `voice-runtime` is reworked.
 - Where only listed MCP servers start, the claude.ai Slack connector is
   listed there.
-- §7's facts checked against the build machine's Claude Code version.
+- A test on 2.1.332 that a `PreToolUse` deny on `ExitPlanMode` keeps
+  Claude in plan mode and a revised plan can be resubmitted, and that
+  workflow agents fire `SubagentStart`, `PreToolUse` and `SubagentStop`:
+  neither is documented.
 - Whether every managed machine has a TPM 2.0. A firmware TPM (Intel
   PTT, AMD fTPM) may be switched off in the BIOS: the firmware then lists
   the TPM device with ACPI status 0, and no `/dev/tpm0` appears although
