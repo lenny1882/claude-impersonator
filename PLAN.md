@@ -939,6 +939,9 @@ after install, because `update.sh` reruns the installer from it.
     file owned by the owner's user, mode 600, on `/home` where the machine
     is rebuildable; sessions are denied reading it, and only the hooks,
     excluded commands and boot unit use it, through the credential helper.
+    A rebuildable machine's id, which names its role, its certificate
+    subject and its encryption contexts, is generated once at enrolment
+    and stored on `/home` beside the key, so it survives a rebuild.
     A certificate authority whose signing key is a KMS asymmetric key issues
     each machine a certificate for that key. IAM Roles Anywhere exchanges the
     certificate for AWS credentials lasting at most an hour; nothing
@@ -1348,8 +1351,8 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 
 #### Still to settle, by machine property
 
-- A rebuildable machine: a machine id that survives a rebuild, used in its
-  role, certificate subject and encryption contexts.
+- Whether machines that aren't rebuildable also take the enrolment id
+  instead of the hostname.
 - A machine with a TPM: whether the session-text key also takes a half
   sealed in the TPM, so a KMS response read by breaking TLS is useless
   without it; a rebuild would lose that half.
