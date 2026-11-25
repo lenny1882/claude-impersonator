@@ -15,7 +15,9 @@
 # ExitPlanMode isn't offered in print mode, so the plan part drives an
 # interactive session in tmux inside the box; tmux is installed there if
 # missing, and the box's ~/.claude.json is marked onboarded and the test
-# folder trusted, then put back.
+# folder trusted, then put back. The interactive session's transcript is
+# removed at the end, so later tests that read ~/.claude/projects don't
+# count it.
 #
 # Where to run it: your own terminal, or ! in Claude Code. Claude's Bash tool
 # can't reach the Docker socket.
@@ -46,7 +48,7 @@ cleanup() {
   as_dev "tmux -L hookprobe kill-server 2>/dev/null
           [ -f ~/.claude.json.hook-probe ] && mv ~/.claude.json.hook-probe ~/.claude.json
           [ -f ~/.claude/settings.json.hook-probe ] && mv ~/.claude/settings.json.hook-probe ~/.claude/settings.json
-          rm -rf ~/.local/bin/hook-probe $WORK $LOG ~/.cache/hook-probe" >/dev/null 2>&1 || true
+          rm -rf ~/.local/bin/hook-probe $WORK $LOG ~/.cache/hook-probe ~/.claude/projects/*hook-probe*" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
