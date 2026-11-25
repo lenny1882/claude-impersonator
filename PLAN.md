@@ -1349,8 +1349,8 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   fixed list of hosts, may run only managed hooks, may take packages only
   as checksum-pinned release tarballs at their own install path, may be
   rebuilt with a new root volume while `/home` is kept, and may be offline
-  for hours. Still to settle for such a machine: which packages it runs;
-  how it gets AWS credentials unattended; whether AWS hosts reach its
+  for hours. Such a machine runs every package, as any other does. Still
+  to settle for it: how it gets AWS credentials unattended; whether AWS hosts reach its
   sessions or only hooks and excluded commands; its install path; how its
   transcripts reach the build machine; its session-text unlock retrying
   until AWS answers, ordered before anything that reads `~/.claude/projects`;
