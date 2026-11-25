@@ -1043,11 +1043,15 @@ after install, because `update.sh` reruns the installer from it.
     without that machine's TPM; clearing the TPM loses the session text.
     Retention stays at Claude Code's default.
     After revocation and a reboot nothing in it decrypts.
-  - **Machine settings:** on a machine with a TPM and attended boot,
-    full-disk encryption unlocked by the TPM with a PIN; swap encrypted with
-    a random key on every boot; hibernation off; a short screen-lock
-    timeout, since a running machine's disk is unlocked. Other kinds are
-    in §8.6.
+  - **Machine settings:** full-disk encryption by kind: with a TPM and
+    attended boot, unlocked by the TPM with a PIN; with a TPM and
+    unattended boot, unlocked by the TPM alone, which protects a removed
+    disk but not a whole stolen machine; without a TPM and attended, a
+    passphrase at boot; without a TPM and unattended, only a cloud machine,
+    under the provider's volume encryption. On every machine swap is
+    encrypted with a random key on every boot and hibernation is off; a
+    machine with a screen has a short screen-lock timeout, since a running
+    machine's disk is unlocked.
   - **Limits:** what a machine has been shown can't be withdrawn. Session
     text is readable on a running machine while its key is loaded. Every model call's prompt goes
     to Anthropic's API.
@@ -1358,7 +1362,6 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
 
 - Whether machines that aren't rebuildable also take the enrolment id
   instead of the hostname.
-- Machine settings for each combination of TPM and attended boot.
 - The build machine: which kinds it may be, given `voice publish` signs
   with its TPM key.
 - Every machine: whether AWS hosts reach sessions or only hooks and
