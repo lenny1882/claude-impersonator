@@ -950,6 +950,8 @@ after install, because `update.sh` reruns the installer from it.
     - records: machines may only encrypt with it; only the build machine's
       role decrypts;
     - pipeline state: only the build machine's role uses it;
+    - session text: each machine's role decrypts only data keys whose
+      context names its own machine;
     - certificate signing (asymmetric).
 
     Keys are per purpose, shared by every machine, because each purpose has
@@ -1009,12 +1011,22 @@ after install, because `update.sh` reruns the installer from it.
     revoke the role's active sessions with an IAM deny on token issue time,
     so credentials it already holds stop at once; remove its signing key
     from the registry, so its uploads are refused.
+  - **Session text:** `~/.claude/projects` (transcripts and project
+    memory), `~/.claude/history.jsonl`, `~/.claude/paste-cache` and
+    `~/.claude/file-history` hold the situations asked about and the drafts
+    and decisions returned. On every machine they live in an fscrypt
+    directory (ext4's kernel encryption) whose key is a data key under the
+    session-text key, with context `purpose=session-text, machine=<id>`. A
+    systemd unit unwraps it at boot with the machine's one-hour credentials,
+    before the owner's session and the Remote Control servers, and loads it
+    into the kernel keyring until shutdown; Claude Code starts only once it
+    is loaded. Retention stays at Claude Code's default. After revocation
+    and a reboot nothing in it decrypts.
   - **Machine settings:** full-disk encryption unlocked by the TPM with a
     PIN; swap encrypted with a random key on every boot; hibernation off; a
     short screen-lock timeout, since a running machine's disk is unlocked.
-  - **Limits:** what a machine has been shown can't be withdrawn. Drafts and
-    decisions stay in its transcripts for Claude Code's retention period,
-    readable on a running, unlocked machine. Every model call's prompt goes
+  - **Limits:** what a machine has been shown can't be withdrawn. Session
+    text is readable on a running machine while its key is loaded. Every model call's prompt goes
     to Anthropic's API.
   - **`builds-sync`** carries uploads to the builds repo on the build
     machine and live records to S3 on every machine.
@@ -1302,53 +1314,33 @@ From the Claude Code docs, the GSD plugin files and tests on this machine:
   uploads and S3 records; `voice-runtime` reworked to read through the
   service and draft through `claude -p`; `voice build` embedding the index
   and `voice publish` signing, uploading and deleting the tarball; the
-  pipeline state in its encrypted directory; the wrapped-key record and
+  pipeline state in its encrypted directory; the session-text directory
+  and its boot unit on every machine; the wrapped-key record and
   its shared wrap and unwrap functions, with a test that an unknown
   wrapper is refused.
-- Still to settle: how drafts and decisions held in session text are
-  protected (options below); that the index is built on the build machine inside the build;
-  the machine settings (full-disk encryption with a PIN, encrypted swap,
-  hibernation off, screen-lock timeout) on every machine; whether the
-  encrypted archive branch on GitHub is kept; `decision-runtime`'s reads
-  through the service, given its gating hooks run on every edit and
-  install command and would each add a call to AWS.
-- Session text: the situations asked about and the drafts and decisions
-  returned sit in `~/.claude/projects` (transcripts and project memory),
-  `~/.claude/history.jsonl` (typed prompts), `~/.claude/paste-cache` and
-  `~/.claude/file-history` (snapshots of edited files). They are plain files
-  under full-disk encryption, and revocation does not touch them. Options:
-  1. Default retention (30 days) and a short screen-lock timeout.
-  2. Drafts written, reviewed and sent by a terminal command outside the
-     session; decisions still land in transcripts.
-  3. A `SessionStart` hook that strips drafts and decisions from old
-     transcripts; best effort, since the transcript format is internal.
-  4. The four paths in an fscrypt directory whose key is a per-machine data
-     key under a sixth KMS key (transcripts), with encryption context
-     `purpose=transcripts, machine=<id>`; each machine's role decrypts only
-     its own. A systemd unit unwraps it at boot, before the owner's session
-     and the Remote Control servers, and loads it into the kernel keyring
-     until shutdown; Claude Code starts only once it is loaded. Optionally
-     the key is derived from the KMS data key and a secret sealed in the
-     machine's TPM, so a KMS response read by breaking TLS is useless
-     without the TPM. fscrypt can't re-key a directory, so re-keying (for
-     example monthly) means a new directory under a new data key, the
-     files copied across and the old one deleted. After revocation and a
-     reboot nothing in it decrypts; a running machine stays readable.
-  5. Retention between one and 30 days; transcripts are imported for the
-     corpus before they expire.
-  6. Session text deleted when the machine is refused credentials, checked
-     at session start and on a timer; best effort, since an offline
-     machine never checks.
-
-  Only 4 leaves nothing readable on a revoked machine. It combines with 2, 3
-  or 5. For 4, fscrypt (kernel ext4 encryption, near disk speed, the raw key
-  passed straight to the keyring) over gocryptfs (FUSE): ext4's `encrypt`
-  feature is turned on once and can't be turned off; AES-XTS detects no
-  tampering; a locked file can't be read even as ciphertext, so backups
-  go through the unlocked view into a backup tool that encrypts them.
-  gocryptfs gives AES-GCM, a ciphertext directory that copies as files, and
-  a mount only its user sees, at the cost of FUSE on full-corpus reads and
-  a mount not yet tested through the Bash sandbox.
+- Still to settle: whether the session-text key also takes a half sealed
+  in the machine's TPM (§5, Session text), so a KMS response read by
+  breaking TLS is useless without the TPM; whether it is re-keyed on a
+  schedule, which with fscrypt means a new directory under a new data key,
+  the files copied across and the old one deleted, since fscrypt can't
+  re-key a directory; that the index is built on the build machine inside
+  the build; the machine settings (full-disk encryption with a PIN,
+  encrypted swap, hibernation off, screen-lock timeout) on every machine;
+  whether the encrypted archive branch on GitHub is kept;
+  `decision-runtime`'s reads through the service, given its gating hooks
+  run on every edit and install command and would each add a call to AWS.
+- Session text, other ways considered: default retention with a screen
+  lock, a shorter retention, a `SessionStart` scrub of old transcripts,
+  deletion when credentials are refused, and drafting outside the session
+  each leave session text readable on a revoked machine (the scrub and the
+  deletion are best effort; drafting outside the session still leaves
+  decisions in transcripts). fscrypt is used over gocryptfs (FUSE), which
+  gives AES-GCM, a ciphertext directory that copies as files and a mount
+  only its user sees, at the cost of FUSE on full-corpus reads and a mount
+  untested through the Bash sandbox. With fscrypt, ext4's `encrypt` feature
+  is turned on once and can't be turned off, AES-XTS detects no tampering,
+  and a locked file can't be read even as ciphertext, so backups go through
+  the unlocked view into a backup tool that encrypts them.
 
 #### Moving off AWS
 
