@@ -834,12 +834,44 @@ plan text lives and which event marks it final:
   transcript corrections, `[Rule N - Type]` entries in GSD `SUMMARY.md`
   files). All candidates are sent, plus a random 10% of the rest to measure
   what the filter misses, raised in 10% steps until the estimate is clearly
-  above or below 95%. Under 95% caught, the filter is widened and measured
-  again.
-- Rules 1–3 deviation entries are the executor's decisions made alone,
-  never the owner's evidence; Rule 4 entries count as the owner's, with the
-  answer from the question store.
-- Each case records the question, options, choice, reason and outcome.
+  above or below 95%: the filter passes once it is 95% sure that at least
+  95% of decisions are caught and fails once it is 95% sure fewer are, by
+  the voice validation's confidence calculation. Under 95% caught, the
+  filter is widened and measured again.
+- A case starts only from the owner's own messages; other people's are read
+  as context around it. A decision someone else made becomes a case only
+  where the owner acted on it or passed it on.
+- A case covers the whole exchange, from the question to where it is settled
+  or dropped, across as many messages as that takes. Its fields beyond those
+  below: `options_offered`, `options_added`, `recommended_first`,
+  `recommended_last`, `ending` (`option`, `combined`, `added_option`,
+  `own_answer`, `none`) and `origin` (`own_pick`,
+  `accepted_recommendation`, `changed_recommendation`, `dictated`,
+  `delegated`).
+- Each case records the question, options, choice, reason and outcome. The
+  outcome is kept, reversed or unknown, read from what comes after the case;
+  reversed links to the message or case that undid it, and a reversal found
+  in another session updates the earlier case when principles are written.
+  A reversed case counts towards no principle and is shown beside it as a
+  counter-case.
+- Extraction is two blind passes, Sonnet 5.5 then Opus 5.5, compared on the
+  short answers: whether the item holds a decision, the choice, the kind,
+  whose decision it was, what Claude recommended, who it came from and the
+  outcome. A sample of 60 disagreements is graded by the owner, and a case
+  check of 120 cases spread across sources and kinds fails at more than 6
+  wrong: the prompt is fixed and the passes are run again.
+- Rules 1–3 deviation entries in GSD `SUMMARY.md` files are the executor's
+  decisions made alone, never the owner's evidence: each is a case marked
+  so, listed in the review session's Decisions tab for the owner to agree
+  with or overrule. An overrule is the owner's evidence against what the
+  executor did; an agreement is weak evidence. Rule 4 entries count as the
+  owner's, with the answer from the question store.
+- A GSD `CONTEXT.md` decision's origin comes from its discuss session in the
+  transcripts, found by project and by time before the file was written,
+  and the AskUserQuestion it came from, matched by wording: answered one by
+  one or overridden is the owner's; accepted in bulk, auto mode, an
+  infrastructure skip or Claude's Discretion is weak; with no session found
+  it is weak until confirmed in a review session.
 - Reasons never stated are inferred, tagged "inferred", and count once
   confirmed in a review session.
 - Decisions relayed from someone else (a client's or manager's call) are
@@ -958,6 +990,10 @@ review sessions.
   exists and the reviewer has a track record.
 - Every Bitbucket PR in the picked repos, not only the owner's. How other
   people's decisions are labelled and weighed is open.
+- Project conventions: colleagues' decisions in projects with none of the
+  owner's messages, from every PR in the picked repos and whole Slack
+  channels, with the rules for when a convention binds agents in its project
+  and when it overrides one of the owner's principles.
 
 ---
 
@@ -1327,7 +1363,7 @@ until it has been measured on first use.
 |---|---|
 | Labelling Slack messages with context | ~8.5M |
 | Second-model blind labelling | ~8.5M |
-| Decision extraction | ~2–3M |
+| Decision extraction (two passes) | ~10M |
 | Transcripts and PR comments | ~2–3M |
 | Writing the guide and principles | ~2–5M |
 | Voice validation (drafts and judge) | ~14M |
