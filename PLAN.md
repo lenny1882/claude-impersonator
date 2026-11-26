@@ -1002,8 +1002,8 @@ after install, because `update.sh` reruns the installer from it.
   versions, answers, decision-log entries, review results) into their own
   state, which the pipeline reads at the next build. Building means producing
   files.
-- **Build order:** the voice model first, then the decision model. Each
-  stage is built once its own questions are answered.
+- **Build order:** §8's build order. Each stage is built once its own
+  questions are answered.
 - **How it is built:** with `claude-package-kit` in ordinary sessions; this
   repo has no GSD and no `.planning/`.
 - **Model calls** go through `claude -p` on the logged-in account, with
@@ -1453,6 +1453,50 @@ the Claude Code facts hold for version 2.1.332:
   owner's machines are.
 
 ## 8. Still to build
+
+**Build order.** Each step starts once the one before it is done, unless it
+says otherwise.
+
+1. The owner turns on the build machine's TPM in its BIOS, creates the AWS
+   account and creates the builds repo. Runs alongside steps 2–5.
+2. The `SubagentStart` tests: `additionalContext` reaching GSD plugin agents
+   and workflow agents, and the skip list matching workflow agents launched
+   with `agentType` (§8.3).
+3. Whether the GSD extraction's root stays a default or always comes from
+   the inputs (§8.5); the transcript marker that tells Claude's
+   recommendations apart (§8.3); then decision extraction from every source
+   (§8.1), with the `/gsd:profile-user` sample copied to the state (§8.5).
+4. The decision model in the pipeline: principles, priorities, tech
+   positions, client constraints, cases and the agent block (§4.10), then
+   validation on the held-back cases, graded by the owner (§4.11).
+5. The judge review of the voice validation run (§8.2), graded by the
+   owner. Runs alongside steps 2–10; not a gate.
+6. §8.6, once step 1 is done: first, how the build machine fetches every
+   machine's segments; then the AWS resources, `builds-sync` and
+   `voice-runtime` reworked, `voice build` embedding the index,
+   `voice publish`, the pipeline state's encrypted directory, the
+   session-text directory, the wrapped-key record, the S3 reader for live
+   records, enrolment, revocation and `replace-build-machine`.
+7. The review page showing when a rebuild is due (§8.5). Then the box tests
+   of every changed package, and releases of `builds-sync`,
+   `voice-runtime` and the pipeline; then the first `voice publish` and
+   the first decision build.
+8. Each machine enrolled, a managed machine only once its TPM is on, with
+   the CLAUDE.md section (§3.6) added as it is. Then the
+   `/code-review --comment` check (§8.2), and the check of the upkeep on
+   real drafts once 20 edited drafts have built up.
+9. `question-store` (§8.4), with where `questions.jsonl` lives settled first.
+10. `decision-runtime` (§8.3): the start-up blocks, gates, reviewers, lookup,
+    decision log and trust levels (§4.12); the GSD adapter; Rule 4 stops
+    parked through `question-store`; the deferred-tool reminder, with its
+    host package settled first. Box tests, then its release.
+11. The review session's Decisions tab (§4.13), once the decision log has
+    entries.
+12. The OpenSpec and grill-with-docs items (§8.3), each when that tool comes
+    into use.
+
+Outside the order: §8.5's estimates and costs are measured as each first
+runs; the changes owed to `claude-package-kit` go to that project.
 
 ### 8.1 Sources and corpus
 
