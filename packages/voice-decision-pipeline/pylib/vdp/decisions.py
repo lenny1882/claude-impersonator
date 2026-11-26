@@ -381,3 +381,266 @@ def shown_prompt():
     return {"version": prompt_version(c), "system": system_prompt(c), "unit": c["unit"], "end": c["end"],
             "kinds": c["kinds"], "endings": list(ENDINGS), "origins": list(ORIGINS),
             "decided_by": list(DECIDED_BY), "outcomes": list(OUTCOMES)}
+
+
+# --- the passes ------------------------------------------------------------------------------
+
+PASSES = {"first": "extract_first", "second": "extract_second"}
+COMPARED = ("kind", "origin", "ending", "decided_by", "outcome", "recommended")
+CHECK_SIZE = 120
+CHECK_MAX_WRONG = 6
+DISAGREE_SAMPLE = 60
+CATCH_BAR = 0.95
+SURE = 0.95
+
+
+def path(*p):
+    return state.path("decisions", *p)
+
+
+def pass_file(which):
+    return path(f"{which}.jsonl")
+
+
+def read_pass(which):
+    """{unit id: row} of a pass under the current prompt; the last row wins."""
+    pv = prompt_version()
+    out = {}
+    for r in state.read_jsonl(pass_file(which)):
+        if r.get("prompt") == pv:
+            out[r["unit"]] = r
+    return out
+
+
+def sample_state():
+    return state.read_json(path("sample.json"), None) or {"step": 1}
+
+
+def to_send(us):
+    """The units the passes read: every candidate and the sample's units."""
+    s = sample(us, sample_state()["step"])
+    return [u for u in us if u["candidate"] or u["id"] in s]
+
+
+def run(which, log=print):
+    """One pass over the units still to read under the current prompt, in
+    batches; a usage limit stops it cleanly (exit 6) after the last whole
+    batch, and the same command resumes."""
+    from . import model, voice
+    if which not in PASSES:
+        raise SystemExit(f"voice-decision-pipeline: unknown pass {which}")
+    require_approved()
+    voice.require_sendable()
+    c = cfg()
+    allu = units(log=log)
+    state.write_jsonl(path("units.jsonl"), allu)
+    us = to_send(allu)
+    done = read_pass(which)
+    todo = [u for u in us if u["id"] not in done]
+    pv = prompt_version()
+    system, sch, b = system_prompt(c), schema(c), c["batch"]
+    log(f"== decisions {which}: {len(todo)} of {len(us)} units to send, {(len(todo) + b - 1) // b} calls, prompt {pv}")
+    sent = 0
+    for i in range(0, len(todo), b):
+        chunk = todo[i:i + b]
+        try:
+            ans = model.call(PASSES[which], system, render(chunk), sch, log=log)
+        except model.UsageLimit as e:
+            log(f"  stop  usage limit after {sent} units: {e}; run the same command again to resume")
+            return 6
+        got = {x["n"]: x["decisions"] for x in ans["stretches"]}
+        rows = [{"unit": u["id"], "source": u["source"], "decisions": got[n], "prompt": pv,
+                 "model": model.name(PASSES[which])} for n, u in enumerate(chunk, 1) if n in got]
+        with open(pass_file(which), "a", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r, sort_keys=True, ensure_ascii=False) + "\n")
+        sent += len(chunk)
+        log(f"  batch {i // b + 1}: {len(rows)} read" + (f", {len(chunk) - len(rows)} left for the next run"
+                                                       if len(rows) < len(chunk) else "") + f" ({sent}/{len(todo)})")
+    log(f"  ok    decisions {which}: {len(read_pass(which))} units read")
+    return 0
+
+
+def short(case):
+    """The short answers two passes are compared on."""
+    return {"kind": case["kind"], "origin": case["origin"], "ending": case["ending"],
+            "decided_by": case["decided_by"], "outcome": case["outcome"],
+            "recommended": bool((case.get("recommended_last") or "").strip())}
+
+
+def _key(case):
+    return (case["kind"], case["question"].lower())
+
+
+def compare(a, b):
+    """Where two passes' readings of a unit differ: [field] (empty when they
+    agree). Cases are paired in order of kind and question."""
+    if bool(a) != bool(b):
+        return ["decision"]
+    if len(a) != len(b):
+        return ["count"]
+    out = []
+    for x, y in zip(sorted(a, key=_key), sorted(b, key=_key)):
+        sx, sy = short(x), short(y)
+        out += [k for k in COMPARED if sx[k] != sy[k] and k not in out]
+    return out
+
+
+def disagreements():
+    """[{unit, source, fields}] for every unit both passes read and disagree on."""
+    f, s = read_pass("first"), read_pass("second")
+    out = []
+    for u in sorted(set(f) & set(s)):
+        d = compare(f[u]["decisions"], s[u]["decisions"])
+        if d:
+            out.append({"unit": u, "source": f[u]["source"], "fields": d})
+    return out
+
+
+def grades_file():
+    return path("disagreement-grades.json")
+
+
+def draw_disagreements(new=False):
+    """The owner's sample of disagreements, spread over sources, drawn once a
+    round."""
+    cur = state.read_json(grades_file(), None)
+    if cur and not new:
+        return cur
+    ds = disagreements()
+    by = defaultdict(list)
+    for d in ds:
+        by[d["source"]].append(d["unit"])
+    rnd = random.Random(f"decisions-disagree-{(cur or {}).get('round', 0) + 1}")
+    for v in by.values():
+        v.sort()
+        rnd.shuffle(v)
+    ids = []
+    while len(ids) < DISAGREE_SAMPLE and any(by.values()):
+        for k in sorted(by):
+            if by[k] and len(ids) < DISAGREE_SAMPLE:
+                ids.append(by[k].pop())
+    d = {"round": (cur or {}).get("round", 0) + 1, "prompt": prompt_version(), "ids": ids,
+         "answers": (cur or {}).get("answers", {}) if not new else {},
+         "earlier": ((cur or {}).get("earlier", []) + [cur]) if (cur and new) else (cur or {}).get("earlier", [])}
+    state.write_json(grades_file(), d)
+    return d
+
+
+def final():
+    """{unit id: [case]}: the second pass's reading, or the one the owner
+    picked for a graded disagreement; a unit graded "neither" is left out
+    until it is read again."""
+    f, s = read_pass("first"), read_pass("second")
+    g = (state.read_json(grades_file(), None) or {}).get("answers", {})
+    out = {}
+    for u, r in s.items():
+        pick = (g.get(u) or {}).get("pick")
+        if pick == "neither":
+            continue
+        out[u] = (f.get(u) or r)["decisions"] if pick == "first" else r["decisions"]
+    return out
+
+
+def check_file():
+    return path("case-check.json")
+
+
+def draw_check(new=False):
+    """The case check: CHECK_SIZE cases spread across source and kind."""
+    cur = state.read_json(check_file(), None)
+    if cur and not new and cur.get("prompt") == prompt_version():
+        return cur
+    fin = final()
+    src = {u: r["source"] for u, r in read_pass("second").items()}
+    cells = defaultdict(list)
+    for u, cs in fin.items():
+        for k, cs_ in enumerate(cs):
+            cells[(src.get(u), cs_["kind"])].append(f"{u}#{k}")
+    rnd = random.Random(f"decisions-check-{(cur or {}).get('round', 0) + 1}")
+    for v in cells.values():
+        v.sort()
+        rnd.shuffle(v)
+    ids = []
+    while len(ids) < CHECK_SIZE and any(cells.values()):
+        for k in sorted(cells, key=str):
+            if cells[k] and len(ids) < CHECK_SIZE:
+                ids.append(cells[k].pop())
+    d = {"round": (cur or {}).get("round", 0) + 1, "prompt": prompt_version(), "ids": ids, "answers": {},
+         "earlier": ((cur or {}).get("earlier", []) + [cur]) if cur else []}
+    state.write_json(check_file(), d)
+    return d
+
+
+def check_result():
+    d = state.read_json(check_file(), None) or {}
+    if not d.get("ids"):
+        return {"drawn": False}
+    a = d["answers"]
+    wrong = sum(1 for x in a.values() if x == "wrong")
+    done = len(a) == len(d["ids"])
+    return {"drawn": True, "round": d["round"], "size": len(d["ids"]), "answered": len(a), "wrong": wrong,
+            "done": done, "passed": done and wrong <= CHECK_MAX_WRONG, "failed": wrong > CHECK_MAX_WRONG}
+
+
+def case(ref):
+    """The final case a check id (unit#k) names, with its unit."""
+    u, k = ref.rsplit("#", 1)
+    cs = final().get(u) or []
+    return cs[int(k)] if int(k) < len(cs) else None
+
+
+def _beta(rnd, a, b):
+    x, y = rnd.gammavariate(a, 1), rnd.gammavariate(b, 1)
+    return x / (x + y)
+
+
+def catch_rate(us=None):
+    """How much of the decisions the filter catches (PLAN §4.9): decisions in
+    candidate units, against the share of sampled units holding one, scaled
+    to the whole pool. Sure is the share of draws (the voice validation's
+    calculation, flat priors) at or above CATCH_BAR."""
+    from .validate import DRAWS
+    us = us if us is not None else (list(saved_units().values()) or units(log=lambda *a: None))
+    fin = final()
+    step = sample_state()["step"]
+    sam = sample(us, step)
+    pool = sum(1 for u in us if not u["candidate"])
+    cand = [u["id"] for u in us if u["candidate"] and u["id"] in fin]
+    dc = sum(1 for u in cand if fin[u])
+    read = [u for u in sam if u in fin]
+    ms = sum(1 for u in read if fin[u])
+    n = len(read)
+    if not n or not cand:
+        return {"step": step, "sampled": len(sam), "read": n, "state": "not measured"}
+    rnd = random.Random(f"decisions-catch-{step}-{n}-{ms}")
+    draws = []
+    for _ in range(DRAWS):
+        miss = _beta(rnd, 1 + ms, 1 + n - ms) * pool
+        draws.append(dc / (dc + miss) if dc + miss else 1.0)
+    sure_above = sum(1 for x in draws if x >= CATCH_BAR) / len(draws)
+    est = dc / (dc + ms / n * pool) if dc + ms else 1.0
+    stat = ("passed" if sure_above >= SURE else "failed" if 1 - sure_above >= SURE else
+            "sample more" if step * cfg()["sample_step"] < 1 else "pool exhausted")
+    return {"step": step, "sampled": len(sam), "read": n, "missed": ms, "candidates_with_decisions": dc,
+            "pool": pool, "estimate": round(est, 3), "sure_at_least": round(sure_above, 3), "state": stat}
+
+
+def sample_more(log=print):
+    s = sample_state()
+    s["step"] += 1
+    state.write_json(path("sample.json"), s)
+    log(f"  ok    catch-rate sample at step {s['step']}: run 'decisions extract' and 'decisions extract "
+        "--second' to read the new units")
+
+
+def saved_units():
+    """{unit id: unit} as the last pass wrote them, for the review pages."""
+    return {u["id"]: u for u in state.read_jsonl(path("units.jsonl"))}
+
+
+def status():
+    f, s = read_pass("first"), read_pass("second")
+    return {"prompt": prompt_version(), "approved": approved(), "first": len(f), "second": len(s),
+            "disagreements": len(disagreements()) if f and s else None, "check": check_result(),
+            "catch": catch_rate() if s else None}

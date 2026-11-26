@@ -306,6 +306,20 @@ def cmd_decisions(a):
             print(f"  {s}: {c[(s, True)]} candidate units, {c[(s, False)]} in the sample pool")
         print(f"  first sample step: {len(decisions.sample(us))} units")
         return 0
+    if a.step == "extract":
+        with state.lock():
+            rc = decisions.run("second" if a.second else "first")
+            if not rc and decisions.read_pass("first") and decisions.read_pass("second"):
+                decisions.draw_disagreements(new=a.new_sample)
+                decisions.draw_check(new=a.new_sample)
+            return rc
+    if a.step == "sample-more":
+        with state.lock():
+            decisions.sample_more()
+        return 0
+    if a.step == "status":
+        print(json.dumps(decisions.status(), indent=1))
+        return 0
     raise SystemExit(f"unknown decisions step {a.step}")
 
 
@@ -340,7 +354,10 @@ def main(argv=None):
     s = sub.add_parser("upkeep"); s.add_argument("action", choices=["import"]); s.add_argument("file")
     s.set_defaults(f=cmd_upkeep)
     s = sub.add_parser("due"); s.set_defaults(f=cmd_due)
-    s = sub.add_parser("decisions"); s.add_argument("step", choices=["prompt", "units"])
+    s = sub.add_parser("decisions"); s.add_argument("step", choices=["prompt", "units", "extract", "sample-more",
+                                                                    "status"])
+    s.add_argument("--second", action="store_true", help="extract: the second model's blind pass")
+    s.add_argument("--new-sample", action="store_true", help="extract: draw the disagreement sample and case check afresh")
     s.set_defaults(f=cmd_decisions)
     s = sub.add_parser("voice")
     s.add_argument("step", choices=["label", "holdout", "rules", "guide", "drafter", "settings", "validate", "pairs",

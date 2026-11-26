@@ -123,6 +123,7 @@ anonymising map, the mining and batch decisions, the inputs with their
     voice guide
     voice validate [--limit N] [--batch]
     voice pairs [--more <audience> | --drop <pair,...> | --redraw <audience> | --redraw all]
+    decisions prompt | units | extract [--second] [--new-sample] | sample-more | status
     voice upkeep [--suggest] [--end-session]
     voice build
     voice publish
@@ -233,6 +234,46 @@ Run in order, each in your own shell (each logs to
    matching first (below), so messages that started as drafts stay out of
    its exemplars.
 
+## Decision extraction
+
+Reads the anonymised copies for the decisions in them (PLAN §4.9). Each
+command logs to `/tmp/voice-decision-pipeline-decisions-<step>.log`.
+
+1. `decisions prompt` prints the prompt both passes read, with the kinds'
+   definitions (`libraries-tooling`, `code-structure`, `test-approach`,
+   `other`) and the fixed answers; the review page's Voice build > Decision
+   extraction > Prompt shows the same with an "Approve this prompt" button.
+   No pass runs until the current version is approved; a change to the
+   prompt, the kinds, the fields or the two models (`settings.json`'s
+   `decisions` section, the `extract_first` and `extract_second` models)
+   makes a new version to approve.
+2. `decisions units` counts what would be read, sending nothing. A unit is
+   a stretch read as a whole: a transcript candidate and the next 6
+   messages of its session, a Slack thread, a Bitbucket PR, or one GSD
+   record (a `CONTEXT.md` decision carries the question from its discuss
+   session where one is found). Candidates: every GSD record and
+   AskUserQuestion answer, a reply to Claude's numbered choices, a
+   correction of Claude, and any of your messages matching the filter's
+   wording. Every other message of yours is a unit in the catch-rate
+   sample's pool.
+3. `decisions extract`: Sonnet 5.5 reads every candidate unit and the
+   sample's units, 4 a call. `decisions extract --second`: Opus 5.5 reads
+   them all again, blind. A usage limit stops either cleanly (exit 6); the
+   same command resumes. Once both have read everything, the sample of 60
+   disagreements and the case check of 120 are drawn (`--new-sample` draws
+   them afresh).
+4. On the review page: the disagreements (pick the side that holds the
+   decisions as made, or Neither) and the case check (more than 6 wrong
+   fails: the prompt is changed and both passes read again). The final
+   reading is the second pass's, or the side you picked.
+5. The catch rate on Voice build > Decision extraction: it passes once it
+   is 95% sure at least 95% of decisions are caught, and fails once it is
+   95% sure fewer are. In between, `decisions sample-more` adds another 10%
+   to the sample, which both passes then read.
+
+`extract gsd` also reads each `[Rule N - Type]` deviation entry in a
+`SUMMARY.md`, tagged `deviation:rule-N`.
+
 ## Upkeep from drafts
 
 `voice-runtime` records each draft Claude writes in your voice, the version
@@ -315,6 +356,7 @@ directory and an encrypted backup to S3 after each command:
 | `label-check.json`, `disagreement-grades.json` | your label check and disagreement grades |
 | `holdouts.json` | the held-back items and the validation run |
 | `own-rules.md` | your own rules, first in the guide; an audience's section for that audience only |
+| `decisions/` | the units read, both passes' readings, the approved prompt version, the disagreement grades, the case check, the sample step |
 | `upkeep/` | the draft records, the matches, the review session's answers and suggestions, `due.json` |
 | `anon/drafts.jsonl` | the drafts' anonymised copy |
 | `struck-rules.md` | corpus rules and never-say phrases you struck, left out of validation and builds |

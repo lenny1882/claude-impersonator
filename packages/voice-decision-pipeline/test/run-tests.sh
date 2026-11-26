@@ -836,7 +836,8 @@ for st in "$VE" "$TMP/vfresh"; do
   RP=$(VDP_STATE="$st" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp review --port 0 --no-browser > "$TMP/vr-empty.out" 2>&1 & echo $!)
   for _ in $(seq 50); do grep -q 'http://127' "$TMP/vr-empty.out" 2>/dev/null && break; sleep 0.1; done
   EU=$(grep -o 'http://127.0.0.1:[0-9]*/' "$TMP/vr-empty.out")
-  for pg in "" voice voice/labels voice/disagree voice/pairs voice/judge voice/report voice/upkeep leaks; do
+  for pg in "" voice voice/labels voice/disagree voice/pairs voice/judge voice/report voice/upkeep \
+            voice/decisions voice/decisions/prompt voice/decisions/check voice/decisions/disagree leaks; do
     code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$EU$pg")
     case "$code" in 200|400) ok "page /$pg on $name answers ($code)" ;;
       *) no "page /$pg on $name answers" "HTTP $code: $(tail -2 "$TMP/vr-empty.out")" ;; esac
@@ -1990,6 +1991,24 @@ if "$PY" -c 'import numpy' 2>/dev/null; then
            PYTHONPATH="$REPO/pylib:$TMP/upylib" "$PY" "$REPO/test/upkeep_tests.py" 2>&1)
 else
   no "upkeep tests" "$PY has no numpy; run them with embedding-lib's venv python (VDP_TEST_PY)"
+fi
+
+# --- decisions (PLAN §4.9) ------------------------------------------------------
+
+echo "decisions"
+DST="$TMP/dstate"; mkdir -p "$DST" "$TMP/dbin" "$TMP/dpylib"
+"$PY" "$REPO/test/voice_fixtures.py" "$DST" "$TMP/dbin" "$TMP/dpylib"
+if "$PY" -c 'import numpy' 2>/dev/null; then
+  while IFS= read -r line; do
+    case "$line" in
+      "ok   "*) ok "${line#ok   }" ;;
+      "FAIL "*) no "${line#FAIL }" "see above" ;;
+      *) printf '    %s\n' "$line" ;;
+    esac
+  done < <(VDP_STATE="$DST" VDP_CLAUDE="$TMP/dbin/claude" FAKE_CLAUDE_COUNT="$TMP/dcalls" \
+           PYTHONPATH="$REPO/pylib:$TMP/dpylib" "$PY" "$REPO/test/decisions_tests.py" 2>&1)
+else
+  no "decisions tests" "$PY has no numpy; run them with embedding-lib's venv python (VDP_TEST_PY)"
 fi
 
 # --- real -------------------------------------------------------------------

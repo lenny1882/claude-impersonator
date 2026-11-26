@@ -12,7 +12,10 @@ The stand-in claude answers by the JSON schema it is given: labels (a "?"
 makes "ask", else "status"; the second model also adds "thank" to messages
 holding "thanks", so the two disagree there), guide rules, a draft, judge
 scores (the draft made with 5 exemplars scores best), upkeep's rule
-suggestions (one line from the first three drafts, one from a single draft). FAKE_CLAUDE_LIMIT=<n>
+suggestions (one line from the first three drafts, one from a single draft),
+decision extraction (a decision in each stretch holding "rather" or a numbered
+option; the second model calls one holding "postgres" code-structure, so the
+two passes disagree there). FAKE_CLAUDE_LIMIT=<n>
 makes the n-th call and after answer with a usage limit (worded as
 FAKE_CLAUDE_LIMIT_TEXT when set); calls are counted
 in FAKE_CLAUDE_COUNT (a file).
@@ -138,6 +141,20 @@ elif "brief" in props:
 elif "text" in props:
     k = prompt.split("Examples of messages")[1].count("---") + 1
     ans = {"text": f"draft with {k} examples" + (" from a brief" if "\nbrief: " in prompt else "")}
+elif "stretches" in props:
+    out = []
+    for m in re.finditer(r"### Stretch (\d+) \([^)]*\)\n(.*?)(?=### Stretch |\nGive the decisions)", prompt, re.S):
+        t = m.group(2)
+        cs = []
+        if re.search(r"rather|\b[12]\. ", t):
+            kind = "code-structure" if ("opus" in model and "postgres" in t.lower()) else "libraries-tooling"
+            cs.append({"question": "which store to use", "options_offered": ["postgres", "sqlite"], "options_added": [],
+                       "recommended_first": "postgres", "recommended_last": "postgres", "ending": "option",
+                       "choice": "postgres", "origin": "accepted_recommendation", "decided_by": "owner", "from": "",
+                       "reason": "it scales", "reason_inferred": False, "kind": kind, "outcome": "kept",
+                       "outcome_ref": "", "quote": t[:40]})
+        out.append({"n": int(m.group(1)), "decisions": cs})
+    ans = {"stretches": out}
 elif "suggestions" in props:
     ns = sorted({int(n) for n in re.findall(r"### Draft (\d+) ", prompt)})
     ans = {"suggestions": [{"line": "Don't open with a greeting.", "drafts": ns[:3]},

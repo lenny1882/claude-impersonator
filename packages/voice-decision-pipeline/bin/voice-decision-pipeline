@@ -92,6 +92,11 @@ BUILD THE VOICE MODEL (sends anonymised text through claude -p, PLAN §3)
                              your Bitbucket items as text, written to the state
   decisions prompt           the decision-extraction prompt, kinds and fields to approve
   decisions units            count what the extraction would read (nothing sent)
+  decisions extract [--second] [--new-sample]
+                             read the units for decisions (Sonnet), or the second blind
+                             pass (Opus); resumes after the last finished batch
+  decisions sample-more      add 10% more to the catch-rate sample
+  decisions status           passes, disagreements, case check, catch rate (JSON)
   upkeep import <drafts.jsonl>
                              add a machine's voice-runtime draft records
   due                        whether a voice review session is due (JSON)
