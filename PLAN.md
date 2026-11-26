@@ -414,8 +414,22 @@ Not sources:
 - A skill holds the guide and calls the exemplar search, a local script
   that takes audience, purposes and a description of the situation and
   returns the closest messages (the count set in §3.7), anonymised.
-- A line in `~/.claude/CLAUDE.md` says to load it before any draft for other
-  people, because a skill alone loads only when its description matches.
+- A section in `~/.claude/CLAUDE.md` says to load it before any draft for
+  other people, because a skill alone loads only when its description
+  matches. Its wording:
+
+  ```markdown
+  # Drafts for other people use the voice skill
+
+  Before drafting anything I will send to other people — a Slack message or
+  reply, a PR description, a PR review comment, a Jira comment, an email —
+  load the `voice-runtime` skill and draft by it, in the main session and in
+  subagents alike. For those drafts the skill's guide wins over the writing
+  rules in this file; those rules still govern everything you write to me.
+  ```
+
+  The owner adds it once `voice-runtime` is installed; it does nothing
+  before then.
 - The skill serves the main session and subagents alike: a subagent with
   the Skill tool sees the same skill list.
 - The skill gives Claude the same drafting rules validation uses (§3.7).
@@ -1398,8 +1412,8 @@ the Claude Code facts hold for version 2.1.332:
 
 ### 8.2 Voice
 
-- The line in `~/.claude/CLAUDE.md` that loads the voice skill; the owner
-  approves its wording.
+- The `~/.claude/CLAUDE.md` section that loads the voice skill (wording in
+  §3.6), added by the owner once `voice-runtime` is installed.
 - A test that a drafting subagent loads the skill, and whether
   `/code-review --comment` words its comments in reviewer subagents.
 - The §3.8 upkeep: matching edited drafts to sent messages, and review
