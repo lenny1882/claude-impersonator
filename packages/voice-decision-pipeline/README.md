@@ -99,6 +99,8 @@ anonymising map, the mining and batch decisions, the inputs with their
     init-inputs <file>           copy build-inputs.json into state
     pick-repos <ws/repo>... [--me <id>] [--remove <ws/repo>]
     extract <slack|transcripts|gsd|bitbucket|all> [--gsd-root <dir>]
+                                 GSD repos are searched for under --gsd-root,
+                                 else the inputs' "gsd_roots"; with neither it refuses
     import-transcripts <dir> [--machine <name>]
     anonymise                    anonymised copies and mining candidates
     index                        embed your voice items (embedding-lib)

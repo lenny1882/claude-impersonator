@@ -6,6 +6,10 @@ and each "###" subsection inside a phase CONTEXT.md's <decisions> block
 (archived milestones included). A "Claude's Discretion" subsection is
 tagged so the decision extraction can weight it by origin (PLAN §4.9).
 Repos whose .planning/ holds neither yet are read once they do.
+
+The directories searched for repos come from --gsd-root, else the inputs'
+gsd_roots; with neither the extraction refuses, so a build machine whose
+disk is laid out differently never extracts nothing without saying so.
 """
 
 import glob
@@ -17,7 +21,6 @@ from datetime import datetime, timezone
 
 from . import inputs, record, textutil
 
-DEFAULT_ROOTS = ["/mnt/sda/Development"]
 MAX_DEPTH = 5
 SKIP_DIRS = {"node_modules", ".git", "build", "dist", ".dart_tool", "Pods", "vendor"}
 
@@ -82,7 +85,13 @@ def context_decisions(text):
 def extract(d, counts=None, roots=None):
     counts = counts if counts is not None else Counter()
     me = inputs.me(d)
-    roots = roots or d.get("gsd_roots") or DEFAULT_ROOTS
+    roots = roots or d.get("gsd_roots")
+    if not roots:
+        raise SystemExit('voice-decision-pipeline: no GSD roots: add "gsd_roots": ["<directory>", ...] to the '
+                         "inputs (init-inputs --force with it in build-inputs.json), or pass --gsd-root <dir>")
+    missing = [r for r in roots if not os.path.isdir(r)]
+    if missing:
+        raise SystemExit(f"voice-decision-pipeline: GSD root not found: {', '.join(missing)}")
     stats = Counter()
     recs = []
     struck = set(d["struck_conversations"])

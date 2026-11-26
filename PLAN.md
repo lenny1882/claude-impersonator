@@ -21,7 +21,7 @@ holds checked facts. §8 holds what is still to build.
 | Slack export (JSON) | voice and decisions | the conversations kept in the pipeline's inputs |
 | Bitbucket PR descriptions and comments | voice (technical team audience) and code-level decisions | `oneiota` repos picked in the inputs; a repo whose last update is older than `bitbucket.CUTOFF` is skipped |
 | Claude Code transcripts (`~/.claude/projects/*/*.jsonl`) | technical decisions only, never voice | everything kept from now on |
-| GSD written records: decisions in `.planning/STATE.md`, phase `CONTEXT.md` | decisions, weighted by origin (§4.9) | every repo with `.planning/`; files are read once they exist |
+| GSD written records: decisions in `.planning/STATE.md`, phase `CONTEXT.md` | decisions, weighted by origin (§4.9) | every repo with `.planning/` under the inputs' `gsd_roots` (or `--gsd-root`); with neither the extraction refuses; files are read once they exist |
 | grill-with-docs ADRs (`docs/adr/`) and `GLOSSARY.md` | not used until grill-with-docs is in use; a reader is added then | none |
 | `/gsd:profile-user` output | decisions | run on anonymised copies only (§2.3) |
 
@@ -1464,10 +1464,9 @@ says otherwise.
 
 1. The owner turns on the build machine's TPM in its BIOS, creates the AWS
    account and creates the builds repo. Runs alongside steps 2–4.
-2. Whether the GSD extraction's root stays a default or always comes from
-   the inputs (§8.5); the transcript marker that tells Claude's
-   recommendations apart (§8.3); then decision extraction from every source
-   (§8.1), with the `/gsd:profile-user` sample copied to the state (§8.5).
+2. The transcript marker that tells Claude's recommendations apart (§8.3);
+   then decision extraction from every source (§8.1), with the
+   `/gsd:profile-user` sample copied to the state (§8.5).
 3. The decision model in the pipeline: principles, priorities, tech
    positions, client constraints, cases and the agent block (§4.10), then
    validation on the held-back cases, graded by the owner (§4.11).
@@ -1556,9 +1555,6 @@ runs; the changes owed to `claude-package-kit` go to that project.
 - The by-hand `/gsd:profile-user` run copies the sample
   (`{temp_dir}/profile-sample.jsonl`) and the agent's `<analysis>` block to
   the pipeline's state before the workflow deletes its temp directory.
-- The GSD extraction's default root (`gsd.py` `DEFAULT_ROOTS`) is a path
-  on the build machine; whether it stays a default or must always come
-  from the inputs' `gsd_roots` is open.
 - Changes owed to `claude-package-kit`: its installers don't log to a
   file; `update.sh`'s confirmation prompt reads `/dev/tty`, which fails
   under `!`; `update.sh` reads `versions.txt` through a CDN cache of up to

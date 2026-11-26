@@ -87,6 +87,20 @@ vdp init-inputs "$F/build-inputs.json" >/dev/null 2>&1 \
   && no "init-inputs refuses to overwrite" "it overwrote" || ok "init-inputs refuses to overwrite"
 check "struck conversation names become ids" q '.struck_conversations == ["CSTRUCKXX"]' "$ST/inputs.json"
 check "pick-repos records repos and the owner's account" vdp pick-repos ws/new-repo ws/old-repo --me '{me-uuid}'
+out=$(vdp extract gsd 2>&1); rc=$?
+[ $rc != 0 ] && [ "$(printf '%s\n' "$out" | grep -c .)" -le 2 ] && printf '%s' "$out" | grep -q gsd_roots \
+  && ok "extract gsd refuses in one line naming gsd_roots when neither it nor --gsd-root is given" \
+  || no "extract gsd refuses in one line naming gsd_roots when neither it nor --gsd-root is given" "exit $rc: $out"
+out=$(vdp extract gsd --gsd-root "$F/nowhere" 2>&1); rc=$?
+[ $rc != 0 ] && printf '%s' "$out" | grep -q 'GSD root not found' \
+  && ok "extract gsd refuses a root that doesn't exist" || no "extract gsd refuses a root that doesn't exist" "exit $rc: $out"
+"$PY" - "$ST/inputs.json" "$F/dev" <<'EOF'
+import json, sys
+d = json.load(open(sys.argv[1])); d["gsd_roots"] = [sys.argv[2]]; json.dump(d, open(sys.argv[1], "w"))
+EOF
+out=$(vdp extract gsd 2>&1); rc=$?
+[ $rc = 0 ] && [ -s "$ST/corpus/gsd.jsonl" ] && ok "extract gsd reads the inputs' gsd_roots" \
+  || no "extract gsd reads the inputs' gsd_roots" "exit $rc: $out"
 out=$(vdp extract all --gsd-root "$F/dev" 2>&1); rc=$?; EXTRACT_OUT=$out
 [ $rc = 0 ] && ok "extract all" || no "extract all" "$out"
 
