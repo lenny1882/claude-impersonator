@@ -852,6 +852,12 @@ plan text lives and which event marks it final:
   records only the final answer.
 - A "You decide" answer is a delegation: it counts towards no principle;
   what Claude then chose is weak evidence until confirmed.
+- What Claude recommended: in an AskUserQuestion, the option labelled
+  "(Recommended)" (at most one a question); in Claude's prose replies no
+  wording marks a recommendation reliably, so the extraction call names, for
+  each candidate it reads, the option Claude recommended, or none. A wrong
+  reading shows in the decision review, where answers are checked against
+  recommendations.
 
 ### 4.10 Output
 
@@ -1464,8 +1470,7 @@ says otherwise.
 
 1. The owner turns on the build machine's TPM in its BIOS, creates the AWS
    account and creates the builds repo. Runs alongside steps 2–4.
-2. The transcript marker that tells Claude's recommendations apart (§8.3);
-   then decision extraction from every source (§8.1), with the
+2. Decision extraction from every source (§8.1), with the
    `/gsd:profile-user` sample copied to the state (§8.5).
 3. The decision model in the pipeline: principles, priorities, tech
    positions, client constraints, cases and the agent block (§4.10), then
@@ -1517,8 +1522,6 @@ runs; the changes owed to `claude-package-kit` go to that project.
 
 ### 8.3 Decisions
 
-- Extraction tells Claude's recommendations apart from the rest of a
-  transcript by a marker that holds across the transcript corpus.
 - `decision-runtime`'s GSD adapter looks up each auto-selected
   `checkpoint:decision`: a usable principle picking the same option lets it
   proceed, logged; otherwise, and always at trust level 0, it is parked.
