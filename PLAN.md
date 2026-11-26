@@ -435,7 +435,9 @@ Not sources:
   subagent told to draft a Slack message loads the skill itself, with or
   without the CLAUDE.md section: for a request that names a Slack message,
   the skill's description is enough
-  (`packages/voice-runtime/test/docker/skill-loading.sh`).
+  (`packages/voice-runtime/test/docker/skill-loading.sh`). The CLAUDE.md
+  section stays, for requests that don't name the kind of message, such
+  as a PR description written inside a coding task.
 - The skill gives Claude the same drafting rules validation uses (§3.7).
 
 ### 3.7 Validation
