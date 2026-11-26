@@ -10,7 +10,7 @@ VDP_STATE, VDP_CLAUDE and PYTHONPATH are set by run-tests.sh. Prints one
 import json
 import os
 
-from vdp import decisions, gsd, settings, state, voicereview
+from vdp import decisions, decisionsreview, gsd, settings, state
 
 RESULTS = []
 
@@ -79,16 +79,16 @@ try:
 except SystemExit as e:
     ran = "isn't approved" not in str(e)
 check("no pass runs before the prompt is approved", not ran)
-page = voicereview.get("/voice/decisions/prompt")
+page = decisionsreview.get("/decisions/prompt")
 check("the prompt page shows the prompt, the kinds and an approve button",
       "libraries-tooling" in page and "Approve this prompt" in page and "A decision is a choice" in page)
-voicereview.post("/api/voice/decisions-approve", {"version": decisions.prompt_version()})
+decisionsreview.post("/api/decisions/approve", {"version": decisions.prompt_version()})
 check("approving records the prompt version", decisions.approved())
 s = settings.load()
 s["decisions"]["kinds"] = {**s["decisions"]["kinds"], "other": "anything else at all"}
 state.write_json(settings.file(), s)
 check("a changed kind definition needs approving again", not decisions.approved())
-voicereview.post("/api/voice/decisions-approve", {"version": decisions.prompt_version()})
+decisionsreview.post("/api/decisions/approve", {"version": decisions.prompt_version()})
 
 # The passes.
 rc1 = decisions.run("first", log=lambda *a: None)
@@ -110,17 +110,17 @@ check("the disagreement sample and the case check are drawn", d["ids"] and c["id
 check("the final reading is the second pass's", all(cs and cs[0]["kind"] in decisions.cfg()["kinds"]
                                                      for cs in decisions.final().values() if cs))
 u = d["ids"][0]
-voicereview.post("/api/voice/decisions-disagree", {"unit": u, "pick": "first"})
+decisionsreview.post("/api/decisions/disagree", {"unit": u, "pick": "first"})
 check("a disagreement graded for the first pass takes its reading",
       decisions.final()[u][0]["kind"] == f[u]["decisions"][0]["kind"])
-voicereview.post("/api/voice/decisions-disagree", {"unit": u, "pick": "neither"})
+decisionsreview.post("/api/decisions/disagree", {"unit": u, "pick": "neither"})
 check("a unit graded Neither is left out", u not in decisions.final())
 for ref in c["ids"]:
-    voicereview.post("/api/voice/decisions-check", {"ref": ref, "verdict": "right"})
+    decisionsreview.post("/api/decisions/check", {"ref": ref, "verdict": "right"})
 r = decisions.check_result()
 check("a case check with nothing wrong passes", r["done"] and r["passed"], r)
-for pg in ("/voice/decisions", "/voice/decisions/check", "/voice/decisions/disagree"):
-    html = voicereview.get(pg)
+for pg in ("/decisions", "/decisions/check", "/decisions/disagree"):
+    html = decisionsreview.get(pg)
     check(f"page {pg} renders", html and "Traceback" not in html)
 k = decisions.catch_rate()
 check("the catch rate is worked out from the sample", "state" in k and k.get("read", 0) >= 0, k)

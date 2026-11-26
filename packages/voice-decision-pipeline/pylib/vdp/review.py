@@ -20,6 +20,9 @@ The jobs on it, all the owner's:
   - the voice build's checks under /voice (voicereview.py): the label
     check, second-model disagreements, blind pairs, the judge review and
     the validation report.
+  - decision extraction's pages under /decisions (decisionsreview.py): the
+    prompt and its approval, the passes' disagreements, the case check and
+    the catch rate.
 
 Served on 127.0.0.1 only, from this machine's state; real text appears on
 the mining and leak pages because the page never leaves the machine. Every click is
@@ -199,6 +202,7 @@ def home():
 <p><a href='/clients'>{len(added_clients())} added</a>.</p>
 <h2>What blocks the next batch</h2><ul>{g}</ul>
 {voice_home()}
+{decisions_home()}
 <h2>Sources</h2>
 <table><tr><th>Source</th><th>Records</th><th>Items</th><th>Approved batches</th>
 <th>Open batch</th><th>May be sent</th></tr>{''.join(rows)}</table>""")
@@ -210,6 +214,14 @@ def voice_home():
         return voicereview.home_section()
     except SystemExit as e:
         return f"<h2>Voice model</h2><p class=meta>{html.escape(str(e))}</p>"
+
+
+def decisions_home():
+    from . import decisionsreview
+    try:
+        return decisionsreview.home_section()
+    except SystemExit as e:
+        return f"<h2>Decision model</h2><p class=meta>{html.escape(str(e))}</p>"
 
 
 def clients_page():
@@ -667,6 +679,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, mapping())
             if u.path == "/batch":
                 return self._send(200, batch_page((q.get("source") or [""])[0]))
+            if u.path == "/decisions" or u.path.startswith("/decisions/"):
+                from . import decisionsreview
+                body = decisionsreview.get(u.path)
+                if body is not None:
+                    return self._send(200, body)
             if u.path.startswith("/voice"):
                 from . import voicereview
                 body = voicereview.get(u.path)
@@ -683,6 +700,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(self.rfile.read(n) or b"{}")
             p = urlparse(self.path).path
+            if p.startswith("/api/decisions/"):
+                from . import decisionsreview
+                out = decisionsreview.post(p, body)
+                if out is None:
+                    return self._send(404, "no such endpoint", "text/plain")
+                return self._send(200, out, "text/plain")
             if p.startswith("/api/voice/"):
                 from . import voicereview
                 out = voicereview.post(p, body)

@@ -241,8 +241,8 @@ command logs to `/tmp/voice-decision-pipeline-decisions-<step>.log`.
 
 1. `decisions prompt` prints the prompt both passes read, with the kinds'
    definitions (`libraries-tooling`, `code-structure`, `test-approach`,
-   `other`) and the fixed answers; the review page's Voice build > Decision
-   extraction > Prompt shows the same with an "Approve this prompt" button.
+   `other`) and the fixed answers; the review page's Decision extraction >
+   Prompt (`/decisions/prompt`) shows the same with an "Approve this prompt" button.
    No pass runs until the current version is approved; a change to the
    prompt, the kinds, the fields or the two models (`settings.json`'s
    `decisions` section, the `extract_first` and `extract_second` models)
@@ -266,7 +266,7 @@ command logs to `/tmp/voice-decision-pipeline-decisions-<step>.log`.
    decisions as made, or Neither) and the case check (more than 6 wrong
    fails: the prompt is changed and both passes read again). The final
    reading is the second pass's, or the side you picked.
-5. The catch rate on Voice build > Decision extraction: it passes once it
+5. The catch rate on the review page's Decision extraction (`/decisions`): it passes once it
    is 95% sure at least 95% of decisions are caught, and fails once it is
    95% sure fewer are. In between, `decisions sample-more` adds another 10%
    to the sample, which both passes then read.

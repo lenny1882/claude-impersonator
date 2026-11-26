@@ -839,7 +839,7 @@ for st in "$VE" "$TMP/vfresh"; do
   for _ in $(seq 50); do grep -q 'http://127' "$TMP/vr-empty.out" 2>/dev/null && break; sleep 0.1; done
   EU=$(grep -o 'http://127.0.0.1:[0-9]*/' "$TMP/vr-empty.out")
   for pg in "" voice voice/labels voice/disagree voice/pairs voice/judge voice/report voice/upkeep \
-            voice/decisions voice/decisions/prompt voice/decisions/check voice/decisions/disagree leaks; do
+            decisions decisions/prompt decisions/check decisions/disagree leaks; do
     code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$EU$pg")
     case "$code" in 200|400) ok "page /$pg on $name answers ($code)" ;;
       *) no "page /$pg on $name answers" "HTTP $code: $(tail -2 "$TMP/vr-empty.out")" ;; esac
