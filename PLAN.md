@@ -1359,6 +1359,11 @@ the Claude Code facts hold for version 2.1.332:
   with). GSD plugin agents fire all three (agent type `gsd:bm-executor`).
   On 2.1.332 a Workflow agent fired all three with `agent_type`
   `workflow-subagent` (`test/docker/hook-behaviour.sh`).
+- On 2.1.332 a `SubagentStart` hook's `additionalContext` reaches a
+  Workflow agent and a GSD plugin agent (`gsd:bm-doc-classifier`); a
+  Workflow agent launched with `agentType` Explore carries `agent_type`
+  Explore, and a `SubagentStart` hook matched on Explore fires for it
+  (`test/docker/hook-behaviour.sh context`).
 - `ExitPlanMode` isn't offered in print mode (`claude -p --permission-mode
   plan`), so plan-mode review is tested in an interactive session.
 - On 2.1.332, in an interactive session, a `PreToolUse` deny on
@@ -1458,41 +1463,38 @@ the Claude Code facts hold for version 2.1.332:
 says otherwise.
 
 1. The owner turns on the build machine's TPM in its BIOS, creates the AWS
-   account and creates the builds repo. Runs alongside steps 2–5.
-2. The `SubagentStart` tests: `additionalContext` reaching GSD plugin agents
-   and workflow agents, and the skip list matching workflow agents launched
-   with `agentType` (§8.3).
-3. Whether the GSD extraction's root stays a default or always comes from
+   account and creates the builds repo. Runs alongside steps 2–4.
+2. Whether the GSD extraction's root stays a default or always comes from
    the inputs (§8.5); the transcript marker that tells Claude's
    recommendations apart (§8.3); then decision extraction from every source
    (§8.1), with the `/gsd:profile-user` sample copied to the state (§8.5).
-4. The decision model in the pipeline: principles, priorities, tech
+3. The decision model in the pipeline: principles, priorities, tech
    positions, client constraints, cases and the agent block (§4.10), then
    validation on the held-back cases, graded by the owner (§4.11).
-5. The judge review of the voice validation run (§8.2), graded by the
-   owner. Runs alongside steps 2–10; not a gate.
-6. §8.6, once step 1 is done: first, how the build machine fetches every
+4. The judge review of the voice validation run (§8.2), graded by the
+   owner. Runs alongside steps 2–9; not a gate.
+5. §8.6, once step 1 is done: first, how the build machine fetches every
    machine's segments; then the AWS resources, `builds-sync` and
    `voice-runtime` reworked, `voice build` embedding the index,
    `voice publish`, the pipeline state's encrypted directory, the
    session-text directory, the wrapped-key record, the S3 reader for live
    records, enrolment, revocation and `replace-build-machine`.
-7. The review page showing when a rebuild is due (§8.5). Then the box tests
+6. The review page showing when a rebuild is due (§8.5). Then the box tests
    of every changed package, and releases of `builds-sync`,
    `voice-runtime` and the pipeline; then the first `voice publish` and
    the first decision build.
-8. Each machine enrolled, a managed machine only once its TPM is on, with
+7. Each machine enrolled, a managed machine only once its TPM is on, with
    the CLAUDE.md section (§3.6) added as it is. Then the
    `/code-review --comment` check (§8.2), and the check of the upkeep on
    real drafts once 20 edited drafts have built up.
-9. `question-store` (§8.4), with where `questions.jsonl` lives settled first.
-10. `decision-runtime` (§8.3): the start-up blocks, gates, reviewers, lookup,
+8. `question-store` (§8.4), with where `questions.jsonl` lives settled first.
+9. `decision-runtime` (§8.3): the start-up blocks, gates, reviewers, lookup,
     decision log and trust levels (§4.12); the GSD adapter; Rule 4 stops
     parked through `question-store`; the deferred-tool reminder, with its
     host package settled first. Box tests, then its release.
-11. The review session's Decisions tab (§4.13), once the decision log has
+10. The review session's Decisions tab (§4.13), once the decision log has
     entries.
-12. The OpenSpec and grill-with-docs items (§8.3), each when that tool comes
+11. The OpenSpec and grill-with-docs items (§8.3), each when that tool comes
     into use.
 
 Outside the order: §8.5's estimates and costs are measured as each first
@@ -1516,10 +1518,6 @@ runs; the changes owed to `claude-package-kit` go to that project.
 
 ### 8.3 Decisions
 
-- A test that the `SubagentStart` block's `additionalContext` reaches the
-  agent, for GSD plugin agents and workflow agents.
-- The `SubagentStart` skip list matches workflow agents launched with
-  `agentType`.
 - Extraction tells Claude's recommendations apart from the rest of a
   transcript by a marker that holds across the transcript corpus.
 - `decision-runtime`'s GSD adapter looks up each auto-selected
