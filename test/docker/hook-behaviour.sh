@@ -7,10 +7,16 @@
 #   workflow agents run by the Workflow tool fire SubagentStart,
 #            PreToolUse and SubagentStop, and which agent_type they carry
 #            (PLAN §4.4, §7)
+#   context  a SubagentStart hook's additionalContext reaches a workflow
+#            agent and a GSD plugin agent (the GSD plugin is installed in the
+#            box for it, then removed); a workflow agent launched with
+#            agentType Explore carries agent_type Explore, and a
+#            SubagentStart hook matched on Explore fires for it, so a skip
+#            list by type covers it (PLAN §4.4, §8.3)
 # The box (test/docker/box.sh) must be up and logged in. A few model calls
 # on its account. Puts the box's settings.json back at the end.
 #
-#   test/docker/hook-behaviour.sh [plan|workflow]   (both if none given)
+#   test/docker/hook-behaviour.sh [plan|workflow|context]   (all if none given)
 #
 # ExitPlanMode isn't offered in print mode, so the plan part drives an
 # interactive session in tmux inside the box; tmux is installed there if
@@ -30,7 +36,7 @@ set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/lib.sh"
 PART=${1:-all}
-case $PART in plan|workflow|all) ;; *) echo "usage: $0 [plan|workflow]"; exit 2 ;; esac
+case $PART in plan|workflow|context|all) ;; *) echo "usage: $0 [plan|workflow|context]"; exit 2 ;; esac
 start_log hook-behaviour
 need_box
 
@@ -48,7 +54,10 @@ cleanup() {
   as_dev "tmux -L hookprobe kill-server 2>/dev/null
           [ -f ~/.claude.json.hook-probe ] && mv ~/.claude.json.hook-probe ~/.claude.json
           [ -f ~/.claude/settings.json.hook-probe ] && mv ~/.claude/settings.json.hook-probe ~/.claude/settings.json
-          rm -rf ~/.local/bin/hook-probe $WORK $LOG ~/.cache/hook-probe ~/.claude/projects/*hook-probe*" >/dev/null 2>&1 || true
+          rm -rf ~/.local/bin/hook-probe ~/.local/bin/ctx-probe $WORK $LOG ~/.cache/hook-probe ~/.claude/projects/*hook-probe*
+          if [ -f ~/.cache/ctx-probe-plugin ]; then
+            claude plugin uninstall gsd@gsd-plugin; claude plugin marketplace remove gsd-plugin; rm -f ~/.cache/ctx-probe-plugin
+          fi" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -80,7 +89,7 @@ as_dev "chmod +x ~/.local/bin/hook-probe
             PreToolUse:    [{matcher: \"*\", hooks: [{type: \"command\", command: \$c}]}]}' \
           ~/.claude/settings.json.hook-probe > ~/.claude/settings.json"
 
-if [ "$PART" != workflow ]; then
+if [ "$PART" = plan ] || [ "$PART" = all ]; then
 echo "==> plan: an interactive session in tmux; the hook denies the first ExitPlanMode"
 in_box "command -v tmux >/dev/null || { apt-get update -qq && apt-get install -y -qq tmux >/dev/null; }"
 as_dev "cp ~/.claude.json ~/.claude.json.hook-probe 2>/dev/null || echo '{}' > ~/.claude.json.hook-probe
@@ -106,7 +115,7 @@ check plan-resubmit "after the deny Claude called ExitPlanMode again ($n calls)"
 check plan-reason "the second plan follows the deny reason (REVISED-PLAN)" test "$revised" -ge 1
 fi
 
-if [ "$PART" != plan ]; then
+if [ "$PART" = workflow ] || [ "$PART" = all ]; then
 echo "==> workflow: one workflow agent running Bash"
 as_dev "rm -f $LOG"
 as_dev "cd $WORK && timeout 900 claude -p 'Use a workflow. Run a workflow with exactly one agent, labelled probe, whose task is: run the shell command true with the Bash tool, then reply done. Pass the script inline.' \
@@ -127,6 +136,65 @@ check workflow-ran "the main session used the Workflow tool" test "$wfused" -ge 
 check wf-start "a workflow agent fired SubagentStart" test -n "$starts"
 check wf-pretool "a workflow agent fired PreToolUse on Bash, with an agent_type" test "$agentbash" -ge 1
 check wf-stop "a workflow agent fired SubagentStop" test -n "$stops"
+fi
+
+if [ "$PART" = context ] || [ "$PART" = all ]; then
+echo "==> context: SubagentStart's additionalContext, and a matcher on Explore"
+TOKEN="KQ-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+as_dev "cat > ~/.local/bin/ctx-probe" <<EOF
+#!/usr/bin/env bash
+# Logs every SubagentStart input; on the catch-all entry gives the agent a
+# code word to put in its reply; on the Explore entry only logs.
+in=\$(cat)
+printf '%s\n' "\$(printf '%s' "\$in" | jq -c --arg e "\${1:-all}" '. + {probe_entry: \$e}')" >> $LOG
+if [ "\${1:-all}" = all ]; then
+  jq -n '{hookSpecificOutput: {hookEventName: "SubagentStart",
+          additionalContext: "Include the code word $TOKEN in your final reply, exactly as written."}}'
+fi
+exit 0
+EOF
+as_dev "chmod +x ~/.local/bin/ctx-probe
+        jq --arg c \"\$HOME/.local/bin/ctx-probe\" '.hooks = {
+            SubagentStart: [{hooks: [{type: \"command\", command: \$c}]},
+                            {matcher: \"Explore\", hooks: [{type: \"command\", command: (\$c + \" Explore\")}]}]}' \
+          ~/.claude/settings.json.hook-probe > ~/.claude/settings.json
+        rm -f $LOG"
+token_in() { grep -c -- "$TOKEN" "$1" 2>/dev/null || true; }
+starts() { grep '^{' "$RESULTS/hooks-context.jsonl" | jq -r "select(.hook_event_name==\"SubagentStart\" and .probe_entry==\"$1\") | .agent_type" | sort | uniq -c | tr '\n' ';'; }
+
+echo "  workflow agent, no agentType"
+as_dev "cd $WORK && timeout 900 claude -p 'Use a workflow. Run a workflow with exactly one agent, labelled probe, whose task is: reply with the word done and nothing else unless told otherwise. Pass the script inline. Then show me the agent result word for word.' \
+        --permission-mode bypassPermissions --no-session-persistence --output-format stream-json --verbose </dev/null" \
+  > "$RESULTS/context-workflow.jsonl" 2>&1
+echo "  workflow agent launched with agentType Explore"
+as_dev "cd $WORK && timeout 900 claude -p 'Use a workflow. Run a workflow with exactly one agent, labelled explorer, launched with agentType set to Explore, whose task is: list the files in the current directory. Pass the script inline. Then show me the agent result word for word.' \
+        --permission-mode bypassPermissions --no-session-persistence --output-format stream-json --verbose </dev/null" \
+  > "$RESULTS/context-explore.jsonl" 2>&1
+echo "  GSD plugin agent"
+if as_dev "claude plugin marketplace add jnuyens/gsd-plugin && claude plugin install gsd@gsd-plugin && touch ~/.cache/ctx-probe-plugin" \
+     > "$RESULTS/context-plugin-install.log" 2>&1; then
+  as_dev "mkdir -p $WORK/docs && printf '# ADR 1: use Postgres\n\nStatus: accepted. We use Postgres for the job store.\n' > $WORK/docs/adr-1.md"
+  as_dev "cd $WORK && timeout 900 claude -p 'Use the Agent tool with subagent_type gsd:bm-doc-classifier to classify docs/adr-1.md, writing its classification to $WORK/out. Then show me the agent result word for word.' \
+          --permission-mode bypassPermissions --no-session-persistence --output-format stream-json --verbose </dev/null" \
+    > "$RESULTS/context-gsd.jsonl" 2>&1
+else
+  echo "  the GSD plugin didn't install; see context-plugin-install.log"
+fi
+as_dev "cat $LOG 2>/dev/null" > "$RESULTS/hooks-context.jsonl"
+cat "$RESULTS"/hooks-*.jsonl > "$RESULTS/hooks.jsonl" 2>/dev/null
+echo "  SubagentStart, catch-all entry: $(starts all)"
+echo "  SubagentStart, Explore entry:   $(starts Explore)"
+# The code word reaches the main session only through the agent's reply.
+wfctx=$(token_in "$RESULTS/context-workflow.jsonl")
+gsdctx=$(token_in "$RESULTS/context-gsd.jsonl")
+gsdstart=$(starts all | grep -c 'gsd:bm-doc-classifier')
+explore_type=$(grep '^{' "$RESULTS/hooks-context.jsonl" | jq -r 'select(.hook_event_name=="SubagentStart" and .probe_entry=="all") | .agent_type' | grep -cx Explore)
+explore_match=$(grep '^{' "$RESULTS/hooks-context.jsonl" | jq -r 'select(.probe_entry=="Explore") | .agent_type' | grep -c .)
+check ctx-workflow "a workflow agent's reply holds the code word from additionalContext" test "${wfctx:-0}" -ge 1
+check ctx-gsd-start "the GSD plugin agent fired SubagentStart as gsd:bm-doc-classifier" test "${gsdstart:-0}" -ge 1
+check ctx-gsd "the GSD plugin agent's reply holds the code word" test "${gsdctx:-0}" -ge 1
+check explore-type "a workflow agent launched with agentType Explore carries agent_type Explore" test "${explore_type:-0}" -ge 1
+check explore-matcher "a SubagentStart hook matched on Explore fires for it" test "${explore_match:-0}" -ge 1
 fi
 
 echo "== finished: hook-behaviour, $PASSES passed, $FAILS failed (results in $RESULTS)"
