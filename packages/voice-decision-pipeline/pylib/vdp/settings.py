@@ -43,8 +43,15 @@ pool's thresholds and the holdout share in voice-config.json (pool.py).
              before a rule line is suggested), due_items, due_days (when a
              review session is due), pairs_max (draft pairs one suggestion
              call reads), system, prompt (the suggestion call's prompts)
+  decisions  the extraction prompt (system, with {kinds}; unit, with {n},
+             {source}, {project}, {text}; end, with {n}), kinds {id:
+             definition}, filter (regexes picking candidates), correction
+             (a regex for an owner's message correcting Claude), after
+             (messages read after a transcript candidate), chars (a
+             message's length kept), unit_chars, sample_step (the catch-rate
+             sample's share a step), batch (stretches a call)
   models     {role: model id} for labeller, second, drafter, judge, brief,
-             guide, upkeep
+             guide, upkeep, extract_first, extract_second
 
 Prompt templates name their slots as {name}; each slot is filled once, so
 text put in a slot is never read for slots itself.
@@ -68,9 +75,10 @@ from . import state
 
 SCHEMA = 1
 SECTIONS = ("audiences", "labels", "guide", "render", "judge", "pass_rule", "style", "stats",
-            "build", "calls", "extraction", "review", "upkeep", "models")
+            "build", "calls", "extraction", "review", "upkeep", "decisions", "models")
 # Keys whose value is replaced whole, not merged key by key.
-WHOLE = {("labels", "purposes"), ("judge", "grades"), ("style", "marks"), ("style", "never_say")}
+WHOLE = {("labels", "purposes"), ("judge", "grades"), ("style", "marks"), ("style", "never_say"),
+         ("decisions", "kinds")}
 FLAGS = {"i": re.I, "m": re.M}
 SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 
@@ -97,8 +105,8 @@ def defaults():
     """The settings the code ships, built from each module's own constants."""
     global _DEFAULTS
     if _DEFAULTS is None:
-        from . import (anonymise, batches, bitbucket, guide, labels, model, slack, transcripts, upkeep,
-                       validate, voice, voicebuild, voicestats)
+        from . import (anonymise, batches, bitbucket, decisions, guide, labels, model, slack, transcripts,
+                       upkeep, validate, voice, voicebuild, voicestats)
         _DEFAULTS = {
             "schema_version": SCHEMA,
             "audiences": copy.deepcopy(voice.AUDIENCE_LIST),
@@ -139,6 +147,11 @@ def defaults():
             "upkeep": {"window_minutes": upkeep.WINDOW_MINUTES, "near_copy_min": upkeep.NEAR_COPY_MIN,
                        "recur_min": upkeep.RECUR_MIN, "due_items": upkeep.DUE_ITEMS, "due_days": upkeep.DUE_DAYS,
                        "pairs_max": upkeep.PAIRS_MAX, "system": upkeep.SYSTEM, "prompt": upkeep.PROMPT},
+            "decisions": {"system": decisions.SYSTEM, "unit": decisions.UNIT, "end": decisions.END,
+                          "kinds": dict(decisions.KINDS), "filter": list(decisions.FILTER),
+                          "correction": decisions.CORRECTION, "after": decisions.AFTER, "chars": decisions.CHARS,
+                          "unit_chars": decisions.UNIT_CHARS, "sample_step": decisions.SAMPLE_STEP,
+                          "batch": decisions.BATCH},
             "models": dict(model.MODELS),
         }
     return copy.deepcopy(_DEFAULTS)
@@ -288,6 +301,24 @@ def _check(d):
         _num("upkeep", k, u[k], lo, hi, True)
     _slots("upkeep", "system", u["system"], [])
     _slots("upkeep", "prompt", u["prompt"], ["counts", "pairs"])
+    de = d["decisions"]
+    _slots("decisions", "system", de["system"], ["kinds"])
+    _slots("decisions", "unit", de["unit"], ["n", "text"])
+    _slots("decisions", "end", de["end"], ["n"])
+    if not isinstance(de["kinds"], dict) or "other" not in de["kinds"] or not all(
+            re.fullmatch(r"[a-z][a-z0-9-]*", k) for k in de["kinds"]):
+        _bad("decisions.kinds must map kind ids (lower case, hyphens) to definitions, \"other\" among them")
+    for k, v in de["kinds"].items():
+        _text("decisions.kinds", k, v)
+    _strings("decisions", "filter", de["filter"])
+    for x in de["filter"] + [de["correction"]]:
+        try:
+            re.compile(x)
+        except re.error as e:
+            _bad(f"decisions: {x!r} is not a regular expression: {e}")
+    for k, lo, hi in (("after", 0, 100), ("chars", 100, 100000), ("unit_chars", 500, 200000), ("batch", 1, 50)):
+        _num("decisions", k, de[k], lo, hi, True)
+    _num("decisions", "sample_step", de["sample_step"], 0.01, 1)
     m = d["models"]
     if not isinstance(m, dict) or set(m) != set(defaults()["models"]):
         _bad("models must name a model for each of " + ", ".join(defaults()["models"]))

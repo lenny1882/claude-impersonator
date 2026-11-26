@@ -170,6 +170,7 @@ left out of every validation draft and build.</p>
 <a href='/voice/pairs'>Blind pairs</a> · <a href='/voice/judge'>Judge review</a> ·
 <a href='/voice/report'>Report</a></p>
 <h2>Upkeep</h2><p>{E(upkeep_line())} <a href='/voice/upkeep'>Review session</a></p>
+<h2>Decisions</h2><p><a href='/voice/decisions/prompt'>Extraction prompt</a></p>
 <h2>Build</h2><p>Newest build: {bt or 'none'}. Publish waits on:
 {E('; '.join(voicebuild.gates())) or 'nothing'}.</p>""")
 
@@ -420,10 +421,28 @@ Accepted, it counts everywhere from the next build, with the audience and purpos
 vpost('/api/voice/upkeep-end',{{}}).then(()=>location.reload())">End this review session</button></p>""")
 
 
+def decisions_prompt_page():
+    from . import decisions
+    p = decisions.shown_prompt()
+    ok = decisions.approved()
+    kinds = "".join(f"<tr><td><b>{E(k)}</b></td><td>{E(v)}</td></tr>" for k, v in p["kinds"].items())
+    return _page("Decision extraction prompt", f"""
+<p>Prompt {p['version']}: <b>{'approved' if ok else 'not approved'}</b>. Nothing is sent for decision
+extraction until it is approved. Any change to it, its kinds, its fields or the two models
+(settings.json's <code>decisions</code> section and the <code>extract_first</code> and
+<code>extract_second</code> models) makes a new version that needs approving again.</p>
+<h2>The kinds</h2><table>{kinds}</table>
+<h2>The prompt both passes read</h2><pre>{E(p['system'])}</pre>
+<h2>Each stretch</h2><pre>{E(p['unit'])}</pre><h2>After the stretches</h2><pre>{E(p['end'])}</pre>
+<h2>The fixed answers</h2><p>ending: {E(', '.join(p['endings']))}<br>origin: {E(', '.join(p['origins']))}<br>
+decided_by: {E(', '.join(p['decided_by']))}<br>outcome: {E(', '.join(p['outcomes']))}</p>
+<p>{'' if ok else "<button onclick=" + chr(34) + "if(confirm('Approve this prompt for decision extraction?'))vpost('/api/voice/decisions-approve',{version:'" + p['version'] + "'}).then(()=>location.reload())" + chr(34) + ">Approve this prompt</button>"}</p>""")
+
+
 def get(path):
     pages = {"/voice": overview, "/voice/labels": labels_page, "/voice/disagree": disagree_page,
              "/voice/pairs": pairs_page, "/voice/judge": judge_page, "/voice/report": report_page,
-             "/voice/upkeep": upkeep_page}
+             "/voice/upkeep": upkeep_page, "/voice/decisions/prompt": decisions_prompt_page}
     f = pages.get(path)
     return f() if f else None
 
@@ -458,6 +477,12 @@ def post(path, body):
             raise ValueError("unknown pair or pick")
         validate.answer("pair", p["pair"], pick=body["pick"], audience=p["audience"], purposes=p["purposes"])
         return json.dumps({"real": (state.read_json(validate.key_file(), {}) or {}).get(p["pair"])})
+    if path == "/api/voice/decisions-approve":
+        from . import decisions
+        if body.get("version") != decisions.prompt_version():
+            raise ValueError("the prompt changed since the page was drawn; reload it")
+        decisions.approve()
+        return "ok"
     if path.startswith("/api/voice/upkeep-"):
         return upkeep_post(path, body)
     if path in ("/api/voice/pair-grade", "/api/voice/judge-review"):

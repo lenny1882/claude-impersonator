@@ -90,6 +90,8 @@ BUILD THE VOICE MODEL (sends anonymised text through claude -p, PLAN §3)
                              remove someone's or a conversation's records
   show bitbucket [--repo <workspace/repo>]
                              your Bitbucket items as text, written to the state
+  decisions prompt           the decision-extraction prompt, kinds and fields to approve
+  decisions units            count what the extraction would read (nothing sent)
   upkeep import <drafts.jsonl>
                              add a machine's voice-runtime draft records
   due                        whether a voice review session is due (JSON)
@@ -217,6 +219,10 @@ case "${1:-}" in
     need_env
     log_to upkeep
     run_py "$@" ;;
+  decisions)
+    need_env
+    log_to "decisions-${2:-}"
+    PYTHONPATH="$PYLIB:$EL_HOME/pylib" PYTHONUNBUFFERED=1 exec "$EL_VPY" -m vdp "$@" ;;
   voice)
     # The voice build runs on embedding-lib's interpreter: validation and the
     # build embed with it, and nothing in it needs spaCy.

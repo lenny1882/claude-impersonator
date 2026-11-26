@@ -1,9 +1,10 @@
 """GSD written records -> corpus/gsd.jsonl (PLAN §1).
 
-Every repo with a .planning/ directory counts. Two
+Every repo with a .planning/ directory counts. Three
 kinds of record are read: each bullet under "### Decisions" in STATE.md,
-and each "###" subsection inside a phase CONTEXT.md's <decisions> block
-(archived milestones included). A "Claude's Discretion" subsection is
+each "###" subsection inside a phase CONTEXT.md's <decisions> block
+(archived milestones included), and each "[Rule N - Type]" deviation entry
+in a SUMMARY.md, tagged deviation:rule-N. A "Claude's Discretion" subsection is
 tagged so the decision extraction can weight it by origin (PLAN §4.9).
 Repos whose .planning/ holds neither yet are read once they do.
 
@@ -68,6 +69,27 @@ def state_decisions(text):
     return [x.strip() for x in out if x.strip() and not x.strip().lower().startswith("none")]
 
 
+# "**1. [Rule 3 - Blocking] Title**", also with an en or em dash, other
+# words after the rule number, no type, or the bold closing mid-line.
+DEVIATION = re.compile(r"^\*\*\d+\.\s*\[Rule\s+(\d)\b([^\]]*)\]\s*(.*)$", re.M)
+
+
+def deviations(text):
+    """[(rule, type, title, body)] from a SUMMARY.md's deviation entries:
+    "**1. [Rule 3 - Blocking] Installed missing jose dependency**" and the
+    bullet lines under it, up to the next entry, rule or heading."""
+    out = []
+    ms = list(DEVIATION.finditer(text))
+    for k, m in enumerate(ms):
+        end = ms[k + 1].start() if k + 1 < len(ms) else len(text)
+        body = text[m.end():end]
+        stop = re.search(r"^(#{1,6}\s|---|\*\*Total deviations)", body, re.M)
+        body = (body[:stop.start()] if stop else body).strip()
+        title = m.group(3).replace("**", "").strip()
+        out.append((int(m.group(1)), (m.group(2) or "").strip(" -–—,:"), title, body))
+    return out
+
+
 def context_decisions(text):
     m = re.search(r"<decisions>(.*?)</decisions>", text, re.S)
     if not m:
@@ -127,4 +149,18 @@ def extract(d, counts=None, roots=None):
                         source_fields={"repo": repo, "repo_name": name, "file": rel,
                                        "kind": "context-decision", "section": title, "n": n}))
                     stats["context-decisions"] += 1
+        # The executor's deviations from its plan (PLAN §4.9): Rules 1-3 it
+        # decided alone, Rule 4 it stopped and asked.
+        for sm in sorted(glob.glob(os.path.join(plan, "**", "*SUMMARY.md"), recursive=True)):
+            rel = os.path.relpath(sm, plan)
+            with open(sm, encoding="utf-8", errors="replace") as f:
+                for n, (rule, typ, title, body) in enumerate(deviations(f.read()), 1):
+                    rid = f"{conv}:{rel}:dev:{n}"
+                    recs.append(record.make(
+                        id=rid, source="gsd", conversation=conv, author=me, audience=None,
+                        ts=mtime(sm), text=textutil.redact(f"[Rule {rule} - {typ}] {title}\n{body}", counts),
+                        flags=["item", "no-voice", f"deviation:rule-{rule}"],
+                        source_fields={"repo": repo, "repo_name": name, "file": rel, "kind": "deviation",
+                                       "rule": rule, "type": typ, "n": n}))
+                    stats[f"deviations-rule-{rule}"] += 1
     return recs, stats

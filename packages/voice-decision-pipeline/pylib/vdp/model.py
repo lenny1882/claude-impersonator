@@ -45,6 +45,9 @@ MODELS = {
     "guide": "claude-opus-5-5",
     # PLAN §3.8: the rule lines suggested from the owner's edits to drafts.
     "upkeep": "claude-opus-5-5",
+    # PLAN §4.9: decision extraction, two blind passes.
+    "extract_first": "claude-sonnet-5-5",
+    "extract_second": "claude-opus-5-5",
 }
 
 # RETRIES, TIMEOUT and LIMIT_WORDS are the defaults; the state's

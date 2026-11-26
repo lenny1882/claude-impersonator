@@ -287,6 +287,28 @@ def cmd_upkeep(a):
         upkeep.import_records(a.file)
 
 
+def cmd_decisions(a):
+    """Decision extraction (PLAN §4.9). prompt: the prompt, kinds and fields
+    the owner approves; units: what the passes would read, counted."""
+    from . import decisions
+    if a.step == "prompt":
+        p = decisions.shown_prompt()
+        print(f"prompt {p['version']} ({'approved' if decisions.approved() else 'not approved'})\n")
+        print(p["system"])
+        print("\nEach stretch:\n" + p["unit"] + "\nAfter the stretches:" + p["end"])
+        return 0
+    if a.step == "units":
+        us = decisions.units()
+        state.write_jsonl(state.path("decisions", "units.jsonl"), us)
+        from collections import Counter
+        c = Counter((u["source"], u["candidate"]) for u in us)
+        for s in SOURCES:
+            print(f"  {s}: {c[(s, True)]} candidate units, {c[(s, False)]} in the sample pool")
+        print(f"  first sample step: {len(decisions.sample(us))} units")
+        return 0
+    raise SystemExit(f"unknown decisions step {a.step}")
+
+
 def cmd_due(a):
     from . import upkeep
     print(json.dumps(state.read_json(upkeep.path("due.json"), None) or {"due": False, "line": ""}))
@@ -318,6 +340,8 @@ def main(argv=None):
     s = sub.add_parser("upkeep"); s.add_argument("action", choices=["import"]); s.add_argument("file")
     s.set_defaults(f=cmd_upkeep)
     s = sub.add_parser("due"); s.set_defaults(f=cmd_due)
+    s = sub.add_parser("decisions"); s.add_argument("step", choices=["prompt", "units"])
+    s.set_defaults(f=cmd_decisions)
     s = sub.add_parser("voice")
     s.add_argument("step", choices=["label", "holdout", "rules", "guide", "drafter", "settings", "validate", "pairs",
                                     "upkeep", "build", "publish", "status"])
