@@ -64,6 +64,8 @@ check "install registers the sandbox exclusion" \
   jq -e '.sandbox.excludedCommands | index("voice-decision-pipeline *")' "$CLAUDE_DIR/settings.json"
 check "a tarball install registers the SessionStart line, and the script is in the tarball" \
   bash -c "jq -e '[.hooks.SessionStart[]?.hooks[]?.command] | map(endswith(\"/voice-decision-pipeline-due\")) | any' '$TMP/tarball-claude/settings.json' >/dev/null && test -x '$TMP/tarball/voice-decision-pipeline/bin/voice-decision-pipeline-due'"
+check "a tarball install registers the profile copy on PreToolUse Bash and PostToolUse Write|Bash" \
+  bash -c "jq -e '([.hooks.PreToolUse[]? | select(.matcher==\"Bash\") | .hooks[].command] | map(endswith(\"-profile-copy\")) | any) and ([.hooks.PostToolUse[]? | select(.matcher==\"Write|Bash\") | .hooks[].command] | map(endswith(\"-profile-copy\")) | any)' '$TMP/tarball-claude/settings.json' >/dev/null"
 
 # --- behaviour --------------------------------------------------------------
 
@@ -1992,6 +1994,23 @@ if "$PY" -c 'import numpy' 2>/dev/null; then
 else
   no "upkeep tests" "$PY has no numpy; run them with embedding-lib's venv python (VDP_TEST_PY)"
 fi
+
+# --- the /gsd:profile-user copy (PLAN §8.5) ---------------------------------------
+
+echo "profile copy"
+PT="$TMP/ptmp"; PS="$TMP/pstate"; mkdir -p "$PT/gsd-profile-abc123" "$PS"
+echo '{"m":1}' > "$PT/gsd-profile-abc123/profile-sample.jsonl"
+HOOK="$REPO/bin/voice-decision-pipeline-profile-copy"
+out=$(echo '{}' | TMPDIR="$PT" VDP_STATE="$PS" "$HOOK"); rc=$?
+check "the profile copy prints nothing and exits 0" test "$rc" = 0 -a -z "$out"
+check "it copies the sample before the analysis exists" cmp -s "$PT/gsd-profile-abc123/profile-sample.jsonl" "$PS/profile/gsd-profile-abc123/profile-sample.jsonl"
+echo '{"analysis":true}' > "$PT/gsd-profile-abc123/analysis.json"
+echo '{}' | TMPDIR="$PT" VDP_STATE="$PS" "$HOOK"
+check "it copies the analysis once written" cmp -s "$PT/gsd-profile-abc123/analysis.json" "$PS/profile/gsd-profile-abc123/analysis.json"
+check "the copies are owner-only" bash -c "test -z \"\$(find '$PS/profile' -perm /077)\""
+rm -rf "$PT/gsd-profile-abc123"
+echo '{}' | TMPDIR="$PT" VDP_STATE="$PS" "$HOOK"
+check "the copies stay after the run deletes its temp directory" test -s "$PS/profile/gsd-profile-abc123/analysis.json"
 
 # --- decisions (PLAN §4.9) ------------------------------------------------------
 

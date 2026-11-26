@@ -512,7 +512,13 @@ when either changes, every command refuses until `setup` rebuilds it.
 `voice-decision-pipeline *` to `sandbox.excludedCommands`; uninstall takes it
 out. It also installs `~/.local/bin/voice-decision-pipeline-due` and registers
 it as a `SessionStart` hook: it reads `upkeep/due.json` with `jq` and prints
-nothing unless a review session is due. Uninstall removes it.
+nothing unless a review session is due. And it installs
+`~/.local/bin/voice-decision-pipeline-profile-copy` as a `PreToolUse` hook on
+Bash and a `PostToolUse` hook on Write and Bash: when you run
+`/gsd:profile-user` by hand, it copies the run's `profile-sample.jsonl` and
+`analysis.json` from its `gsd-profile-*` temp directory to the state's
+`profile/` before the workflow deletes it, and does nothing on any other call.
+Uninstall removes both.
 
 ## Tests
 

@@ -1030,7 +1030,11 @@ after install, because `update.sh` reruns the installer from it.
     127.0.0.1 run by `voice-decision-pipeline review`, writing each click to
     the state), validation, rebuilds and review sessions. `show bitbucket`
     writes the owner's Bitbucket items as text to the state. A `~/.netrc`
-    that Python refuses is reported as that.
+    that Python refuses is reported as that. A `PreToolUse` and
+    `PostToolUse` hook copies a by-hand `/gsd:profile-user` run's sample
+    (`profile-sample.jsonl`) and analysis (`analysis.json`) from its
+    `gsd-profile-*` temp directory to the state before the workflow deletes
+    it.
   - `voice-runtime`: the guide loader and exemplar search.
   - `decision-runtime`: the `SessionStart`/`SubagentStart` blocks, gates,
     reviewers, plan-review adapters, the lookup and the decision log.
@@ -1506,8 +1510,7 @@ says otherwise.
 
 1. The owner turns on the build machine's TPM in its BIOS, creates the AWS
    account and creates the builds repo. Runs alongside steps 2–4.
-2. Decision extraction from every source (§8.1), with the
-   `/gsd:profile-user` sample copied to the state (§8.5).
+2. Decision extraction from every source (§8.1).
 3. The decision model in the pipeline: principles, priorities, tech
    positions, client constraints, cases and the agent block (§4.10), then
    validation on the held-back cases, graded by the owner (§4.11).
@@ -1591,9 +1594,6 @@ runs; the changes owed to `claude-package-kit` go to that project.
   logging.
 - Each install adds its sandbox exclusion with a wildcard (`"rrc *"`); a
   bare entry matches only the bare command.
-- The by-hand `/gsd:profile-user` run copies the sample
-  (`{temp_dir}/profile-sample.jsonl`) and the agent's `<analysis>` block to
-  the pipeline's state before the workflow deletes its temp directory.
 - Changes owed to `claude-package-kit`: its installers don't log to a
   file; `update.sh`'s confirmation prompt reads `/dev/tty`, which fails
   under `!`; `update.sh` reads `versions.txt` through a CDN cache of up to

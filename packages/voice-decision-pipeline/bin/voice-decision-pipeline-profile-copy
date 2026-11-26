@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# PreToolUse (Bash) and PostToolUse (Write, Bash) hook (PLAN §8.5): a by-hand
+# /gsd:profile-user run samples messages into a gsd-profile-* temp directory,
+# writes the profiler's <analysis> there as analysis.json, then deletes the
+# directory. This copies each such directory's profile-sample.jsonl and
+# analysis.json into the pipeline's state, profile/<directory name>/, before
+# the delete, owner-only. It never blocks a call and prints nothing.
+umask 077
+st="${VDP_STATE:-${CLAUDE_DIR:-$HOME/.claude}/voice-decision-pipeline}"
+cat >/dev/null
+for d in /tmp/gsd-profile-* /tmp/claude-*/gsd-profile-* /tmp/claude-*/*/gsd-profile-* ${TMPDIR:+"$TMPDIR"/gsd-profile-*}; do
+  [ -d "$d" ] && [ -f "$d/profile-sample.jsonl" ] || continue
+  out="$st/profile/$(basename "$d")"
+  mkdir -p "$out" 2>/dev/null || continue
+  for f in profile-sample.jsonl analysis.json; do
+    [ -f "$d/$f" ] || continue
+    [ -f "$out/$f" ] && cmp -s "$d/$f" "$out/$f" && continue
+    cp "$d/$f" "$out/$f" 2>/dev/null && chmod 600 "$out/$f"
+  done
+done
+exit 0

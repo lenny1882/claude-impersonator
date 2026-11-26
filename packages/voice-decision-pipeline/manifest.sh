@@ -9,6 +9,7 @@ OWNS="voice-decision-pipeline"
 FILES=(
   "bin/voice-decision-pipeline:$HOME/.local/bin/voice-decision-pipeline"
   "bin/voice-decision-pipeline-due:$HOME/.local/bin/voice-decision-pipeline-due"
+  "bin/voice-decision-pipeline-profile-copy:$HOME/.local/bin/voice-decision-pipeline-profile-copy"
 )
 # The Python package and the lock. `voice-decision-pipeline setup` builds the
 # venv beside it, in ~/.local/share/voice-decision-pipeline/, which
@@ -28,20 +29,28 @@ EXCLUDED=("voice-decision-pipeline *")
 # twice, it changes nothing.
 # The SessionStart line saying a voice review session is due (PLAN §3.8).
 DUE_HOOK="$HOME/.local/bin/voice-decision-pipeline-due"
+# The copy of a /gsd:profile-user run's sample and analysis (PLAN §8.5).
+PROFILE_HOOK="$HOME/.local/bin/voice-decision-pipeline-profile-copy"
 settings_merge() {
-  jq --argjson ours "$(printf '%s\n' "${EXCLUDED[@]}" | jq -R . | jq -s .)" --arg due "$DUE_HOOK" '
+  jq --argjson ours "$(printf '%s\n' "${EXCLUDED[@]}" | jq -R . | jq -s .)" --arg due "$DUE_HOOK" \
+     --arg prof "$PROFILE_HOOK" '
+    def ours($c): map(select(((.hooks // []) | map(.command) | index($c)) | not));
     .sandbox //= {}
     | .sandbox.excludedCommands = (((.sandbox.excludedCommands // []) - $ours) + $ours)
     | .hooks //= {}
-    | .hooks.SessionStart = (((.hooks.SessionStart // [])
-        | map(select(((.hooks // []) | map(.command) | index($due)) | not)))
-        + [{hooks: [{type: "command", command: $due}]}])
+    | .hooks.SessionStart = ((.hooks.SessionStart // []) | ours($due))
+        + [{hooks: [{type: "command", command: $due}]}]
+    | .hooks.PreToolUse = ((.hooks.PreToolUse // []) | ours($prof))
+        + [{matcher: "Bash", hooks: [{type: "command", command: $prof}]}]
+    | .hooks.PostToolUse = ((.hooks.PostToolUse // []) | ours($prof))
+        + [{matcher: "Write|Bash", hooks: [{type: "command", command: $prof}]}]
   '
 }
 
 REGISTRATIONS=(
   "sandbox.excludedCommands: ${EXCLUDED[*]}"
   "hooks.SessionStart: $DUE_HOOK"
+  "hooks.PreToolUse (Bash), hooks.PostToolUse (Write|Bash): $PROFILE_HOOK"
 )
 
 # The venv download (about 1.8 GB: spaCy, en_core_web_trf and its CPU
@@ -67,6 +76,9 @@ verify_probe() {
   jq -e '.sandbox.excludedCommands | index("voice-decision-pipeline *")' \
     "$CLAUDE_DIR/settings.json" >/dev/null || return 1
   jq -e --arg due "$DUE_HOOK" '[.hooks.SessionStart[]?.hooks[]?.command] | index($due)' \
+    "$CLAUDE_DIR/settings.json" >/dev/null || return 1
+  jq -e --arg p "$PROFILE_HOOK" '([.hooks.PreToolUse[]?.hooks[]?.command] | index($p)) and
+                                 ([.hooks.PostToolUse[]?.hooks[]?.command] | index($p))' \
     "$CLAUDE_DIR/settings.json" >/dev/null || return 1
   local st="$CLAUDE_DIR/$PKG"
   if [ -d "$st" ] && [ -n "$(find "$st" -perm /077 -print -quit)" ]; then
@@ -105,15 +117,19 @@ strip_excluded() {
   local s="$CLAUDE_DIR/settings.json" tmp
   [ "${KEEP_SETTINGS:-0}" = 1 ] && return 0
   [ -f "$s" ] && jq empty "$s" 2>/dev/null || return 0
-  if jq -e --arg due "$DUE_HOOK" '[.hooks.SessionStart[]?.hooks[]?.command] | index($due)' "$s" >/dev/null; then
+  if jq -e --arg due "$DUE_HOOK" --arg p "$PROFILE_HOOK" \
+       '[.hooks[]?[]?.hooks[]?.command] | (index($due) or index($p))' "$s" >/dev/null; then
     cp "$s" "$s.bak-$PKG"
     tmp=$(mktemp)
-    jq --arg due "$DUE_HOOK" '
-      .hooks.SessionStart |= map(select(((.hooks // []) | map(.command) | index($due)) | not))
-      | if .hooks.SessionStart == [] then del(.hooks.SessionStart) else . end
+    jq --arg due "$DUE_HOOK" --arg p "$PROFILE_HOOK" '
+      def drop($c): map(select(((.hooks // []) | map(.command) | index($c)) | not));
+      .hooks.SessionStart |= ((. // []) | drop($due))
+      | .hooks.PreToolUse |= ((. // []) | drop($p))
+      | .hooks.PostToolUse |= ((. // []) | drop($p))
+      | .hooks |= with_entries(select(.value != []))
       | if .hooks == {} then del(.hooks) else . end
     ' "$s" >"$tmp" && mv "$tmp" "$s"
-    printf '  ok    removed the SessionStart hook %s\n' "$DUE_HOOK"
+    printf '  ok    removed the hooks %s and %s\n' "$DUE_HOOK" "$PROFILE_HOOK"
   fi
   jq -e --argjson ours "$(printf '%s\n' "${EXCLUDED[@]}" | jq -R . | jq -s .)" \
     '(.sandbox.excludedCommands // []) | any(. as $e | $ours | index($e))' "$s" >/dev/null || return 0
