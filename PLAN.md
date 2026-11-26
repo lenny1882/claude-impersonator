@@ -431,7 +431,11 @@ Not sources:
   The owner adds it once `voice-runtime` is installed; it does nothing
   before then.
 - The skill serves the main session and subagents alike: a subagent with
-  the Skill tool sees the same skill list.
+  the Skill tool sees the same skill list. On 2.1.332 a general-purpose
+  subagent told to draft a Slack message loads the skill itself, with or
+  without the CLAUDE.md section: for a request that names a Slack message,
+  the skill's description is enough
+  (`packages/voice-runtime/test/docker/skill-loading.sh`).
 - The skill gives Claude the same drafting rules validation uses (§3.7).
 
 ### 3.7 Validation
@@ -1414,8 +1418,9 @@ the Claude Code facts hold for version 2.1.332:
 
 - The `~/.claude/CLAUDE.md` section that loads the voice skill (wording in
   §3.6), added by the owner once `voice-runtime` is installed.
-- A test that a drafting subagent loads the skill, and whether
-  `/code-review --comment` words its comments in reviewer subagents.
+- Whether `/code-review --comment` words its comments through the skill in
+  reviewer subagents. It posts to a real pull request, so the box can't
+  test it.
 - The §3.8 upkeep: matching edited drafts to sent messages, and review
   sessions.
 - The judge review of each validation run (§3.7).
