@@ -398,8 +398,10 @@ Not sources:
 - **Own rules:** `own-rules.md` in the pipeline's state, owner-only, never
   committed, created by `voice rules`. Each `- ` line is copied word for word
   as the guide's first section at each build, and wins over every corpus
-  rule. Its `## Jira` section is the Jira guide. It reaches other machines
-  inside the encrypted build.
+  rule. Its `## Jira` section is the Jira guide. A section named after
+  another audience (`## clients`) holds lines for that audience's guide
+  only, after the lines for all. It reaches other machines inside the
+  encrypted build.
 - **Struck rules:** `struck-rules.md` in the state, created by `voice rules`.
   A corpus rule under `## Rules`, or a never-say phrase under `## Never say`,
   is left out when the guide is assembled and rendered, so validation drafts
@@ -549,15 +551,54 @@ Not sources:
 
 ### 3.8 Upkeep
 
-- The skill saves each draft and the version the owner approved. When the
-  owner edits a draft after it leaves Claude, the next build matches the
-  saved draft to the message actually sent (same conversation, close in
-  time, closest by similarity) and records that as the approved version.
-- A review session is offered once 20 edited drafts or decision items have
-  built up, or 4 weeks have passed (config values); the owner can start one
-  at any time. It runs on the local review page: recurring edits shown as
-  suggested lines for the rules file, approved versions proposed as
-  exemplars, each accepted or rejected.
+- The skill saves each draft, the version the owner approved, and drafts
+  the owner discarded. The pipeline reads these records from a file in its
+  own state; under §5 the build machine's S3 reader fills it at the start of
+  each build. The struck list applies to them as to every source.
+- **Matching:** each build matches a saved draft to the message actually
+  sent: the owner's message in the draft's conversation (Slack
+  conversation, Bitbucket PR), posted within 1 hour after approval (a config
+  value), closest by similarity. That message is the draft's sent version.
+  Jira is never extracted, so a Jira draft, and any draft with no match,
+  has the approved text as its last known version.
+- **Near-copies:** a message in the draft's conversation whose wording is
+  close to a saved draft (a config value), sent at any time, is held out
+  the same way as a matched one and shown at the review session.
+- **Edits:** a draft is edited when its first version and its last known
+  version differ in words, punctuation or capitals, after undoing source
+  encodings (Slack `<@U…>` mentions, `<url|text>` links, `:name:` emoji,
+  Bitbucket Markdown) and ignoring spaces and line breaks. The first
+  version is the first saved draft, before any rewrite in the session; the
+  last known version is the sent version, or else the approved text.
+- **Held out until accepted:** a matched or near-copy message is kept out
+  of the exemplar pool, the guide's input and the style measures until the
+  owner accepts it at a review session; accepted, it counts everywhere from
+  the next build, with the draft's audience and purposes, which the session
+  shows for correction before accepting.
+- **Suggested rules:** the build counts word-level edits across the
+  session's edited drafts without a model (words and phrases removed or
+  added, capitals and end marks changed); one Opus call gets those counts
+  and the anonymised draft and sent pairs and writes each edit recurring in
+  at least 3 drafts (a config value) as one rule line, naming the drafts it
+  came from, shown with its counts. A pattern from one audience's drafts is
+  suggested under that audience's section of the rules file (§3.5); one
+  from two or more audiences, in the list for all. Drafts are anonymised
+  with the pipeline's map before anything reaches a model or the review
+  page.
+- **Discarded drafts:** listed at the review session with their audience
+  and purposes; the owner marks those discarded for their voice, which then
+  count as edited drafts with nothing kept. The rest are dropped.
+- A review session is due once 20 edited drafts or decision items have
+  built up, or 4 weeks have passed with at least one item to review (config
+  values); with nothing to review the 4 weeks restart. The owner can start
+  one at any time. The last build writes the due state to a status file; a
+  `SessionStart` hook from the pipeline, on the build machine only, shows
+  one line while a session is due, with the count and the command
+  (`voice-decision-pipeline review`), and nothing otherwise. The review
+  page shows the same.
+- The session runs on the local review page: suggested rule lines,
+  matched and near-copy messages proposed as exemplars, and discarded
+  drafts, each accepted or rejected.
 - Decision review is the same session's Decisions tab: inferred reasons,
   bulk-accepted records, what Claude chose after a "You decide", reviewer
   blocks from subagents and GSD runs, phase-audit finds, recommendations
@@ -1423,8 +1464,9 @@ the Claude Code facts hold for version 2.1.332:
 - Whether `/code-review --comment` words its comments through the skill in
   reviewer subagents. It posts to a real pull request, so the box can't
   test it.
-- The §3.8 upkeep: matching edited drafts to sent messages, and review
-  sessions.
+- The §3.8 upkeep: reading the draft records, matching, near-copies, edit
+  counts, suggested rules, per-audience own-rules sections (pipeline and
+  `voice-runtime`), the due line and the review session, as §3.8 describes.
 - The judge review of each validation run (§3.7).
 - `voice-runtime`'s first release, as reworked in §8.6; `voice publish`.
 
