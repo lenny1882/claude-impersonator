@@ -62,6 +62,8 @@ q(){ jq -e "$@" >/dev/null 2>&1; }
 echo "installer, this package"
 check "install registers the sandbox exclusion" \
   jq -e '.sandbox.excludedCommands | index("voice-decision-pipeline *")' "$CLAUDE_DIR/settings.json"
+check "a tarball install registers the SessionStart line, and the script is in the tarball" \
+  bash -c "jq -e '[.hooks.SessionStart[]?.hooks[]?.command] | map(endswith(\"/voice-decision-pipeline-due\")) | any' '$TMP/tarball-claude/settings.json' >/dev/null && test -x '$TMP/tarball/voice-decision-pipeline/bin/voice-decision-pipeline-due'"
 
 # --- behaviour --------------------------------------------------------------
 
@@ -337,8 +339,20 @@ env VDP_STATE="$F7" "$PY" -m vdp anonymise >/dev/null 2>&1
 check "spaCy name: once kept on the mining page it is a product, not a person" \
   bash -c "grep -q 'The product-01 launch' '$F7/anon/slack.jsonl' && ! grep -q 'person-01' '$F7/anon/slack.jsonl'"
 
+# A machine's voice-runtime drafts, holding real names (PLAN §3.8).
+cat > "$TMP/drafts.jsonl" <<'EOF'
+{"id": "dr-1", "ts": "2024-03-01T10:00:00Z", "kind": "draft", "audience": "project-team", "purposes": ["ask"], "destination": "slack:CPROJECTX", "text": "Priya, can you send the log to Gregor Whitfield?", "status": "drafted", "build_time": null, "host": "h", "schema_version": 1}
+{"id": "dr-1", "ts": "2024-03-01T10:01:00Z", "kind": "final", "audience": "project-team", "purposes": ["ask"], "destination": "slack:CPROJECTX", "text": "Priya, send the log to Gregor please", "status": "approved", "build_time": null, "host": "h", "schema_version": 1}
+not a record
+EOF
+check "upkeep import: adds a machine's draft records, skipping lines that aren't records" \
+  bash -c "vdp(){ '$PY' -m vdp \"\$@\"; }; vdp upkeep import '$TMP/drafts.jsonl' | grep -q '2 new draft records.*1 lines that' && test \$(wc -l < '$ST/upkeep/records.jsonl') = 2"
+check "upkeep import: a second import of the same file adds nothing" \
+  bash -c "'$PY' -m vdp upkeep import '$TMP/drafts.jsonl' | grep -q '0 new draft records' && test \$(wc -l < '$ST/upkeep/records.jsonl') = 2"
 check "anonymise" vdp anonymise
 check "leak check: the fixtures' anonymised copies are clean" q '.hits==0 and .terms_checked>10' "$ST/leak-report.json"
+check "anonymise: drafts get an anonymised copy, both texts, no real name left" \
+  bash -c "jq -e 'select(.id==\"dr-1\") | (.first|test(\"colleague-\")) and (.final|test(\"colleague-\"))' '$ST/anon/drafts.jsonl' >/dev/null && ! grep -q -i -e priya -e gregor -e whitfield '$ST/anon/drafts.jsonl'"
 check "anon: a first name in lower case, a dictionary key and a reaction name are replaced" "$PY" - <<'EOF'
 from vdp import inputs
 from vdp.anonmap import Map
@@ -792,7 +806,8 @@ EOF
 for st in "$VE" "$TMP/vfresh"; do
   name=$([ "$st" = "$VE" ] && echo "empty state" || echo "state starting with nothing labelled")
   for step in "label" "label --second" "label --new-sample" "holdout" "holdout --fresh" "rules" "guide" \
-              "drafter" "validate" "pairs" "pairs --more clients" "build" "publish" "status"; do
+              "drafter" "validate" "pairs" "pairs --more clients" "upkeep" "upkeep --suggest" "upkeep --end-session" \
+              "build" "publish" "status"; do
     out=$(VDP_STATE="$st" VDP_CLAUDE="$VBIN/claude" BUILDS_SYNC_HOME="$TMP/no-builds-sync" \
           PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp voice $step 2>&1); rc=$?
     if printf '%s' "$out" | grep -q Traceback || { [ "$rc" != 0 ] && [ "$(printf '%s\n' "$out" | wc -l)" -gt 3 ]; }; then
@@ -807,7 +822,7 @@ for st in "$VE" "$TMP/vfresh"; do
   RP=$(VDP_STATE="$st" PYTHONPATH="$REPO/pylib:$VPYL" "$PY" -m vdp review --port 0 --no-browser > "$TMP/vr-empty.out" 2>&1 & echo $!)
   for _ in $(seq 50); do grep -q 'http://127' "$TMP/vr-empty.out" 2>/dev/null && break; sleep 0.1; done
   EU=$(grep -o 'http://127.0.0.1:[0-9]*/' "$TMP/vr-empty.out")
-  for pg in "" voice voice/labels voice/disagree voice/pairs voice/judge voice/report leaks; do
+  for pg in "" voice voice/labels voice/disagree voice/pairs voice/judge voice/report voice/upkeep leaks; do
     code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$EU$pg")
     case "$code" in 200|400) ok "page /$pg on $name answers ($code)" ;;
       *) no "page /$pg on $name answers" "HTTP $code: $(tail -2 "$TMP/vr-empty.out")" ;; esac
@@ -1943,6 +1958,24 @@ check "the voice pages refuse a cross-origin POST" \
   test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Origin: http://evil.example' -d '{}' "${VURL}api/voice/pair")" = 403
 kill "$RPIDV" 2>/dev/null; wait "$RPIDV" 2>/dev/null
 unset FAKE_CLAUDE_COUNT
+fi
+
+# --- upkeep (PLAN §3.8) --------------------------------------------------------
+
+echo "upkeep"
+UST="$TMP/ustate"; mkdir -p "$UST" "$TMP/ubin" "$TMP/upylib"
+"$PY" "$REPO/test/voice_fixtures.py" "$UST" "$TMP/ubin" "$TMP/upylib"
+if "$PY" -c 'import numpy' 2>/dev/null; then
+  while IFS= read -r line; do
+    case "$line" in
+      "ok   "*) ok "${line#ok   }" ;;
+      "FAIL "*) no "${line#FAIL }" "see above" ;;
+      *) printf '    %s\n' "$line" ;;
+    esac
+  done < <(VDP_STATE="$UST" VDP_CLAUDE="$TMP/ubin/claude" DUE_HOOK="$REPO/bin/voice-decision-pipeline-due" \
+           PYTHONPATH="$REPO/pylib:$TMP/upylib" "$PY" "$REPO/test/upkeep_tests.py" 2>&1)
+else
+  no "upkeep tests" "$PY has no numpy; run them with embedding-lib's venv python (VDP_TEST_PY)"
 fi
 
 # --- real -------------------------------------------------------------------

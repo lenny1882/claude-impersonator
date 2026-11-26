@@ -7,6 +7,8 @@ Stage 1 pages (PLAN §3.4, §3.7).
   /voice/pairs        the blind pairs: pick, then grade the draft 1 to 5
   /voice/judge        the judge's worst 20 and 10 random drafts, graded
   /voice/report       the validation counts, spotting rate and pass
+  /voice/upkeep       the review session (PLAN §3.8): suggested rule lines,
+                      messages that started as drafts, discarded drafts
 
 Every answer is written to the state as it is given. Text shown is the
 anonymised copy, the same text that was sent.
@@ -46,6 +48,11 @@ window.addEventListener('DOMContentLoaded',()=>{if(!vcards().length)return;const
 function pick(pair,p){vpost('/api/voice/pair',{pair,pick:p}).then(t=>{const c=document.getElementById('c-'+pair);vhave(c,'pick');
 const r=JSON.parse(t);c.querySelector('.reveal').textContent=r.real==='A'?'A was yours; B is the draft.':'B was yours; A is the draft.';
 c.querySelector('.grade').hidden=false;for(const b of c.querySelectorAll('button.p'))b.setAttribute('aria-pressed',b.dataset.p===p?'true':'false')})}
+function up(url,body,el,v){vpost(url,body).then(t=>{const c=el.closest('.card');
+for(const b of c.querySelectorAll('button.v'))b.setAttribute('aria-pressed',b.dataset.v===v?'true':'false');
+const m=c.querySelector('.said');if(m)m.textContent=t==='ok'?'':t})}
+function upmsg(el,id,v){const c=el.closest('.card');const ps=[...c.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);
+up('/api/voice/upkeep-message',{id,verdict:v,audience:c.querySelector('select').value,purposes:ps},el,v)}
 function grade(kind,ref,g){vpost('/api/voice/'+kind,{ref,grade:g}).then(()=>{const c=document.getElementById('c-'+ref);vhave(c,'grade');
 for(const b of c.querySelectorAll('button.g'))b.setAttribute('aria-pressed',b.dataset.g==String(g)?'true':'false')})}
 """
@@ -162,6 +169,7 @@ left out of every validation draft and build.</p>
 <h2>Validation</h2><p>Best exemplar count so far: {validate.best_count() or '—'}.
 <a href='/voice/pairs'>Blind pairs</a> · <a href='/voice/judge'>Judge review</a> ·
 <a href='/voice/report'>Report</a></p>
+<h2>Upkeep</h2><p>{E(upkeep_line())} <a href='/voice/upkeep'>Review session</a></p>
 <h2>Build</h2><p>Newest build: {bt or 'none'}. Publish waits on:
 {E('; '.join(voicebuild.gates())) or 'nothing'}.</p>""")
 
@@ -318,9 +326,104 @@ This pass rule has applied from run {r['pass_rule_from_run']}.
 <h2>Pairs you got right</h2>{right or '<p class=meta>none</p>'}""")
 
 
+def upkeep_line():
+    from . import upkeep
+    d = state.read_json(upkeep.path("due.json"), None)
+    if not d:
+        return "No drafts read yet: run voice upkeep."
+    return (d["line"] + "." if d["due"] else
+            f"No review session due: {d['edited']} edited drafts and {d['items']} items waiting.")
+
+
+def upkeep_page():
+    from . import upkeep
+    m = upkeep.matches()
+    r = upkeep.review()
+    p = upkeep.pending(m, r)
+    ad = upkeep.anon_drafts()
+    held = upkeep.held_messages(m)
+    msgs = upkeep.anon_messages(held)
+    sg = state.read_json(upkeep.path("suggestions.json"), None) or {}
+    slugs = voice.corpus_audiences()
+
+    def draft_block(i):
+        a = ad.get(i) or {}
+        out = f"<div class=meta>first draft</div><pre>{E(a.get('first') or '(not anonymised yet: run anonymise)')}</pre>"
+        if a.get("final") is not None and a.get("final") != a.get("first"):
+            out += f"<div class=meta>approved</div><pre>{E(a['final'])}</pre>"
+        return out
+
+    rows = []
+    for k, x in enumerate(sg.get("suggestions") or []):
+        key = x["key"]
+        v = (r["suggestions"].get(key) or {}).get("verdict")
+        where = "every audience" if x["section"] == "all" else x["section"]
+        rows.append(f"<div class=card><pre><b>{E(x['line'])}</b></pre><div class=meta>for {E(where)} · from "
+                    f"{len(x['drafts'])} drafts</div><div class=row>"
+                    + "".join(f"<button class=v data-v={vv} aria-pressed={'true' if v == vv else 'false'} "
+                              f"onclick=\"up('/api/voice/upkeep-suggestion',{{key:'{key}',verdict:'{vv}'}},this,'{vv}')\">"
+                              f"{lab}</button>" for vv, lab in (("accepted", "Add to my rules"), ("rejected", "Reject")))
+                    + "<span class='said meta'></span></div></div>")
+    counts = "".join(f"<tr><td>{E(c['edit'])}</td><td>{len(c['drafts'])}</td><td>{E(', '.join(c['audiences']))}</td></tr>"
+                     for c in sg.get("counts") or [])
+    sug = ("<p class=meta>No suggestions yet: they are made by <code>voice upkeep</code> once a session is due.</p>"
+           if not sg else f"<p>{len(sg.get('suggestions') or [])} rule lines from {sg.get('drafts', 0)} drafts, "
+           f"made {E(sg.get('made_at', ''))}. An accepted line is added to "
+           f"<code>{E(guide.rules_file())}</code> under its section.</p>" + "".join(rows)
+           + (f"<details><summary class=meta>the recurring edits counted</summary><table><tr><th>Edit</th>"
+              f"<th>Drafts</th><th>Audiences</th></tr>{counts}</table></details>" if counts else ""))
+
+    cards = []
+    for a_id in sorted(held, key=lambda x: (held[x], x)):
+        i = held[a_id]
+        rec = m[i]
+        dec = r["messages"].get(a_id) or {}
+        kind = "sent version" if rec.get("sent") == a_id else "near-copy"
+        aud = dec.get("audience") or rec.get("audience")
+        ps = dec.get("purposes") or rec.get("purposes") or []
+        sel = "<select>" + "".join(f"<option{' selected' if x == aud else ''}>{E(x)}</option>" for x in slugs) + "</select>"
+        alike = (f" · wording {int(rec['sent_similarity'] * 100)}% alike"
+                 if kind == "sent version" and rec.get("sent_similarity") is not None else "")
+        cards.append(f"<div class=card><div class=meta>{kind} of a draft to {E(rec.get('audience') or '')}{alike}</div>"
+                     f"{draft_block(i)}<div class=meta>sent</div><pre><b>{E((msgs.get(a_id) or {}).get('text') or '')}</b></pre>"
+                     f"<div class=row>{sel} {boxes(ps)}</div><div class=row>"
+                     + "".join(f"<button class=v data-v={vv} aria-pressed={'true' if dec.get('verdict') == vv else 'false'} "
+                               f"onclick=\"upmsg(this,'{a_id}','{vv}')\">{lab}</button>"
+                               for vv, lab in (("accepted", "Accept as an exemplar"), ("rejected", "Reject")))
+                     + "<span class='said meta'></span></div></div>")
+    disc = []
+    for i in sorted(set(p["discarded"]) | {x for x, v in r["discarded"].items() if x not in upkeep.reviewed_drafts(r)}):
+        if i not in m:
+            continue
+        v = r["discarded"].get(i)
+        disc.append(f"<div class=card><div class=meta>discarded draft to {E(m[i].get('audience') or '')} · "
+                    f"{plabels(m[i].get('purposes') or [])}</div>{draft_block(i)}<div class=row>"
+                    + "".join(f"<button class=v data-v={vv} aria-pressed={'true' if v == vv else 'false'} "
+                              f"onclick=\"up('/api/voice/upkeep-discarded',{{id:'{i}',verdict:'{vv}'}},this,'{vv}')\">"
+                              f"{lab}</button>" for vv, lab in (("voice", "Wrong in voice"), ("other", "Discarded for another reason")))
+                    + "<span class='said meta'></span></div></div>")
+    edited = "".join(f"<div class=card><div class=meta>edited draft to {E(m[i].get('audience') or '')}</div>{draft_block(i)}"
+                     + (f"<div class=meta>sent</div><pre>{E((upkeep.anon_messages([m[i]['sent']]).get(m[i]['sent']) or {}).get('text') or '')}</pre>"
+                        if m[i].get("sent") else "") + "</div>" for i in p["edited"])
+    return _page("Upkeep", f"""
+<p>{E(upkeep_line())} {len(m)} drafts read. Every text here is the anonymised copy.</p>
+<h2>Suggested rule lines</h2>{sug}
+<h2>Messages that started as drafts</h2>
+<p>Each is left out of the exemplars, the guide's input and the measured style until you accept it.
+Accepted, it counts everywhere from the next build, with the audience and purposes chosen here.</p>
+{''.join(cards) or '<p class=meta>none</p>'}
+<h2>Discarded drafts</h2>
+<p>Mark the ones you threw away because the voice was wrong: they count as edited drafts with nothing kept.</p>
+{''.join(disc) or '<p class=meta>none</p>'}
+<details><summary>Edited drafts in this session ({len(p['edited'])})</summary>{edited or '<p class=meta>none</p>'}</details>
+<p><button onclick="if(confirm('End this review session? Its edited drafts count as reviewed and the 4 weeks start again.'))
+vpost('/api/voice/upkeep-end',{{}}).then(()=>location.reload())">End this review session</button></p>""")
+
+
 def get(path):
     pages = {"/voice": overview, "/voice/labels": labels_page, "/voice/disagree": disagree_page,
-             "/voice/pairs": pairs_page, "/voice/judge": judge_page, "/voice/report": report_page}
+             "/voice/pairs": pairs_page, "/voice/judge": judge_page, "/voice/report": report_page,
+             "/voice/upkeep": upkeep_page}
     f = pages.get(path)
     return f() if f else None
 
@@ -355,6 +458,8 @@ def post(path, body):
             raise ValueError("unknown pair or pick")
         validate.answer("pair", p["pair"], pick=body["pick"], audience=p["audience"], purposes=p["purposes"])
         return json.dumps({"real": (state.read_json(validate.key_file(), {}) or {}).get(p["pair"])})
+    if path.startswith("/api/voice/upkeep-"):
+        return upkeep_post(path, body)
     if path in ("/api/voice/pair-grade", "/api/voice/judge-review"):
         g = int(body["grade"])
         if not 1 <= g <= 5:
@@ -368,5 +473,49 @@ def post(path, body):
             validate.answer("pair", p["pair"], grade=g, audience=p["audience"], purposes=p["purposes"])
         else:
             validate.answer("judge-review", body["ref"], grade=g)
+        return "ok"
+    return None
+
+
+def upkeep_post(path, body):
+    from . import upkeep
+    r = upkeep.review()
+    if path == "/api/voice/upkeep-message":
+        held = upkeep.held_messages()
+        i = body.get("id")
+        if i not in held or body.get("verdict") not in ("accepted", "rejected"):
+            raise ValueError("not a message that started as a draft")
+        if body.get("audience") not in voice.corpus_audiences():
+            raise ValueError("unknown audience")
+        ps = [x for x in body.get("purposes") or [] if x in voice.purposes()]
+        if body["verdict"] == "accepted" and not ps:
+            raise ValueError("tick at least one purpose before accepting")
+        r["messages"][i] = {"verdict": body["verdict"], "audience": body["audience"], "purposes": ps,
+                            "draft": held[i]}
+        upkeep.save_review(r)
+        return "ok"
+    if path == "/api/voice/upkeep-discarded":
+        m = upkeep.matches()
+        i = body.get("id")
+        if i not in m or m[i].get("status") != "discarded" or body.get("verdict") not in ("voice", "other"):
+            raise ValueError("not a discarded draft")
+        r["discarded"][i] = body["verdict"]
+        upkeep.save_review(r)
+        return "ok"
+    if path == "/api/voice/upkeep-suggestion":
+        sg = state.read_json(upkeep.path("suggestions.json"), None) or {}
+        x = {s["key"]: s for s in sg.get("suggestions") or []}.get(body.get("key"))
+        if not x or body.get("verdict") not in ("accepted", "rejected"):
+            raise ValueError("not a suggestion of this session")
+        prev = (r["suggestions"].get(x["key"]) or {}).get("verdict")
+        if prev == "accepted":
+            return "already added to your rules; change it in the rules file"
+        if body["verdict"] == "accepted":
+            upkeep.add_rule(x["line"], x["section"])
+        r["suggestions"][x["key"]] = {"verdict": body["verdict"], "line": x["line"], "section": x["section"]}
+        upkeep.save_review(r)
+        return "ok"
+    if path == "/api/voice/upkeep-end":
+        upkeep.end_session(log=lambda *a: None)
         return "ok"
     return None

@@ -962,6 +962,11 @@ def run(log=print):
             if isinstance(v, str):
                 rt.append(v)
         texts.extend(rt)
+    # Drafts Claude wrote in the owner's voice, with the corpus (PLAN §3.8):
+    # spaCy tags them and the replacers learn their names in the same passes.
+    from . import upkeep
+    drafts = upkeep.drafts()
+    texts.extend(t for x in drafts.values() for t in (x["first"], x["final"]) if t)
     # Mining also reads source fields; spaCy tags them
     # for Mining only, so Names and the replacement passes are unchanged.
     seen = set(texts)
@@ -1032,6 +1037,21 @@ def run(log=print):
             })
         state.write_jsonl(state.anon_file(s), out)
         log(f"  ok    anon/{s}.jsonl: {len(out)} records")
+    dout = []
+    for x in drafts.values():
+        conv = upkeep.conversation(x["destination"])
+        first, fm = rep.apply(x["first"])
+        final, gm = rep.apply(x["final"]) if x["final"] is not None else (None, [])
+        for m in fm + gm:
+            counts[m["kind"]] += 1
+        dout.append({"id": x["id"], "audience": x["audience"], "purposes": x["purposes"],
+                     "source": conv[0] if conv else None,
+                     "conversation": anon_id(conv[1]) if conv else None,
+                     "status": x["status"], "ts": x["ts"], "final_ts": x["final_ts"],
+                     "first": first, "final": final})
+    state.write_jsonl(upkeep.anon_file(), dout)
+    if dout:
+        log(f"  ok    anon/drafts.jsonl: {len(dout)} drafts")
     cands = mine(allrecs, rep, ner, conversation_clients(d, allrecs, rep),
                  state.read_json(state.path("mining-decisions.json"), {}) or {})
     state.write_json(state.path("mining-candidates.json"), cands)

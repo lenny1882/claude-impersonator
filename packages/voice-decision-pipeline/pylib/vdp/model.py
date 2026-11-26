@@ -43,6 +43,8 @@ MODELS = {
     # the owner's sessions draft with, so its rules are read by the model that
     # wrote them.
     "guide": "claude-opus-5-5",
+    # PLAN §3.8: the rule lines suggested from the owner's edits to drafts.
+    "upkeep": "claude-opus-5-5",
 }
 
 # RETRIES, TIMEOUT and LIMIT_WORDS are the defaults; the state's

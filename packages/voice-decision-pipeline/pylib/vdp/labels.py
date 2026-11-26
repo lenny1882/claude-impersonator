@@ -152,7 +152,10 @@ def run(which, redo=(), log=print):
     if which not in PASSES:
         raise SystemExit(f"voice-decision-pipeline: unknown pass {which}")
     voice.require_sendable()
-    items = voice.load()
+    from . import upkeep
+    # Accepted draft messages carry the purposes the owner confirmed (final()).
+    acc = upkeep.accepted()
+    items = [it for it in voice.load() if it["id"] not in acc]
     done = read(which)
     redo = set(redo)
     from . import settings
@@ -223,9 +226,13 @@ def corrections():
 
 
 def final():
-    """{id: purposes}: the owner's correction, else the labeller's."""
+    """{id: purposes}: the owner's correction, else the labeller's; for a
+    message that started as a draft and was accepted at a review session,
+    the purposes the owner confirmed there (PLAN §3.8)."""
+    from . import upkeep
     out = {i: r["purposes"] for i, r in read("labeller").items()}
     out.update(corrections())
+    out.update({i: v["purposes"] for i, v in upkeep.accepted().items() if v["purposes"]})
     return out
 
 

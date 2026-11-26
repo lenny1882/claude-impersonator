@@ -110,6 +110,8 @@ anonymising map, the mining and batch decisions, the inputs with their
                                  conversation, Bitbucket repo or <repo>#<pr>
     show bitbucket [--repo <ws/repo>]
                                  your Bitbucket items as text, in views/
+    upkeep import <drafts.jsonl> add a machine's voice-runtime draft records, each once
+    due                          JSON: whether a voice review session is due
     status                       JSON: records, items, batches, sendable, modes
     paths                        where everything lives
 
@@ -119,6 +121,7 @@ anonymising map, the mining and batch decisions, the inputs with their
     voice guide
     voice validate [--limit N] [--batch]
     voice pairs [--more <audience> | --drop <pair,...> | --redraw <audience> | --redraw all]
+    voice upkeep [--suggest] [--end-session]
     voice build
     voice publish
     voice status
@@ -155,7 +158,9 @@ Run in order, each in your own shell (each logs to
    guide was never shown; then `voice validate` drafts them and `voice
    pairs --more <audience>` pairs them.
 4. `voice rules` creates `own-rules.md` in the state; each `- ` line is one
-   of your rules, its `## Jira` section the Jira guide. It also creates
+   of your rules, its `## Jira` section the Jira guide, and a section named
+   after an audience (`## clients`, `## project team`) rules for that
+   audience only, read after the rules for all. It also creates
    `struck-rules.md`: a corpus rule copied under `## Rules`, or a phrase
    under `## Never say`, is left out of every validation draft and build,
    matched on its words (case, spacing, quote marks and the end full stop
@@ -222,7 +227,54 @@ Run in order, each in your own shell (each logs to
    with the built file and a snippet. Clearing a term there lets the next
    build through it for builds only, not for the anonymised copies; a later
    build that finds it more times stops again. `voice publish` sends it through `builds-sync` once the label
-   check and the validation run have passed.
+   check and the validation run have passed. `voice build` runs the upkeep's
+   matching first (below), so messages that started as drafts stay out of
+   its exemplars.
+
+## Upkeep from drafts
+
+`voice-runtime` records each draft Claude writes in your voice, the version
+you approved and the drafts you discarded. `upkeep import <drafts.jsonl>`
+adds a machine's records to `upkeep/records.jsonl` in the state; the
+release design's S3 reader fills the same file. `anonymise` writes their
+anonymised copy to `anon/drafts.jsonl` with the corpus, and the leak check
+reads it. Then `voice upkeep`:
+
+- matches each approved draft to your message in its Slack conversation or
+  Bitbucket PR posted within 1 hour after approval, closest in wording to
+  the approved text; Jira drafts and drafts with no match keep the approved
+  text as their last known version;
+- holds as a near-copy any message of yours in the same conversation, sent
+  any time after the draft was written, at least 80% alike in wording to the
+  draft or its approved text;
+- marks a draft edited when its first version and its last known version
+  differ in words, punctuation or capitals, once Slack mentions, links and
+  entities and Markdown escapes are undone and spacing ignored;
+- leaves matched and near-copy messages out of the voice items (exemplars,
+  the guide's input, the statistics and validation) until you accept them;
+- writes `upkeep/due.json`: a review session is due at 20 edited drafts, or
+  after 4 weeks with at least one item to review (with nothing, the 4 weeks
+  start again). A `SessionStart` hook (`voice-decision-pipeline-due`) shows
+  one line while one is due: `Voice review session due: … Run:
+  voice-decision-pipeline review`;
+- when one is due, counts the word-level edits across the session's edited
+  drafts (phrases removed or added and where, capitals lowered or raised,
+  end marks changed) and makes one Opus 5.5 call with those counts and the
+  anonymised pairs, for rule lines from edits recurring in at least 3
+  drafts. Made once per set of drafts; `--suggest` makes them now, due or
+  not.
+
+On the review page's Voice build > Upkeep: each suggested line, for one
+audience when every draft it came from went to it, else for all, added to
+`own-rules.md` under that section when you accept it; each message that
+started as a draft, with the draft beside it, accepted as an exemplar with
+the audience and purposes you tick, or rejected; each discarded draft,
+marked wrong in voice (it then counts as an edited draft with nothing kept)
+or discarded for another reason. "End this review session" (or `voice
+upkeep --end-session`) marks its drafts reviewed and starts the 4 weeks
+again. The window, the near-copy level, the recurrence count, the due
+thresholds and the call's prompts are in `settings.json`'s `upkeep`
+section; its model is the `upkeep` role.
 
 Each call turns off tools, settings, MCP servers and slash commands, so it
 carries about 1,100 tokens of Claude Code's own overhead.
@@ -260,7 +312,9 @@ directory and an encrypted backup to S3 after each command:
 | `validation/pass-rule.jsonl` | each pass rule used, with the run it applies from |
 | `label-check.json`, `disagreement-grades.json` | your label check and disagreement grades |
 | `holdouts.json` | the held-back items and the validation run |
-| `own-rules.md` | your own rules, first in the guide |
+| `own-rules.md` | your own rules, first in the guide; an audience's section for that audience only |
+| `upkeep/` | the draft records, the matches, the review session's answers and suggestions, `due.json` |
+| `anon/drafts.jsonl` | the drafts' anonymised copy |
 | `struck-rules.md` | corpus rules and never-say phrases you struck, left out of validation and builds |
 | `voice/` | the corpus guide, statistics, builds, the build leak report and the build terms you cleared |
 | `validation/` | drafts, judge scores, blind pairs and their key, the judge review |
@@ -412,7 +466,9 @@ when either changes, every command refuses until `setup` rebuilds it.
 
 `~/.claude` is outside Claude Code's Bash sandbox, so the install adds
 `voice-decision-pipeline *` to `sandbox.excludedCommands`; uninstall takes it
-out.
+out. It also installs `~/.local/bin/voice-decision-pipeline-due` and registers
+it as a `SessionStart` hook: it reads `upkeep/due.json` with `jq` and prints
+nothing unless a review session is due. Uninstall removes it.
 
 ## Tests
 

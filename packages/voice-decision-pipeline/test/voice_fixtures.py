@@ -11,7 +11,8 @@ hash embedding, no model).
 The stand-in claude answers by the JSON schema it is given: labels (a "?"
 makes "ask", else "status"; the second model also adds "thank" to messages
 holding "thanks", so the two disagree there), guide rules, a draft, judge
-scores (the draft made with 5 exemplars scores best). FAKE_CLAUDE_LIMIT=<n>
+scores (the draft made with 5 exemplars scores best), upkeep's rule
+suggestions (one line from the first three drafts, one from a single draft). FAKE_CLAUDE_LIMIT=<n>
 makes the n-th call and after answer with a usage limit (worded as
 FAKE_CLAUDE_LIMIT_TEXT when set); calls are counted
 in FAKE_CLAUDE_COUNT (a file).
@@ -137,6 +138,10 @@ elif "brief" in props:
 elif "text" in props:
     k = prompt.split("Examples of messages")[1].count("---") + 1
     ans = {"text": f"draft with {k} examples" + (" from a brief" if "\nbrief: " in prompt else "")}
+elif "suggestions" in props:
+    ns = sorted({int(n) for n in re.findall(r"### Draft (\d+) ", prompt)})
+    ans = {"suggestions": [{"line": "Don't open with a greeting.", "drafts": ns[:3]},
+                           {"line": "a line from too few drafts", "drafts": ns[:1]}]}
 elif "scores" in props:
     ds = re.findall(r"Draft (\d+):\ndraft with (\d+) examples", prompt)
     assert "The brief the drafts were written from:\nbrief: " in prompt

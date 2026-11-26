@@ -169,24 +169,31 @@ def scan(d, amap):
     prx = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(map(re.escape, pseud)) + r")(?![A-Za-z0-9])",
                      re.IGNORECASE) if pseud else None
     hits = defaultdict(lambda: {"count": 0, "examples": []})
-    for s in SOURCES:
-        for r in state.read_jsonl(state.anon_file(s)):
-            body = json.dumps({k: r[k] for k in SENT_KEYS if k in r}, ensure_ascii=False)
-            searched = blanked(body, prx)
-            spans = [(m.start(), m.end(), m.group(1).lower())
-                     for m in (rx.finditer(searched) if rx else ())]
-            # A URL on a host that isn't public is a leak in itself.
-            for a, b, h in urls.private(searched):
-                if "\0" in h:
-                    continue
-                spans.append((a, b, h))
-                kinds.setdefault(h, "private URL host")
-            for a0, b0, t in spans:
-                h = hits[t]
-                h["count"] += 1
-                if len(h["examples"]) < MAX_EXAMPLES:
-                    a, b = max(0, a0 - SNIPPET), b0 + SNIPPET
-                    h["examples"].append({"source": s, "id": r["id"], "text": body[a:b]})
+    from .upkeep import anon_file as drafts_file
+
+    def bodies():
+        for s in SOURCES:
+            for r in state.read_jsonl(state.anon_file(s)):
+                yield s, r, json.dumps({k: r[k] for k in SENT_KEYS if k in r}, ensure_ascii=False)
+        # The anonymised drafts (PLAN §3.8) go to a model and the review page too.
+        for r in state.read_jsonl(drafts_file()):
+            yield "drafts", r, json.dumps({k: r.get(k) for k in ("first", "final")}, ensure_ascii=False)
+    for s, r, body in bodies():
+        searched = blanked(body, prx)
+        spans = [(m.start(), m.end(), m.group(1).lower())
+                 for m in (rx.finditer(searched) if rx else ())]
+        # A URL on a host that isn't public is a leak in itself.
+        for a, b, h in urls.private(searched):
+            if "\0" in h:
+                continue
+            spans.append((a, b, h))
+            kinds.setdefault(h, "private URL host")
+        for a0, b0, t in spans:
+            h = hits[t]
+            h["count"] += 1
+            if len(h["examples"]) < MAX_EXAMPLES:
+                a, b = max(0, a0 - SNIPPET), b0 + SNIPPET
+                h["examples"].append({"source": s, "id": r["id"], "text": body[a:b]})
     from .anonymise import name_decisions
     cands = state.read_json(state.path("name-candidates.json"), []) or []
     nd = name_decisions()

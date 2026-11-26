@@ -249,8 +249,22 @@ def cmd_voice(a):
                 validate.make_pairs(audience=a.more)
             validate.judge_review()
         return 0
-    if step == "build":
+    if step == "upkeep":
+        from . import upkeep
         with state.lock():
+            if a.end_session:
+                upkeep.end_session()
+                return 0
+            upkeep.match()
+            d = upkeep.due()
+            if d["due"] or a.suggest:
+                return 0 if upkeep.suggest(force=a.suggest) is not None else 6
+            print("  --    no review session due; nothing sent")
+        return 0
+    if step == "build":
+        from . import upkeep
+        with state.lock():
+            upkeep.match()
             voicebuild.build()
         return 0
     if step == "publish":
@@ -265,6 +279,17 @@ def cmd_voice(a):
         print(json.dumps(out, indent=1))
         return 0
     raise SystemExit(f"unknown voice step {step}")
+
+
+def cmd_upkeep(a):
+    from . import upkeep
+    with state.lock():
+        upkeep.import_records(a.file)
+
+
+def cmd_due(a):
+    from . import upkeep
+    print(json.dumps(state.read_json(upkeep.path("due.json"), None) or {"due": False, "line": ""}))
 
 
 def main(argv=None):
@@ -290,9 +315,12 @@ def main(argv=None):
     s = sub.add_parser("status"); s.set_defaults(f=cmd_status)
     s = sub.add_parser("sendable"); s.add_argument("source", choices=SOURCES); s.set_defaults(f=cmd_sendable)
     s = sub.add_parser("probe"); s.set_defaults(f=cmd_probe)
+    s = sub.add_parser("upkeep"); s.add_argument("action", choices=["import"]); s.add_argument("file")
+    s.set_defaults(f=cmd_upkeep)
+    s = sub.add_parser("due"); s.set_defaults(f=cmd_due)
     s = sub.add_parser("voice")
     s.add_argument("step", choices=["label", "holdout", "rules", "guide", "drafter", "settings", "validate", "pairs",
-                                    "build", "publish", "status"])
+                                    "upkeep", "build", "publish", "status"])
     s.add_argument("--second", action="store_true", help="label: the second model's blind pass")
     s.add_argument("--redo", help="label: send again items either model gave one of these purposes")
     s.add_argument("--new-sample", action="store_true", help="label: draw a fresh label-check sample and disagreement-grade sample")
@@ -304,6 +332,8 @@ def main(argv=None):
     s.add_argument("--redraw", help="pairs: draw this audience's pairs again from its new drafts; 'all' for every audience")
     s.add_argument("--batch", action="store_true", help="validate: draft only one batch per audience of messages never shown")
     s.add_argument("--drop", help="pairs: leave these pairs out of the result and draw as many new ones")
+    s.add_argument("--suggest", action="store_true", help="upkeep: make the session's rule suggestions now, due or not")
+    s.add_argument("--end-session", action="store_true", help="upkeep: end the review session")
     s.set_defaults(f=cmd_voice)
     a = p.parse_args(argv)
     # Keep a numbered copy of each hand-edited settings file that changed

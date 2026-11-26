@@ -418,8 +418,9 @@ def render_text(g, stats, audience, purposes, notes, quoted_on, rare_below, w, c
     with the wording w the build carries."""
     bl = lambda rs: "\n".join("- %s" % r for r in rs)
     out = []
-    if g.get("own_rules"):
-        out.append(w["own_rules"] + "\n" + bl(g["own_rules"]))
+    own = list(g.get("own_rules") or []) + list((g.get("own_rules_audience") or {}).get(audience) or [])
+    if own:
+        out.append(w["own_rules"] + "\n" + bl(own))
     if notes:
         out.append(w["notes"] + "\n" + bl(notes))
     if not corpus:

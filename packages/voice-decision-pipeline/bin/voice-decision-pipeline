@@ -78,7 +78,10 @@ BUILD THE VOICE MODEL (sends anonymised text through claude -p, PLAN §3)
   voice validate [--limit N] drafts with 3, 5 and 8 exemplars, judged
   voice pairs [--more <audience>]
                              the blind pairs and the judge review on the review page
-  voice build                assemble and leak-check a build in the state
+  voice upkeep [--suggest] [--end-session]
+                             match drafts to what was sent, and when a review session
+                             is due, suggest rule lines from your edits (one call)
+  voice build                match drafts again, then assemble and leak-check a build
   voice publish              send the newest build through builds-sync (needs the
                              label check and validation passed)
   voice status               where the voice build stands (JSON)
@@ -87,6 +90,9 @@ BUILD THE VOICE MODEL (sends anonymised text through claude -p, PLAN §3)
                              remove someone's or a conversation's records
   show bitbucket [--repo <workspace/repo>]
                              your Bitbucket items as text, written to the state
+  upkeep import <drafts.jsonl>
+                             add a machine's voice-runtime draft records
+  due                        whether a voice review session is due (JSON)
   status                     what's built, reviewed and sendable (JSON)
   paths                      where everything lives
 
@@ -204,8 +210,12 @@ case "${1:-}" in
     need_env
     log_to review
     run_py "$@" ;;
-  status|sendable)
+  status|sendable|due)
     need_env
+    run_py "$@" ;;
+  upkeep)
+    need_env
+    log_to upkeep
     run_py "$@" ;;
   voice)
     # The voice build runs on embedding-lib's interpreter: validation and the

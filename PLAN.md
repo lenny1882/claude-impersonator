@@ -562,7 +562,8 @@ Not sources:
   Jira is never extracted, so a Jira draft, and any draft with no match,
   has the approved text as its last known version.
 - **Near-copies:** a message in the draft's conversation whose wording is
-  close to a saved draft (a config value), sent at any time, is held out
+  close to a saved draft (a config value), sent at any time after the draft
+  was written, is held out
   the same way as a matched one and shown at the review session.
 - **Edits:** a draft is edited when its first version and its last known
   version differ in words, punctuation or capitals, after undoing source
@@ -1464,9 +1465,8 @@ the Claude Code facts hold for version 2.1.332:
 - Whether `/code-review --comment` words its comments through the skill in
   reviewer subagents. It posts to a real pull request, so the box can't
   test it.
-- The §3.8 upkeep: reading the draft records, matching, near-copies, edit
-  counts, suggested rules, per-audience own-rules sections (pipeline and
-  `voice-runtime`), the due line and the review session, as §3.8 describes.
+- A check of the §3.8 matching, near-copies and suggestions on real drafts,
+  once `voice-runtime` is released.
 - The judge review of each validation run (§3.7).
 - `voice-runtime`'s first release, as reworked in §8.6; `voice publish`.
 

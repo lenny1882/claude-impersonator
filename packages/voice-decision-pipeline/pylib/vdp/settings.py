@@ -37,8 +37,14 @@ pool's thresholds and the holdout share in voice-config.json (pool.py).
              bitbucket_code_context, transcript_reply_cap,
              transcript_summary_cap; a change shows in the next extract
   review     batch_size, mining_max_clients
+  upkeep     window_minutes (how long after approval a sent message is a
+             draft's sent version), near_copy_min (how alike in wording a
+             near-copy is, 0 to 1), recur_min (drafts an edit recurs in
+             before a rule line is suggested), due_items, due_days (when a
+             review session is due), pairs_max (draft pairs one suggestion
+             call reads), system, prompt (the suggestion call's prompts)
   models     {role: model id} for labeller, second, drafter, judge, brief,
-             guide
+             guide, upkeep
 
 Prompt templates name their slots as {name}; each slot is filled once, so
 text put in a slot is never read for slots itself.
@@ -62,7 +68,7 @@ from . import state
 
 SCHEMA = 1
 SECTIONS = ("audiences", "labels", "guide", "render", "judge", "pass_rule", "style", "stats",
-            "build", "calls", "extraction", "review", "models")
+            "build", "calls", "extraction", "review", "upkeep", "models")
 # Keys whose value is replaced whole, not merged key by key.
 WHOLE = {("labels", "purposes"), ("judge", "grades"), ("style", "marks"), ("style", "never_say")}
 FLAGS = {"i": re.I, "m": re.M}
@@ -91,8 +97,8 @@ def defaults():
     """The settings the code ships, built from each module's own constants."""
     global _DEFAULTS
     if _DEFAULTS is None:
-        from . import (anonymise, batches, bitbucket, guide, labels, model, slack, transcripts, validate,
-                       voice, voicebuild, voicestats)
+        from . import (anonymise, batches, bitbucket, guide, labels, model, slack, transcripts, upkeep,
+                       validate, voice, voicebuild, voicestats)
         _DEFAULTS = {
             "schema_version": SCHEMA,
             "audiences": copy.deepcopy(voice.AUDIENCE_LIST),
@@ -130,6 +136,9 @@ def defaults():
                            "transcript_reply_cap": transcripts.REPLY_CAP,
                            "transcript_summary_cap": transcripts.SUMMARY_CAP},
             "review": {"batch_size": batches.BATCH_SIZE, "mining_max_clients": anonymise.MINING_MAX_CLIENTS},
+            "upkeep": {"window_minutes": upkeep.WINDOW_MINUTES, "near_copy_min": upkeep.NEAR_COPY_MIN,
+                       "recur_min": upkeep.RECUR_MIN, "due_items": upkeep.DUE_ITEMS, "due_days": upkeep.DUE_DAYS,
+                       "pairs_max": upkeep.PAIRS_MAX, "system": upkeep.SYSTEM, "prompt": upkeep.PROMPT},
             "models": dict(model.MODELS),
         }
     return copy.deepcopy(_DEFAULTS)
@@ -272,6 +281,13 @@ def _check(d):
         _bad("extraction.bitbucket_cutoff must be a date, YYYY-MM-DD")
     _num("review", "batch_size", d["review"]["batch_size"], 1, 10000, True)
     _num("review", "mining_max_clients", d["review"]["mining_max_clients"], 1, 1000, True)
+    u = d["upkeep"]
+    _num("upkeep", "window_minutes", u["window_minutes"], 1, 7 * 24 * 60, True)
+    _num("upkeep", "near_copy_min", u["near_copy_min"], 0, 1)
+    for k, lo, hi in (("recur_min", 1, 1000), ("due_items", 1, 10000), ("due_days", 1, 365), ("pairs_max", 1, 1000)):
+        _num("upkeep", k, u[k], lo, hi, True)
+    _slots("upkeep", "system", u["system"], [])
+    _slots("upkeep", "prompt", u["prompt"], ["counts", "pairs"])
     m = d["models"]
     if not isinstance(m, dict) or set(m) != set(defaults()["models"]):
         _bad("models must name a model for each of " + ", ".join(defaults()["models"]))

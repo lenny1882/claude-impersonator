@@ -182,8 +182,11 @@ def load():
     source, audience (slug), text, tags, answered (anonymised text of the
     message it answers, or ""), before and after ([(author, text)] of its
     context, anonymised), ts."""
-    from . import settings
+    from . import settings, upkeep
     slugs = settings.audience_slugs()
+    # Messages that started as drafts Claude wrote stay out until the owner
+    # accepts them (PLAN §3.8); accepted, they take the audience confirmed.
+    held, acc = upkeep.held_ids(), upkeep.accepted()
     real, anon = {}, {}
     for s in VOICE_SOURCES:
         for r in state.read_jsonl(state.corpus_file(s)):
@@ -196,7 +199,11 @@ def load():
             continue
         a = anon.get(anon_id(rid))
         aud = slugs.get(r.get("audience") or "")
-        if a is None or aud is None:
+        if a is None or a["id"] in held:
+            continue
+        if a["id"] in acc and acc[a["id"]]["audience"] in slugs.values():
+            aud = acc[a["id"]]["audience"]
+        if aud is None:
             continue
         ans = answered_id(r, real)
         ans_a = anon.get(anon_id(ans)) if ans else None

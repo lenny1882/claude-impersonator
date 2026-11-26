@@ -220,6 +220,11 @@ out=$("$VR" guide --audience technical-team --purposes status)
 printf '%s' "$out" | grep -qE "messages to technical-team holding each: spaced dash [0-9]+[^0-9 ], exclamation mark [0-9]+[^0-9 ]" && ok "guide gives the audience's share of messages holding each mark of style" || no "guide gives the audience's share of messages holding each mark of style" "$out"
 printf '%s' "$out" | grep -q 'CLIENT-NOTE\|How to write it\|Words the rules quote' && no "an audience without drafting notes gets none, nor quoted-word shares" "$out" || ok "an audience without drafting notes gets none, nor quoted-word shares"
 out=$("$VR" guide --audience clients --purposes decline)
+o1=$(printf '%s\n' "$out" | grep -n -m1 'OWN-RULE' | cut -d: -f1); o2=$(printf '%s\n' "$out" | grep -n -m1 'OWN-AUD-ONLY' | cut -d: -f1)
+[ -n "$o1" ] && [ -n "$o2" ] && [ "$o2" = $((o1 + 1)) ] && ok "an audience's own rules follow the owner's rules for all" || no "an audience's own rules follow the owner's rules for all" "$out"
+out=$("$VR" guide --audience technical-team --purposes status)
+printf '%s' "$out" | grep -q OWN-AUD-ONLY && no "another audience's own rules are left out" "$out" || ok "another audience's own rules are left out"
+out=$("$VR" guide --audience clients --purposes decline)
 note=$(printf '%s\n' "$out" | grep -n -m1 'CLIENT-NOTE' | cut -d: -f1); rule=$(printf '%s\n' "$out" | grep -n -m1 'CLIENT-RULE' | cut -d: -f1)
 [ -n "$note" ] && [ -n "$rule" ] && [ "$note" -lt "$rule" ] && printf '%s' "$out" | grep -qE '"kindly" [0-9.]+[^0-9. ]' && ok "clients get their drafting notes before the rules, and the quoted words' shares" || no "clients get their drafting notes before the rules, and the quoted words' shares" "$out"
 out=$("$VR" guide --audience technical-team --purposes status)

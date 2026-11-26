@@ -34,7 +34,8 @@ you approve or drop it, the final version is recorded.
 
 `guide` gives the drafter prompt the build was validated with, then the
 guide text a validation draft read, rendered from the build's parts and
-wording by the pipeline's own rule: the owner's own rules, the audience's
+wording by the pipeline's own rule: the owner's own rules (with the
+audience's own section of them after the rules for all), the audience's
 drafting notes where the build has them, the guide's rules for the audience
 and purposes, and the measured style: length, capitals, end marks, and the
 share of messages holding each mark of style; for an audience the build

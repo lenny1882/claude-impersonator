@@ -8,6 +8,7 @@ OWNS="voice-decision-pipeline"
 
 FILES=(
   "bin/voice-decision-pipeline:$HOME/.local/bin/voice-decision-pipeline"
+  "bin/voice-decision-pipeline-due:$HOME/.local/bin/voice-decision-pipeline-due"
 )
 # The Python package and the lock. `voice-decision-pipeline setup` builds the
 # venv beside it, in ~/.local/share/voice-decision-pipeline/, which
@@ -25,15 +26,22 @@ EXCLUDED=("voice-decision-pipeline *")
 # Added to whatever the other packages and the user have in
 # sandbox.excludedCommands, once, leaving the rest of sandbox alone. Run
 # twice, it changes nothing.
+# The SessionStart line saying a voice review session is due (PLAN §3.8).
+DUE_HOOK="$HOME/.local/bin/voice-decision-pipeline-due"
 settings_merge() {
-  jq --argjson ours "$(printf '%s\n' "${EXCLUDED[@]}" | jq -R . | jq -s .)" '
+  jq --argjson ours "$(printf '%s\n' "${EXCLUDED[@]}" | jq -R . | jq -s .)" --arg due "$DUE_HOOK" '
     .sandbox //= {}
     | .sandbox.excludedCommands = (((.sandbox.excludedCommands // []) - $ours) + $ours)
+    | .hooks //= {}
+    | .hooks.SessionStart = (((.hooks.SessionStart // [])
+        | map(select(((.hooks // []) | map(.command) | index($due)) | not)))
+        + [{hooks: [{type: "command", command: $due}]}])
   '
 }
 
 REGISTRATIONS=(
   "sandbox.excludedCommands: ${EXCLUDED[*]}"
+  "hooks.SessionStart: $DUE_HOOK"
 )
 
 # The venv download (about 1.8 GB: spaCy, en_core_web_trf and its CPU
@@ -57,6 +65,8 @@ verify_probe() {
     *) printf '  warn  %s is not on PATH\n' "$HOME/.local/bin" ;;
   esac
   jq -e '.sandbox.excludedCommands | index("voice-decision-pipeline *")' \
+    "$CLAUDE_DIR/settings.json" >/dev/null || return 1
+  jq -e --arg due "$DUE_HOOK" '[.hooks.SessionStart[]?.hooks[]?.command] | index($due)' \
     "$CLAUDE_DIR/settings.json" >/dev/null || return 1
   local st="$CLAUDE_DIR/$PKG"
   if [ -d "$st" ] && [ -n "$(find "$st" -perm /077 -print -quit)" ]; then
@@ -95,6 +105,16 @@ strip_excluded() {
   local s="$CLAUDE_DIR/settings.json" tmp
   [ "${KEEP_SETTINGS:-0}" = 1 ] && return 0
   [ -f "$s" ] && jq empty "$s" 2>/dev/null || return 0
+  if jq -e --arg due "$DUE_HOOK" '[.hooks.SessionStart[]?.hooks[]?.command] | index($due)' "$s" >/dev/null; then
+    cp "$s" "$s.bak-$PKG"
+    tmp=$(mktemp)
+    jq --arg due "$DUE_HOOK" '
+      .hooks.SessionStart |= map(select(((.hooks // []) | map(.command) | index($due)) | not))
+      | if .hooks.SessionStart == [] then del(.hooks.SessionStart) else . end
+      | if .hooks == {} then del(.hooks) else . end
+    ' "$s" >"$tmp" && mv "$tmp" "$s"
+    printf '  ok    removed the SessionStart hook %s\n' "$DUE_HOOK"
+  fi
   jq -e --argjson ours "$(printf '%s\n' "${EXCLUDED[@]}" | jq -R . | jq -s .)" \
     '(.sandbox.excludedCommands // []) | any(. as $e | $ours | index($e))' "$s" >/dev/null || return 0
   cp "$s" "$s.bak-$PKG"

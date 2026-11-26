@@ -129,6 +129,7 @@ def build(out, bt, variant="a", schema=None, listed=None):
         "guide.json": {
             "schema_version": 1, "build_time": bt,
             "own_rules": ["OWN-RULE never sign off with a name"],
+            "own_rules_audience": {"clients": ["OWN-AUD-ONLY no greeting"]},
             "general": ["GENERAL-RULE short sentences"],
             "combinations": ["COMBINE-RULE news before the ask"],
             "audiences": {

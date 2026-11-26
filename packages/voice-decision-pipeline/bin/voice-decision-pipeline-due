@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# SessionStart hook (PLAN §3.8): one line when a voice review session is due,
+# nothing otherwise. Reads upkeep/due.json, which the last `voice upkeep` or
+# `voice build` wrote; never runs the pipeline itself, so it costs nothing.
+st="${VDP_STATE:-${CLAUDE_DIR:-$HOME/.claude}/voice-decision-pipeline}"
+f="$st/upkeep/due.json"
+[ -r "$f" ] || exit 0
+jq -c 'select(.due == true and (.line | length) > 0) | {systemMessage: .line}' "$f" 2>/dev/null
+exit 0

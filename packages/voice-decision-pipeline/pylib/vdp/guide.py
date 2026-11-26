@@ -34,6 +34,9 @@ first section at every build. Where one conflicts with a rule drawn from the
 corpus, this file wins. Write names as pseudonyms (colleague-07, client-03):
 the build's leak check stops on any real name.
 
+A section named after an audience (## clients, ## project team) holds rules
+for that audience only, read after the rules for all drafts.
+
 ## All drafts
 
 ## Jira
@@ -84,10 +87,31 @@ def _bullets(path, section_of, first):
     return out
 
 
+def own_section(heading):
+    """Where a heading of the rules file puts its lines: "jira" for the Jira
+    section, an audience's slug for a section named after a corpus audience
+    (by slug or name, "## clients", "## project team"), else "main", the
+    lines for every audience."""
+    from . import settings
+    if heading.startswith("jira"):
+        return "jira"
+    for a in settings.audiences():
+        if a["corpus"] and heading in (a["slug"].lower(), a["name"].lower()):
+            return "audience:" + a["slug"]
+    return "main"
+
+
 def own_rules():
     """(rules, jira rules) from the rules file, word for word."""
-    out = _bullets(rules_file(), lambda h: "jira" if h.startswith("jira") else "main", "main")
+    out = _bullets(rules_file(), own_section, "main")
     return out.get("main", []), out.get("jira", [])
+
+
+def own_rules_audience():
+    """{audience slug: [rule]} from the rules file's audience sections, word
+    for word; an audience reads them after the lines for every audience."""
+    out = _bullets(rules_file(), own_section, "main")
+    return {k.split(":", 1)[1]: v for k, v in out.items() if k.startswith("audience:") and v}
 
 
 # -- rules the owner struck ----------------------------------
@@ -374,9 +398,13 @@ def assemble(build_time):
         raise SystemExit("voice-decision-pipeline: no guide written yet; run 'voice guide'")
     cg, _ = strike(cg)
     mine, jira = own_rules()
-    return {"schema_version": 1, "build_time": build_time, "own_rules": mine,
-            "general": cg.get("general", []), "combinations": cg.get("combinations", []),
-            "audiences": cg.get("audiences", {}), "jira": jira}
+    out = {"schema_version": 1, "build_time": build_time, "own_rules": mine,
+           "general": cg.get("general", []), "combinations": cg.get("combinations", []),
+           "audiences": cg.get("audiences", {}), "jira": jira}
+    by_aud = own_rules_audience()
+    if by_aud:
+        out["own_rules_audience"] = by_aud
+    return out
 
 
 # The default; the state's settings.json "style.quoted_rare_below" wins.
@@ -431,8 +459,9 @@ def render_text(g, stats, audience, purposes, notes, quoted_on, rare_below, w, c
     from .voicestats import quoted
     bl = lambda rs: "\n".join(f"- {r}" for r in rs)
     out = []
-    if g.get("own_rules"):
-        out.append(w["own_rules"] + "\n" + bl(g["own_rules"]))
+    own = list(g.get("own_rules") or []) + list((g.get("own_rules_audience") or {}).get(audience) or [])
+    if own:
+        out.append(w["own_rules"] + "\n" + bl(own))
     if notes:
         out.append(w["notes"] + "\n" + bl(notes))
     if not corpus:
