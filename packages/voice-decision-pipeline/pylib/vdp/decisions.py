@@ -240,18 +240,27 @@ def load_anon():
 
 def units(log=print):
     """[unit] over the whole corpus: {id, source, project, records (ids),
-    text, candidate}. Candidate units first come from candidates; every
-    other owner message is a unit of its own, for the sample."""
+    text, candidate}, each id once. Candidate units first come from
+    candidates; every other owner message is a unit of its own, for the
+    sample."""
     c = cfg()
     rx = re.compile("|".join(c["filter"]), re.I)
     data = load_anon()
     out = []
+    by_id = {}
 
     def add(source, recs, text, cand, project=""):
+        # A unit is its records: several owner messages in one Slack thread
+        # or PR often build the same span, which is one unit, read once, and
+        # a candidate if any of them made it one.
         uid = "u" + hashlib.sha1(("|".join(r["id"] for r in recs)).encode()).hexdigest()[:16]
-        out.append({"id": uid, "source": source, "project": project, "records": [r["id"] for r in recs],
-                    "owner": [r["id"] for r in recs if _owner(r)], "text": _clip(text, c["unit_chars"]),
-                    "candidate": cand})
+        if uid in by_id:
+            by_id[uid]["candidate"] = by_id[uid]["candidate"] or cand
+            return
+        by_id[uid] = {"id": uid, "source": source, "project": project, "records": [r["id"] for r in recs],
+                      "owner": [r["id"] for r in recs if _owner(r)], "text": _clip(text, c["unit_chars"]),
+                      "candidate": cand}
+        out.append(by_id[uid])
 
     # Transcripts: per session, in time order.
     by = defaultdict(list)

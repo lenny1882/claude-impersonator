@@ -53,8 +53,22 @@ G = [rec("g1", "gsd-1", "2024-02-05T00:00:00Z", "Test runner\nUse vitest for the
          sf={"kind": "deviation", "file": "phases/01/01-01-SUMMARY.md", "rule": 3, "repo_name": "proj-01"})]
 state.write_jsonl(state.anon_file("gsd"), G)
 
+# Two owner messages in one Slack thread, each the other's context: both
+# build the same span, which is one unit.
+S = list(state.read_jsonl(state.anon_file("slack")))
+for i, o in (("sd1", "sd2"), ("sd2", "sd1")):
+    r = rec(i, "C-dup", f"2024-02-06T10:0{i[-1]}:00Z", "lunch at noon then", source="slack",
+            sf={"thread_ts": "thread-dup"})
+    r["context_ids"] = [o]
+    S.append(r)
+state.write_jsonl(state.anon_file("slack"), S)
+
 us = decisions.units(log=lambda *a: None)
 by = {tuple(u["records"]): u for u in us}
+check("every unit id is listed once", len({u["id"] for u in us}) == len(us),
+      len(us) - len({u["id"] for u in us}))
+check("owner messages in one thread building the same span are one unit",
+      sum(1 for u in us if set(u["records"]) == {"sd1", "sd2"}) == 1)
 t_units = [u for u in us if u["source"] == "transcripts"]
 first = next(u for u in t_units if "t1" in u["records"])
 check("a numbered-choice reply and its answer start a unit with the next 6 messages",
