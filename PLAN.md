@@ -838,6 +838,13 @@ plan text lives and which event marks it final:
   95% of decisions are caught and fails once it is 95% sure fewer are, by
   the voice validation's confidence calculation. Under 95% caught, the
   filter is widened and measured again.
+- A unit is the set of records a pass reads together, and each is read once:
+  owner messages in one Slack thread or pull request that build the same
+  span are one unit, a candidate if any of them is one. The catch-rate
+  sample is drawn from these units, not from the messages that built them.
+- The prompt's approval, the disagreement grading, the case check and the
+  catch rate are on the review server's decision extraction pages
+  (`/decisions`), apart from the voice build's pages.
 - A case starts only from the owner's own messages; other people's are read
   as context around it. A decision someone else made becomes a case only
   where the owner acted on it or passed it on.

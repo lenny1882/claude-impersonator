@@ -255,7 +255,9 @@ command logs to `/tmp/voice-decision-pipeline-decisions-<step>.log`.
    AskUserQuestion answer, a reply to Claude's numbered choices, a
    correction of Claude, and any of your messages matching the filter's
    wording. Every other message of yours is a unit in the catch-rate
-   sample's pool.
+   sample's pool. A unit is its records and is listed once: messages of
+   yours in one thread or PR that build the same stretch are one unit, a
+   candidate if any of them is one.
 3. `decisions extract`: Sonnet 5.5 reads every candidate unit and the
    sample's units, 4 a call. `decisions extract --second`: Opus 5.5 reads
    them all again, blind. A usage limit stops either cleanly (exit 6); the
